@@ -39,6 +39,15 @@ export const API_ENDPOINTS = {
   settings_put: { method: 'PUT', path: '/settings/:key' },
   logs_list: { method: 'GET', path: '/logs' },
   logs_stream: { method: 'GET', path: '/logs/stream' },
+  signals_list: { method: 'GET', path: '/signals' },
+  signals_generate: { method: 'POST', path: '/signals/generate' },
+  paper_run: { method: 'POST', path: '/paper/run' },
+  portfolios_model_holdings: { method: 'GET', path: '/portfolios/model/holdings' },
+  portfolios_personal_holdings: { method: 'GET', path: '/portfolios/personal/holdings' },
+  portfolios_personal_add: { method: 'POST', path: '/portfolios/personal/holdings' },
+  portfolios_personal_delete: { method: 'DELETE', path: '/portfolios/personal/holdings/:code' },
+  trades_list: { method: 'GET', path: '/trades' },
+  pnl_daily: { method: 'GET', path: '/pnl/daily' },
 } as const satisfies Record<string, EndpointDef>;
 
 /** api ↔ engine 内部(:59915,X-Sinan-Internal)。 */
@@ -53,6 +62,7 @@ export const ENGINE_ENDPOINTS = {
   calendar_is_trade_day: { method: 'GET', path: '/engine/calendar/is-trade-day' },
   indicators_validate: { method: 'POST', path: '/engine/indicators/validate' },
   device: { method: 'GET', path: '/engine/device' },
+  paper_run: { method: 'POST', path: '/engine/paper/run' },
 } as const satisfies Record<string, EndpointDef>;
 
 /** 把含 :param 的路径模板填充为具体路径。 */

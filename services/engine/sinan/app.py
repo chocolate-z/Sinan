@@ -116,6 +116,93 @@ def quotes(req: QuotesReq) -> dict:
     return rt.realtime_quotes(req.codes)
 
 
+# ── 盘后:出信号 + 模拟盘撮合记账(run_eod)────────────────────────────────
+class PaperPosition(BaseModel):
+    code: str
+    shares: int
+    avg_cost: float
+    open_date: str
+    last_buy_date: str
+
+
+class PaperAccountIn(BaseModel):
+    cash: float
+    positions: list[PaperPosition] = []
+
+
+class PaperRunReq(BaseModel):
+    strategy_id: str
+    today: str
+    effective_date: str
+    codes: Optional[list[str]] = None
+    account: PaperAccountIn
+    params: dict = {}
+    prev_nav: Optional[float] = None
+    peak_nav: Optional[float] = None
+    benchmark: str = "000300.SH"
+    fill: bool = True
+
+
+def _price_map(dl, dataset: str, asof: str, field: str, codes) -> dict[str, float]:
+    df = dl.latest_asof(dataset, asof, fields=["stock_code", field], codes=codes)
+    if df.is_empty():
+        return {}
+    return {r["stock_code"]: r[field] for r in df.iter_rows(named=True) if r[field] is not None}
+
+
+@app.post("/engine/paper/run", dependencies=[Depends(require_internal)])
+def paper_run(req: PaperRunReq) -> dict:
+    from dataclasses import asdict
+
+    from .data import DataLayer
+    from .paper import CostModel, Position, SimAccount, run_eod
+
+    dl = DataLayer(config.cache_dir())
+
+    codes = req.codes
+    if not codes:
+        latest = dl.latest_asof("price", req.today, fields=["stock_code", "close"])
+        codes = latest["stock_code"].to_list() if not latest.is_empty() else []
+
+    prices_today = _price_map(dl, "price", req.today, "close", codes)
+    open_next = _price_map(dl, "price", req.effective_date, "open", codes)
+    if not open_next:  # T+1 开盘价缺失时以今收盘价兜底(诚实标注降级由上层处理)
+        open_next = prices_today
+
+    bench_df = dl.asof("index_ohlcv", req.today, fields=["trade_date", "close"], codes=[req.benchmark])
+    bench_closes = bench_df.sort("trade_date")["close"].to_list() if not bench_df.is_empty() else []
+    benchmark_pct = (
+        bench_closes[-1] / bench_closes[-2] - 1.0 if len(bench_closes) >= 2 else None
+    )
+
+    acc = SimAccount(cash=req.account.cash, costs=CostModel.from_config())
+    for p in req.account.positions:
+        acc.positions[p.code] = Position(p.code, p.shares, p.avg_cost, p.open_date, p.last_buy_date)
+
+    res = run_eod(
+        data=dl, codes=codes, today=req.today, effective_date=req.effective_date, account=acc,
+        bench_closes=bench_closes, prices_today=prices_today, open_prices_next=open_next,
+        params=req.params, prev_nav=req.prev_nav, peak_nav=req.peak_nav, fill=req.fill,
+    )
+
+    return {
+        "trade_date": res.trade_date,
+        "effective_date": res.effective_date,
+        "market_open": res.market_open,
+        "coverage": res.coverage,
+        "degraded": res.degraded,
+        "benchmark_pct": benchmark_pct,
+        "signals": [asdict(s) for s in res.signals],
+        "trades": [asdict(t) for t in res.trades],
+        "positions": [
+            {"code": p.code, "shares": p.shares, "avg_cost": p.avg_cost,
+             "open_date": p.open_date, "last_buy_date": p.last_buy_date}
+            for p in acc.positions.values()
+        ],
+        "account": res.account,
+    }
+
+
 # ── 缓存覆盖 ────────────────────────────────────────────────────────────
 @app.get("/engine/cache/coverage", dependencies=[Depends(require_internal)])
 def coverage() -> dict:

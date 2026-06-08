@@ -1,6 +1,7 @@
 import type {
   CacheBuildRequest,
   EngineClient,
+  PaperRunRequest,
   ProviderTestResult,
 } from '../src/engine/engine.client.js';
 
@@ -9,6 +10,7 @@ export class FakeEngineClient implements EngineClient {
   constructor(
     private readonly testResult: ProviderTestResult | null,
     private readonly events: any[] = [],
+    private readonly paperResult: any = null,
   ) {}
 
   async providerTest(): Promise<ProviderTestResult> {
@@ -17,5 +19,28 @@ export class FakeEngineClient implements EngineClient {
 
   async cacheBuild(req: CacheBuildRequest, onEvent: (ev: any) => void): Promise<void> {
     for (const ev of this.events) onEvent({ ...ev, job_id: req.job_id });
+  }
+
+  async paperRun(req: PaperRunRequest): Promise<any> {
+    return (
+      this.paperResult ?? {
+        trade_date: req.today,
+        effective_date: req.effective_date,
+        market_open: true,
+        coverage: 1.0,
+        degraded: [],
+        benchmark_pct: 0.001,
+        signals: [],
+        trades: [],
+        positions: [],
+        account: {
+          cash: req.account.cash,
+          market_value: 0,
+          nav: req.account.cash,
+          daily_return: null,
+          drawdown: 0,
+        },
+      }
+    );
   }
 }

@@ -9,6 +9,7 @@ import { ENGINE_CLIENT, HttpEngineClient, type EngineClient } from './engine/eng
 import { LogBus } from './bus/log-bus.js';
 import { JobBus, JobsController, JobsService } from './modules/jobs.js';
 import { ProvidersController } from './modules/providers.js';
+import { PaperService, PortfolioController, TradingController } from './modules/trading.js';
 import {
   CoverageController,
   HealthController,
@@ -37,6 +38,8 @@ export class AppModule {
         CoverageController,
         ProvidersController,
         JobsController,
+        TradingController,
+        PortfolioController,
       ],
       providers: [
         {
@@ -62,6 +65,7 @@ export class AppModule {
         { provide: ENGINE_CLIENT, useValue: opts.engineClient ?? new HttpEngineClient() },
         JobBus,
         JobsService,
+        PaperService,
       ],
     };
   }

@@ -356,4 +356,256 @@ export class Repository {
   logsList(limit = 200): any[] {
     return this.db.all<any>('SELECT * FROM logs ORDER BY ts DESC LIMIT ?', limit);
   }
+
+  // ── strategies ──────────────────────────────────────────────────────────
+  ensureDefaultStrategy(): string {
+    const row = this.db.get<{ id: string }>(
+      "SELECT id FROM strategies WHERE name = '默认因子策略'",
+    );
+    if (row) return row.id;
+    const id = randomUUID();
+    const ts = now();
+    this.db.run(
+      `INSERT INTO strategies(id,name,kind,params_json,status,created_at,updated_at)
+       VALUES (?,?, 'factor_score', ?, 'active', ?, ?)`,
+      id,
+      '默认因子策略',
+      JSON.stringify({ initial_cash: 1_000_000 }),
+      ts,
+      ts,
+    );
+    return id;
+  }
+
+  strategyParams(id: string): any {
+    const row = this.db.get<{ params_json: string }>(
+      'SELECT params_json FROM strategies WHERE id=?',
+      id,
+    );
+    return row ? JSON.parse(row.params_json) : {};
+  }
+
+  /** 给 engine 的模型账户快照(现金/持仓/上一净值)。 */
+  modelAccountSnapshot(strategyId: string): {
+    cash: number;
+    positions: any[];
+    prev_nav: number | null;
+    peak_nav: number | null;
+  } {
+    const last = this.db.get<{ cash: number; nav: number }>(
+      'SELECT cash,nav FROM sim_account WHERE strategy_id=? ORDER BY trade_date DESC LIMIT 1',
+      strategyId,
+    );
+    const peak = this.db.get<{ m: number | null }>(
+      'SELECT MAX(nav) AS m FROM sim_account WHERE strategy_id=?',
+      strategyId,
+    );
+    const holds = this.db.all<any>(
+      'SELECT stock_code,shares,avg_cost,buy_date,last_buy_date FROM holdings_model WHERE strategy_id=?',
+      strategyId,
+    );
+    const initial = this.strategyParams(strategyId)?.initial_cash ?? 1_000_000;
+    return {
+      cash: last?.cash ?? initial,
+      positions: holds.map((h) => ({
+        code: h.stock_code,
+        shares: h.shares,
+        avg_cost: h.avg_cost,
+        open_date: h.buy_date,
+        last_buy_date: h.last_buy_date ?? h.buy_date,
+      })),
+      prev_nav: last?.nav ?? null,
+      peak_nav: peak?.m ?? null,
+    };
+  }
+
+  /** engine 回传结果落库(仅模型盘)。signals 含被拦截组;trades 含成本明细;holdings 全量替换。 */
+  persistPaperResult(
+    strategyId: string,
+    result: any,
+    opts: { persistTrades?: boolean } = {},
+  ): void {
+    const ts = now();
+    const tradeDate: string = result.trade_date;
+    const persistTrades = opts.persistTrades !== false;
+    this.db.tx(() => {
+      for (const s of result.signals ?? []) {
+        this.db.run(
+          `INSERT INTO signals(id,strategy_id,trade_date,stock_code,action,score,factor_breakdown_json,reason,blocked,effective_date,created_at)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?)
+           ON CONFLICT(strategy_id,trade_date,stock_code) DO UPDATE SET
+             action=excluded.action, score=excluded.score, factor_breakdown_json=excluded.factor_breakdown_json,
+             reason=excluded.reason, blocked=excluded.blocked, effective_date=excluded.effective_date`,
+          randomUUID(),
+          strategyId,
+          tradeDate,
+          s.stock_code,
+          s.action,
+          s.score ?? null,
+          s.factor_breakdown ? JSON.stringify(s.factor_breakdown) : null,
+          s.reason ?? null,
+          s.blocked ? 1 : 0,
+          result.effective_date ?? null,
+          ts,
+        );
+      }
+      if (persistTrades) {
+        for (const t of result.trades ?? []) {
+          this.db.run(
+            `INSERT INTO trades(id,portfolio,strategy_id,stock_code,side,shares,price,amount,commission,stamp_tax,transfer_fee,impact,reason,trade_date,created_at)
+             VALUES (?, 'model', ?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+            randomUUID(),
+            strategyId,
+            t.code,
+            t.side,
+            t.shares,
+            t.price,
+            t.amount,
+            t.commission ?? 0,
+            t.stamp_tax ?? 0,
+            t.transfer_fee ?? 0,
+            t.impact ?? 0,
+            t.reason ?? 'signal',
+            t.trade_date ?? result.effective_date,
+            ts,
+          );
+        }
+        // 持仓全量替换(模型盘自动维护)。
+        this.db.run('DELETE FROM holdings_model WHERE strategy_id=?', strategyId);
+        for (const p of result.positions ?? []) {
+          this.db.run(
+            `INSERT INTO holdings_model(id,strategy_id,stock_code,shares,avg_cost,buy_date,last_buy_date,updated_at)
+             VALUES (?,?,?,?,?,?,?,?)`,
+            randomUUID(),
+            strategyId,
+            p.code,
+            p.shares,
+            p.avg_cost,
+            p.open_date,
+            p.last_buy_date ?? p.open_date,
+            ts,
+          );
+        }
+        const a = result.account ?? {};
+        this.db.run(
+          `INSERT INTO sim_account(strategy_id,trade_date,cash,market_value,nav,daily_return,drawdown)
+           VALUES (?,?,?,?,?,?,?)
+           ON CONFLICT(strategy_id,trade_date) DO UPDATE SET
+             cash=excluded.cash, market_value=excluded.market_value, nav=excluded.nav,
+             daily_return=excluded.daily_return, drawdown=excluded.drawdown`,
+          strategyId,
+          tradeDate,
+          a.cash ?? 0,
+          a.market_value ?? 0,
+          a.nav ?? 0,
+          a.daily_return ?? null,
+          a.drawdown ?? null,
+        );
+        const dr: number | null = a.daily_return ?? null;
+        const nav: number = a.nav ?? 0;
+        const dayPnl = dr != null && dr !== -1 ? nav - nav / (1 + dr) : 0;
+        const benchPct: number | null = result.benchmark_pct ?? null;
+        const excess = dr != null && benchPct != null ? dr - benchPct : null;
+        this.db.run(
+          `INSERT INTO daily_pnl(id,portfolio,strategy_id,trade_date,total_assets,cash,holding_value,day_pnl,day_pnl_pct,drawdown,benchmark_pct,excess_pct,degraded,created_at)
+           VALUES (?, 'model', ?,?,?,?,?,?,?,?,?,?,?,?)
+           ON CONFLICT(portfolio,strategy_id,trade_date) DO UPDATE SET
+             total_assets=excluded.total_assets, cash=excluded.cash, holding_value=excluded.holding_value,
+             day_pnl=excluded.day_pnl, day_pnl_pct=excluded.day_pnl_pct, drawdown=excluded.drawdown,
+             benchmark_pct=excluded.benchmark_pct, excess_pct=excluded.excess_pct, degraded=excluded.degraded`,
+          randomUUID(),
+          strategyId,
+          tradeDate,
+          nav,
+          a.cash ?? 0,
+          a.market_value ?? 0,
+          dayPnl,
+          dr ?? 0,
+          a.drawdown ?? null,
+          benchPct,
+          excess,
+          (result.degraded?.length ?? 0) > 0 ? 1 : 0,
+          ts,
+        );
+      }
+    });
+  }
+
+  signalsByDate(date: string): any[] {
+    return this.db
+      .all<any>('SELECT * FROM signals WHERE trade_date=? ORDER BY blocked ASC, score DESC', date)
+      .map((s) => ({
+        ...s,
+        factor_breakdown: s.factor_breakdown_json ? JSON.parse(s.factor_breakdown_json) : null,
+      }));
+  }
+
+  modelHoldings(): any[] {
+    return this.db.all<any>('SELECT * FROM holdings_model ORDER BY stock_code');
+  }
+
+  tradesList(portfolio: string, from?: string, to?: string): any[] {
+    const where: string[] = ['portfolio=?'];
+    const vals: unknown[] = [portfolio];
+    if (from) {
+      where.push('trade_date>=?');
+      vals.push(from);
+    }
+    if (to) {
+      where.push('trade_date<=?');
+      vals.push(to);
+    }
+    return this.db.all<any>(
+      `SELECT * FROM trades WHERE ${where.join(' AND ')} ORDER BY trade_date DESC, created_at DESC`,
+      ...vals,
+    );
+  }
+
+  pnlDaily(portfolio: string, strategyId?: string): any[] {
+    if (strategyId !== undefined) {
+      return this.db.all<any>(
+        'SELECT * FROM daily_pnl WHERE portfolio=? AND strategy_id=? ORDER BY trade_date',
+        portfolio,
+        strategyId,
+      );
+    }
+    return this.db.all<any>(
+      'SELECT * FROM daily_pnl WHERE portfolio=? ORDER BY trade_date',
+      portfolio,
+    );
+  }
+
+  // ── 个人持仓(手动维护)──────────────────────────────────────────────
+  personalList(): any[] {
+    return this.db.all<any>('SELECT * FROM holdings_personal ORDER BY stock_code');
+  }
+
+  personalUpsert(input: {
+    stock_code: string;
+    stock_name?: string;
+    shares: number;
+    avg_cost: number;
+    note?: string;
+  }): void {
+    const ts = now();
+    this.db.run(
+      `INSERT INTO holdings_personal(id,stock_code,stock_name,shares,avg_cost,buy_date,note,updated_at)
+       VALUES (?,?,?,?,?,?,?,?)
+       ON CONFLICT(stock_code) DO UPDATE SET
+         stock_name=excluded.stock_name, shares=excluded.shares, avg_cost=excluded.avg_cost,
+         note=excluded.note, updated_at=excluded.updated_at`,
+      randomUUID(),
+      input.stock_code,
+      input.stock_name ?? null,
+      input.shares,
+      input.avg_cost,
+      ts.slice(0, 10),
+      input.note ?? null,
+      ts,
+    );
+  }
+
+  personalDelete(code: string): void {
+    this.db.run('DELETE FROM holdings_personal WHERE stock_code=?', code);
+  }
 }

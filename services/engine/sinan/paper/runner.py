@@ -58,6 +58,7 @@ def run_eod(
     liquid: set[str] | None = None,
     prev_nav: float | None = None,
     peak_nav: float | None = None,
+    fill: bool = True,
 ) -> EodResult:
     p = {**DEFAULTS, **(params or {})}
     ctx = FactorContext(data, today, codes)
@@ -97,8 +98,9 @@ def run_eod(
             reason = "market_filter" if not plan.market_open else "rank_out"
             signals.append(GeneratedSignal(code, "buy", r["score"], reason, True, _breakdown(r)))
 
-    # T+1 开盘价撮合。
-    apply_fills(account, plan, open_prices_next)
+    # T+1 开盘价撮合(fill=False 仅出信号、不撮合,供 /signals/generate 预览)。
+    if fill:
+        apply_fills(account, plan, open_prices_next)
 
     mark = {**prices_today, **open_prices_next}
     nav = account.nav(mark)

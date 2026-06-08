@@ -34,6 +34,31 @@ def test_device_endpoint():
     assert "note" in body
 
 
+def test_paper_run_endpoint(tmp_path, monkeypatch):
+    monkeypatch.setenv("SINAN_DATA_DIR", str(tmp_path))
+    from tests.test_factors import CODES, _build_frames, _dates, _write
+
+    dates = _dates(30)
+    _write(tmp_path / "cache", _build_frames(dates))  # config.cache_dir() == SINAN_DATA_DIR/cache
+    body = {
+        "strategy_id": "s1",
+        "today": dates[24],
+        "effective_date": dates[25],
+        "codes": CODES,
+        "account": {"cash": 1_000_000, "positions": []},
+        "params": {"buy_threshold": 0.0, "max_holdings": 5},
+        "prev_nav": 1_000_000,
+        "fill": True,
+    }
+    r = client.post("/engine/paper/run", json=body)
+    assert r.status_code == 200
+    res = r.json()
+    assert res["market_open"] is True
+    assert any(s["action"] == "buy" and not s["blocked"] for s in res["signals"])
+    assert len(res["trades"]) >= 1
+    assert res["account"]["nav"] > 0
+
+
 def test_internal_guard(monkeypatch):
     monkeypatch.setenv("SINAN_IPC_TOKEN", "secret-session")
     # 无头 → 403

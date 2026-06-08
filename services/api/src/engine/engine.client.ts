@@ -20,10 +20,25 @@ export interface CacheBuildRequest {
   end_date?: string | null;
 }
 
+export interface PaperRunRequest {
+  strategy_id: string;
+  today: string;
+  effective_date: string;
+  codes?: string[];
+  account: { cash: number; positions: any[] };
+  params?: Record<string, unknown>;
+  prev_nav?: number | null;
+  peak_nav?: number | null;
+  benchmark?: string;
+  fill?: boolean;
+}
+
 export interface EngineClient {
   providerTest(provider: string, token?: string): Promise<ProviderTestResult>;
   /** 连接 engine cache/build SSE,逐事件回调。完成时 resolve。 */
   cacheBuild(req: CacheBuildRequest, onEvent: (ev: any) => void): Promise<void>;
+  /** 盘后:出信号 + 模拟盘撮合记账(engine 计算,api 落库)。 */
+  paperRun(req: PaperRunRequest): Promise<any>;
 }
 
 export const ENGINE_CLIENT = Symbol('ENGINE_CLIENT');
@@ -69,5 +84,15 @@ export class HttpEngineClient implements EngineClient {
         if (line) onEvent(JSON.parse(line.slice(6)));
       }
     }
+  }
+
+  async paperRun(req: PaperRunRequest): Promise<any> {
+    const res = await fetch(`${config.engineBaseUrl()}/engine/paper/run`, {
+      method: 'POST',
+      headers: this.headers(),
+      body: JSON.stringify(req),
+    });
+    if (!res.ok) throw new Error(`engine paper/run ${res.status}`);
+    return res.json();
   }
 }

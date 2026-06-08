@@ -33,6 +33,15 @@ API_ENDPOINTS: dict[str, dict[str, str]] = {
     "settings_put": {"method": "PUT", "path": "/settings/:key"},
     "logs_list": {"method": "GET", "path": "/logs"},
     "logs_stream": {"method": "GET", "path": "/logs/stream"},
+    "signals_list": {"method": "GET", "path": "/signals"},
+    "signals_generate": {"method": "POST", "path": "/signals/generate"},
+    "paper_run": {"method": "POST", "path": "/paper/run"},
+    "portfolios_model_holdings": {"method": "GET", "path": "/portfolios/model/holdings"},
+    "portfolios_personal_holdings": {"method": "GET", "path": "/portfolios/personal/holdings"},
+    "portfolios_personal_add": {"method": "POST", "path": "/portfolios/personal/holdings"},
+    "portfolios_personal_delete": {"method": "DELETE", "path": "/portfolios/personal/holdings/:code"},
+    "trades_list": {"method": "GET", "path": "/trades"},
+    "pnl_daily": {"method": "GET", "path": "/pnl/daily"},
 }
 
 ENGINE_ENDPOINTS: dict[str, dict[str, str]] = {
@@ -46,6 +55,7 @@ ENGINE_ENDPOINTS: dict[str, dict[str, str]] = {
     "calendar_is_trade_day": {"method": "GET", "path": "/engine/calendar/is-trade-day"},
     "indicators_validate": {"method": "POST", "path": "/engine/indicators/validate"},
     "device": {"method": "GET", "path": "/engine/device"},
+    "paper_run": {"method": "POST", "path": "/engine/paper/run"},
 }
 
 _PARAM_RE = re.compile(r":([A-Za-z_][A-Za-z0-9_]*)")
