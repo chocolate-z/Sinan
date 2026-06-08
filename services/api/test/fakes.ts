@@ -2,7 +2,10 @@ import type {
   CacheBuildRequest,
   EngineClient,
   PaperRunRequest,
+  PricesRequest,
+  PricesResult,
   ProviderTestResult,
+  Quote,
 } from '../src/engine/engine.client.js';
 
 /** 离线假 engine 客户端:连通测试返回固定结果,建缓存按预设事件回放。 */
@@ -11,13 +14,25 @@ export class FakeEngineClient implements EngineClient {
     private readonly testResult: ProviderTestResult | null,
     private readonly events: any[] = [],
     private readonly paperResult: any = null,
-    private readonly quotesResult: Record<string, any> = {},
+    private readonly quotesResult: Record<string, Quote> = {},
+    private readonly pricesResult: Record<string, PricesResult> = {},
   ) {}
 
-  async quotes(codes: string[]): Promise<Record<string, any>> {
-    const out: Record<string, any> = {};
+  async quotes(codes: string[]): Promise<Record<string, Quote>> {
+    const out: Record<string, Quote> = {};
     for (const c of codes) if (this.quotesResult[c]) out[c] = this.quotesResult[c];
     return out;
+  }
+
+  async prices(req: PricesRequest): Promise<PricesResult> {
+    return (
+      this.pricesResult[req.code] ?? {
+        code: req.code,
+        adjust: req.adjust ?? 'qfq',
+        rows: [],
+        degraded: false,
+      }
+    );
   }
 
   async providerTest(): Promise<ProviderTestResult> {

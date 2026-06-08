@@ -33,16 +33,49 @@ export interface PaperRunRequest {
   fill?: boolean;
 }
 
+export interface Quote {
+  name?: string | null;
+  price?: number | null;
+  prev_close?: number | null;
+  open?: number | null;
+  source?: string | null;
+}
+
+export interface KBar {
+  trade_date: string;
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+  volume?: number | null;
+  amount?: number | null;
+}
+
+export interface PricesRequest {
+  code: string;
+  start?: string;
+  end?: string;
+  limit?: number;
+  adjust?: 'qfq' | 'none';
+}
+
+export interface PricesResult {
+  code: string;
+  adjust: string;
+  rows: KBar[];
+  degraded: boolean;
+}
+
 export interface EngineClient {
   providerTest(provider: string, token?: string): Promise<ProviderTestResult>;
   /** 连接 engine cache/build SSE,逐事件回调。完成时 resolve。 */
   cacheBuild(req: CacheBuildRequest, onEvent: (ev: any) => void): Promise<void>;
   /** 盘后:出信号 + 模拟盘撮合记账(engine 计算,api 落库)。 */
   paperRun(req: PaperRunRequest): Promise<any>;
-  /** 实时报价(新浪→腾讯),供当日收益。 */
-  quotes(
-    codes: string[],
-  ): Promise<Record<string, { price?: number | null; prev_close?: number | null }>>;
+  /** 实时报价(新浪→腾讯),供当日收益与行情页。 */
+  quotes(codes: string[]): Promise<Record<string, Quote>>;
+  /** 历史日 K(本地 parquet,PIT 安全),供行情页 KLineChart。 */
+  prices(req: PricesRequest): Promise<PricesResult>;
 }
 
 export const ENGINE_CLIENT = Symbol('ENGINE_CLIENT');
@@ -100,13 +133,23 @@ export class HttpEngineClient implements EngineClient {
     return res.json();
   }
 
-  async quotes(codes: string[]): Promise<Record<string, any>> {
+  async quotes(codes: string[]): Promise<Record<string, Quote>> {
     const res = await fetch(`${config.engineBaseUrl()}/engine/quotes`, {
       method: 'POST',
       headers: this.headers(),
       body: JSON.stringify({ codes }),
     });
     if (!res.ok) throw new Error(`engine quotes ${res.status}`);
-    return (await res.json()) as Record<string, any>;
+    return (await res.json()) as Record<string, Quote>;
+  }
+
+  async prices(req: PricesRequest): Promise<PricesResult> {
+    const res = await fetch(`${config.engineBaseUrl()}/engine/prices`, {
+      method: 'POST',
+      headers: this.headers(),
+      body: JSON.stringify(req),
+    });
+    if (!res.ok) throw new Error(`engine prices ${res.status}`);
+    return (await res.json()) as PricesResult;
   }
 }

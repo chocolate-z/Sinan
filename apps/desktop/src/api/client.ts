@@ -131,4 +131,14 @@ export const api = {
     request<any[]>(API_ENDPOINTS.pnl_daily, { query: { portfolio } }),
   pnlToday: (portfolio: 'model' | 'personal' = 'model') =>
     request<any>(API_ENDPOINTS.pnl_today, { query: { portfolio } }),
+
+  // ── 行情域 ───────────────────────────────────────────────────────────────
+  quotes: (codes: string[]) =>
+    request<{ degraded: boolean; quotes: any[] }>(API_ENDPOINTS.quotes_list, {
+      query: { codes: codes.join(',') },
+    }),
+  prices: (
+    code: string,
+    opts: { adjust?: 'qfq' | 'none'; limit?: number; start?: string; end?: string } = {},
+  ) => request<any>(API_ENDPOINTS.prices_get, { params: { code }, query: { ...opts } }),
 };

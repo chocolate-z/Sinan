@@ -59,6 +59,34 @@ def test_paper_run_endpoint(tmp_path, monkeypatch):
     assert res["account"]["nav"] > 0
 
 
+def test_prices_endpoint(tmp_path, monkeypatch):
+    monkeypatch.setenv("SINAN_DATA_DIR", str(tmp_path))
+    import polars as pl
+
+    from sinan.data import store
+
+    code = "600519.SH"
+    dates = [f"2024-01-{i:02d}" for i in range(2, 7)]  # 5 个交易日
+    df = pl.DataFrame(
+        {
+            "stock_code": [code] * 5,
+            "trade_date": dates,
+            "open": [10.0, 11, 12, 13, 14],
+            "high": [10.0, 11, 12, 13, 14],
+            "low": [10.0, 11, 12, 13, 14],
+            "close": [10.0, 11, 12, 13, 14],
+            "volume": [1.0, 2, 3, 4, 5],
+            "amount": [1.0, 2, 3, 4, 5],
+        }
+    )
+    store.write_dataset(tmp_path / "cache", "price", df)  # config.cache_dir() == SINAN_DATA_DIR/cache
+    r = client.post("/engine/prices", json={"code": code, "adjust": "none", "limit": 3})
+    assert r.status_code == 200
+    body = r.json()
+    assert body["code"] == code and body["adjust"] == "none"
+    assert [row["trade_date"] for row in body["rows"]] == dates[-3:]  # 末 3 根
+
+
 def test_internal_guard(monkeypatch):
     monkeypatch.setenv("SINAN_IPC_TOKEN", "secret-session")
     # 无头 → 403

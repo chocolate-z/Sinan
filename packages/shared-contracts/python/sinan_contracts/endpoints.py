@@ -43,6 +43,8 @@ API_ENDPOINTS: dict[str, dict[str, str]] = {
     "trades_list": {"method": "GET", "path": "/trades"},
     "pnl_daily": {"method": "GET", "path": "/pnl/daily"},
     "pnl_today": {"method": "GET", "path": "/pnl/today"},
+    "quotes_list": {"method": "GET", "path": "/quotes"},
+    "prices_get": {"method": "GET", "path": "/prices/:code"},
 }
 
 ENGINE_ENDPOINTS: dict[str, dict[str, str]] = {

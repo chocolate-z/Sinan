@@ -17,7 +17,7 @@ const routes: RouteRecordRaw[] = [
   },
   {
     path: '/market',
-    component: () => import('../pages/Locked.vue'),
+    component: () => import('../pages/market/Market.vue'),
     meta: { title: '行情', needsData: true },
   },
   {

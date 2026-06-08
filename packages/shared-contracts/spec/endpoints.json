@@ -38,7 +38,9 @@
     },
     "trades_list": { "method": "GET", "path": "/trades" },
     "pnl_daily": { "method": "GET", "path": "/pnl/daily" },
-    "pnl_today": { "method": "GET", "path": "/pnl/today" }
+    "pnl_today": { "method": "GET", "path": "/pnl/today" },
+    "quotes_list": { "method": "GET", "path": "/quotes" },
+    "prices_get": { "method": "GET", "path": "/prices/:code" }
   },
   "engine": {
     "health": { "method": "GET", "path": "/healthz" },

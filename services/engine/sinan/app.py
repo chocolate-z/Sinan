@@ -116,6 +116,32 @@ def quotes(req: QuotesReq) -> dict:
     return rt.realtime_quotes(req.codes)
 
 
+# ── 历史日 K(本地 parquet,PIT 安全)───────────────────────────────────────
+class PricesReq(BaseModel):
+    code: str
+    start: Optional[str] = None
+    end: Optional[str] = None
+    limit: int = 500
+    adjust: str = "qfq"  # 'qfq' 前复权 | 'none' 原始
+
+
+@app.post("/engine/prices", dependencies=[Depends(require_internal)])
+def prices(req: PricesReq) -> dict:
+    from .data import DataLayer
+    from .data.kline import kline
+
+    dl = DataLayer(config.cache_dir())
+    rows, degraded = kline(
+        dl,
+        req.code,
+        start=req.start or "",
+        end=req.end or "99999999",
+        limit=req.limit,
+        adjust=req.adjust,
+    )
+    return {"code": req.code, "adjust": req.adjust, "rows": rows, "degraded": degraded}
+
+
 # ── 盘后:出信号 + 模拟盘撮合记账(run_eod)────────────────────────────────
 class PaperPosition(BaseModel):
     code: str
