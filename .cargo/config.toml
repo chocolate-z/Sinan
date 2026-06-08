@@ -1,0 +1,22 @@
+# 司南项目级 cargo 源(仅对本仓库生效,不动你电脑的全局配置)。
+# cargo 从 crate 目录向上查找 .cargo/config.toml,项目级优先于全局 $CARGO_HOME/config.toml,
+# 因此在本仓库内构建会用下面的阿里云 sparse 镜像;仓库外的其它项目仍用你的全局设置。
+#
+# CI 注意:.github/workflows/ci.yml 的 rust job 会先删除本文件,
+# 让境外 GitHub runner 直接用默认 crates.io(更快)。
+
+[source.crates-io]
+replace-with = "aliyun-sparse"
+
+[source.aliyun-sparse]
+registry = "sparse+https://mirrors.aliyun.com/crates.io-index/"
+
+# 备用源(如需切换,把 replace-with 改成对应名即可):
+[source.rsproxy-sparse]
+registry = "sparse+https://rsproxy.cn/index/"
+
+[source.ustc-sparse]
+registry = "sparse+https://mirrors.ustc.edu.cn/crates.io-index/"
+
+[net]
+git-fetch-with-cli = true
