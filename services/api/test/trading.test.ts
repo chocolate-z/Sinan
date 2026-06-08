@@ -153,3 +153,33 @@ test('bad portfolio / missing dates rejected', async () => {
     await app.close();
   }
 });
+
+test('pnl/today 实时当日收益 = Σ 持仓 × (现价 − 昨收)', async () => {
+  const engine = new FakeEngineClient(null, [], PAPER_RESULT, {
+    '600519.SH': { price: 21, prev_close: 20 },
+  });
+  const app = await createApp({
+    dbPath: ':memory:',
+    secretStore: new MemorySecretStore(),
+    engineClient: engine,
+  });
+  await app.init();
+  const fastify = app.getHttpAdapter().getInstance();
+  await fastify.ready();
+  try {
+    // 先跑一轮建立模型持仓(600519.SH 100 股)
+    await fastify.inject({
+      method: 'POST',
+      url: '/api/v1/paper/run',
+      payload: { today: '2024-01-25', effective_date: '2024-01-26' },
+    });
+    const r = await fastify.inject({ method: 'GET', url: '/api/v1/pnl/today?portfolio=model' });
+    assert.equal(r.statusCode, 200);
+    const body = r.json();
+    assert.equal(body.day_pnl, 100); // 100 × (21 − 20)
+    assert.equal(body.market_value, 2100); // 100 × 21
+    assert.equal(body.degraded, false);
+  } finally {
+    await app.close();
+  }
+});

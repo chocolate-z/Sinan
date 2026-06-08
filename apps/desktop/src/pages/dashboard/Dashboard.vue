@@ -13,6 +13,7 @@ onMounted(() => {
   if (app.onboardingDone) {
     trading.fetchModel();
     trading.fetchPersonal();
+    trading.fetchLivePnl(); // 实时当日收益(现价 vs 昨收)
   }
 });
 </script>
@@ -38,13 +39,23 @@ onMounted(() => {
         <div class="card kpi">
           <div class="kpi-label">当日收益 · 个人</div>
           <div
-            v-if="trading.personalPnlLatest"
+            v-if="trading.livePersonal"
+            class="kpi-val"
+            :class="app.pnlClass(trading.livePersonal.day_pnl)"
+          >
+            {{ formatPnl(trading.livePersonal.day_pnl) }}
+            <span class="kpi-pct"
+              >实时{{ trading.livePersonal.degraded ? ' · 部分缺价' : '' }}</span
+            >
+          </div>
+          <div
+            v-else-if="trading.personalPnlLatest"
             class="kpi-val"
             :class="app.pnlClass(trading.personalPnlLatest.day_pnl)"
           >
             {{ formatPnl(trading.personalPnlLatest.day_pnl) }}
             <span class="kpi-pct"
-              >{{ (trading.personalPnlLatest.day_pnl_pct * 100).toFixed(2) }}%</span
+              >{{ (trading.personalPnlLatest.day_pnl_pct * 100).toFixed(2) }}% · 盘后</span
             >
           </div>
           <div v-else class="muted">暂无(在「持仓 · 个人」记录持仓)</div>
@@ -52,7 +63,15 @@ onMounted(() => {
         <div class="card kpi">
           <div class="kpi-label">当日收益 · 模型</div>
           <div
-            v-if="trading.modelPnlLatest"
+            v-if="trading.liveModel"
+            class="kpi-val"
+            :class="app.pnlClass(trading.liveModel.day_pnl)"
+          >
+            {{ formatPnl(trading.liveModel.day_pnl) }}
+            <span class="kpi-pct">实时{{ trading.liveModel.degraded ? ' · 部分缺价' : '' }}</span>
+          </div>
+          <div
+            v-else-if="trading.modelPnlLatest"
             class="kpi-val"
             :class="app.pnlClass(trading.modelPnlLatest.day_pnl_pct)"
           >

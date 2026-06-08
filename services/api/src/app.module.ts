@@ -10,6 +10,7 @@ import { LogBus } from './bus/log-bus.js';
 import { JobBus, JobsController, JobsService } from './modules/jobs.js';
 import { ProvidersController } from './modules/providers.js';
 import { PaperService, PortfolioController, TradingController } from './modules/trading.js';
+import { SchedulerService } from './modules/scheduler.js';
 import {
   CoverageController,
   HealthController,
@@ -66,6 +67,7 @@ export class AppModule {
         JobBus,
         JobsService,
         PaperService,
+        SchedulerService,
       ],
     };
   }

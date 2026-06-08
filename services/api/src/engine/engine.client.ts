@@ -39,6 +39,10 @@ export interface EngineClient {
   cacheBuild(req: CacheBuildRequest, onEvent: (ev: any) => void): Promise<void>;
   /** 盘后:出信号 + 模拟盘撮合记账(engine 计算,api 落库)。 */
   paperRun(req: PaperRunRequest): Promise<any>;
+  /** 实时报价(新浪→腾讯),供当日收益。 */
+  quotes(
+    codes: string[],
+  ): Promise<Record<string, { price?: number | null; prev_close?: number | null }>>;
 }
 
 export const ENGINE_CLIENT = Symbol('ENGINE_CLIENT');
@@ -94,5 +98,15 @@ export class HttpEngineClient implements EngineClient {
     });
     if (!res.ok) throw new Error(`engine paper/run ${res.status}`);
     return res.json();
+  }
+
+  async quotes(codes: string[]): Promise<Record<string, any>> {
+    const res = await fetch(`${config.engineBaseUrl()}/engine/quotes`, {
+      method: 'POST',
+      headers: this.headers(),
+      body: JSON.stringify({ codes }),
+    });
+    if (!res.ok) throw new Error(`engine quotes ${res.status}`);
+    return (await res.json()) as Record<string, any>;
   }
 }

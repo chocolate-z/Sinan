@@ -48,6 +48,7 @@ export const API_ENDPOINTS = {
   portfolios_personal_delete: { method: 'DELETE', path: '/portfolios/personal/holdings/:code' },
   trades_list: { method: 'GET', path: '/trades' },
   pnl_daily: { method: 'GET', path: '/pnl/daily' },
+  pnl_today: { method: 'GET', path: '/pnl/today' },
 } as const satisfies Record<string, EndpointDef>;
 
 /** api ↔ engine 内部(:59915,X-Sinan-Internal)。 */

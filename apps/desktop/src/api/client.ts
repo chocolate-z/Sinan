@@ -129,4 +129,6 @@ export const api = {
     request<any[]>(API_ENDPOINTS.trades_list, { query: { portfolio, from, to } }),
   pnlDaily: (portfolio: 'model' | 'personal' = 'model') =>
     request<any[]>(API_ENDPOINTS.pnl_daily, { query: { portfolio } }),
+  pnlToday: (portfolio: 'model' | 'personal' = 'model') =>
+    request<any>(API_ENDPOINTS.pnl_today, { query: { portfolio } }),
 };

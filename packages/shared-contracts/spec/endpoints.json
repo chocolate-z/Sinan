@@ -37,7 +37,8 @@
       "path": "/portfolios/personal/holdings/:code"
     },
     "trades_list": { "method": "GET", "path": "/trades" },
-    "pnl_daily": { "method": "GET", "path": "/pnl/daily" }
+    "pnl_daily": { "method": "GET", "path": "/pnl/daily" },
+    "pnl_today": { "method": "GET", "path": "/pnl/today" }
   },
   "engine": {
     "health": { "method": "GET", "path": "/healthz" },

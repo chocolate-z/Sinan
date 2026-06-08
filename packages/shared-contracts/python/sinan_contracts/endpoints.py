@@ -42,6 +42,7 @@ API_ENDPOINTS: dict[str, dict[str, str]] = {
     "portfolios_personal_delete": {"method": "DELETE", "path": "/portfolios/personal/holdings/:code"},
     "trades_list": {"method": "GET", "path": "/trades"},
     "pnl_daily": {"method": "GET", "path": "/pnl/daily"},
+    "pnl_today": {"method": "GET", "path": "/pnl/today"},
 }
 
 ENGINE_ENDPOINTS: dict[str, dict[str, str]] = {

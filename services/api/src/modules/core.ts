@@ -4,6 +4,7 @@ import { Observable, map } from 'rxjs';
 import * as config from '../config.js';
 import { Repository } from '../db/repository.js';
 import { LogBus } from '../bus/log-bus.js';
+import { SchedulerService } from './scheduler.js';
 
 @Controller()
 export class HealthController {
@@ -58,7 +59,10 @@ export class OnboardingController {
 
 @Controller()
 export class SettingsController {
-  constructor(private readonly repo: Repository) {}
+  constructor(
+    private readonly repo: Repository,
+    private readonly scheduler: SchedulerService,
+  ) {}
 
   @Get('settings')
   all(): any {
@@ -68,6 +72,8 @@ export class SettingsController {
   @Put('settings/:key')
   put(@Param('key') key: string, @Body() body: { value: unknown }): any {
     this.repo.settingPut(key, body?.value);
+    // 调度相关设置热生效:重排下一次盘后触发。
+    if (key === 'daily_run_time' || key === 'auto_signal') this.scheduler.reschedule();
     return { key, value: this.repo.settingGet(key) };
   }
 }

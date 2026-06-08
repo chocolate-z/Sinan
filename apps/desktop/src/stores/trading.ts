@@ -30,6 +30,8 @@ interface TradingState {
   personalHoldings: Holding[];
   modelPnl: PnlRow[];
   personalPnl: PnlRow[];
+  liveModel: { day_pnl: number; market_value: number; degraded: boolean } | null;
+  livePersonal: { day_pnl: number; market_value: number; degraded: boolean } | null;
   loading: boolean;
   error: string | null;
 }
@@ -42,6 +44,8 @@ export const useTradingStore = defineStore('trading', {
     personalHoldings: [],
     modelPnl: [],
     personalPnl: [],
+    liveModel: null,
+    livePersonal: null,
     loading: false,
     error: null,
   }),
@@ -105,6 +109,18 @@ export const useTradingStore = defineStore('trading', {
     },
     async removePersonal(code: string) {
       this.personalHoldings = await api.deletePersonalHolding(code);
+    },
+    /** 实时当日收益(现价 vs 昨收 × 持仓),个人/模型分别。实时源不可用时静默降级。 */
+    async fetchLivePnl() {
+      try {
+        [this.liveModel, this.livePersonal] = await Promise.all([
+          api.pnlToday('model'),
+          api.pnlToday('personal'),
+        ]);
+      } catch {
+        this.liveModel = null;
+        this.livePersonal = null;
+      }
     },
   },
 });

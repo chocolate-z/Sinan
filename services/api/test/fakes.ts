@@ -11,7 +11,14 @@ export class FakeEngineClient implements EngineClient {
     private readonly testResult: ProviderTestResult | null,
     private readonly events: any[] = [],
     private readonly paperResult: any = null,
+    private readonly quotesResult: Record<string, any> = {},
   ) {}
+
+  async quotes(codes: string[]): Promise<Record<string, any>> {
+    const out: Record<string, any> = {};
+    for (const c of codes) if (this.quotesResult[c]) out[c] = this.quotesResult[c];
+    return out;
+  }
 
   async providerTest(): Promise<ProviderTestResult> {
     return this.testResult ?? { status: 'ok', caps: {}, degraded: [] };

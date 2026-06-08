@@ -575,6 +575,14 @@ export class Repository {
     );
   }
 
+  /** 某账本的持仓(给实时当日收益用)。portfolio 由调用方校验。 */
+  holdingsFor(
+    portfolio: string,
+  ): Array<{ stock_code: string; shares: number; avg_cost: number; stock_name?: string | null }> {
+    const table = portfolio === 'personal' ? 'holdings_personal' : 'holdings_model';
+    return this.db.all<any>(`SELECT stock_code, shares, avg_cost, stock_name FROM ${table}`);
+  }
+
   // ── 个人持仓(手动维护)──────────────────────────────────────────────
   personalList(): any[] {
     return this.db.all<any>('SELECT * FROM holdings_personal ORDER BY stock_code');

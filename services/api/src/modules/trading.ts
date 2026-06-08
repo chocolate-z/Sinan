@@ -53,6 +53,59 @@ export class PaperService {
     this.repo.persistPaperResult(strategyId, result, { persistTrades: fill });
     return { strategy_id: strategyId, ...result };
   }
+
+  /** 实时当日收益:Σ 持仓 × (现价 − 昨收)。个人/模型分别;缺报价标 degraded(诚实降级)。 */
+  async livePnl(portfolio: 'model' | 'personal'): Promise<any> {
+    const holds = this.repo.holdingsFor(portfolio);
+    const asof = new Date().toISOString();
+    if (!holds.length) {
+      return { portfolio, day_pnl: 0, market_value: 0, by_holding: [], degraded: false, asof };
+    }
+    let quotes: Record<string, any> = {};
+    let degraded = false;
+    try {
+      quotes = await this.engine.quotes(holds.map((h) => h.stock_code));
+    } catch {
+      degraded = true;
+    }
+    let dayPnl = 0;
+    let marketValue = 0;
+    const byHolding: any[] = [];
+    for (const h of holds) {
+      const q = quotes[h.stock_code];
+      const price = q?.price ?? null;
+      const prev = q?.prev_close ?? null;
+      if (price != null && prev != null) {
+        const d = h.shares * (price - prev);
+        dayPnl += d;
+        marketValue += h.shares * price;
+        byHolding.push({
+          stock_code: h.stock_code,
+          shares: h.shares,
+          price,
+          prev_close: prev,
+          day_pnl: d,
+        });
+      } else {
+        degraded = true;
+        byHolding.push({
+          stock_code: h.stock_code,
+          shares: h.shares,
+          price: null,
+          prev_close: null,
+          day_pnl: null,
+        });
+      }
+    }
+    return {
+      portfolio,
+      day_pnl: dayPnl,
+      market_value: marketValue,
+      by_holding: byHolding,
+      degraded,
+      asof,
+    };
+  }
 }
 
 @Controller()
@@ -98,6 +151,14 @@ export class TradingController {
       throw new BadRequestException(`portfolio 必须为 ${PORTFOLIOS.join('/')}`);
     }
     return this.repo.pnlDaily(portfolio, strategyId);
+  }
+
+  @Get('pnl/today')
+  pnlToday(@Query('portfolio') portfolio = 'model'): any {
+    if (!(PORTFOLIOS as readonly string[]).includes(portfolio)) {
+      throw new BadRequestException(`portfolio 必须为 ${PORTFOLIOS.join('/')}`);
+    }
+    return this.paper.livePnl(portfolio as 'model' | 'personal');
   }
 }
 
