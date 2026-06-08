@@ -98,19 +98,22 @@ def run_eod(
             reason = "market_filter" if not plan.market_open else "rank_out"
             signals.append(GeneratedSignal(code, "buy", r["score"], reason, True, _breakdown(r)))
 
-    # T+1 开盘价撮合(fill=False 仅出信号、不撮合,供 /signals/generate 预览)。
-    if fill:
-        apply_fills(account, plan, open_prices_next)
-
-    mark = {**prices_today, **open_prices_next}
-    nav = account.nav(mark)
+    # 红线#1:T 日估值只用 T 收盘价(prices_today),绝不混入 T+1 开盘价。
+    # 先按撮合前(T 日实际持有)的组合在 T 收盘估值,得到诚实的当日收益。
+    nav = account.nav(prices_today)
     daily_return = (nav / prev_nav - 1.0) if prev_nav else None
     peak = max(peak_nav or nav, nav)
     drawdown = (nav - peak) / peak if peak else 0.0
 
+    # T+1 开盘价仅用于成交撮合,不参与任何 T 日估值(fill=False 则仅出信号、不撮合)。
+    if fill:
+        apply_fills(account, plan, open_prices_next)
+
     account_state = {
+        # cash / market_value 为撮合后的结转书(供下一日快照),按 T 收盘单一价集估值,仍不含未来。
         "cash": account.cash,
-        "market_value": account.holdings_value(mark),
+        "market_value": account.holdings_value(prices_today),
+        # nav 为当日诚实净值口径(撮合前 @T 收盘),供 daily_pnl 与收益链连续性。
         "nav": nav,
         "daily_return": daily_return,
         "drawdown": drawdown,

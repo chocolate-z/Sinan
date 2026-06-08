@@ -1,0 +1,59 @@
+name: Release (desktop)
+
+# 私有仓库可用(macOS runner 计 10x、Windows 10x... 实为 Windows 2x/macOS 10x,注意额度)。
+# 触发:手动(workflow_dispatch)或推送 v* 标签。产物为三平台安装包 + 起草 GitHub Release。
+#
+# 前提(M6 打包里程碑):apps/desktop/src-tauri/binaries 下需放入冻结的 sidecar
+#   —— engine(PyInstaller 单可执行)与 api(Node SEA),并在 tauri.conf.json 配 externalBin。
+#   未冻结 sidecar 前,安装包内无后端,应用无法运行。本工作流为发布脚手架,M6 完成即可产出可用包。
+# 自动更新签名:在仓库 Secrets 配 TAURI_SIGNING_PRIVATE_KEY(Ed25519)后取消下方注释。
+
+on:
+  workflow_dispatch:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: windows-latest, args: '' }
+          - { os: macos-latest, args: '--target universal-apple-darwin' }
+          - { os: ubuntu-latest, args: '' }
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: pnpm
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Linux 系统依赖(WebKitGTK)
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
+
+      - run: pnpm install
+
+      - uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          # TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          projectPath: apps/desktop
+          args: ${{ matrix.args }}
+          tagName: ${{ github.ref_type == 'tag' && github.ref_name || 'app-v__VERSION__' }}
+          releaseName: '司南 Sinan v__VERSION__'
+          releaseDraft: true
+          prerelease: false

@@ -71,6 +71,28 @@ def test_eod_market_filter_clears_and_blocks(tmp_path):
     assert "600519.SH" not in acc.positions
 
 
+def test_eod_valuation_independent_of_future_open(tmp_path):
+    """防未来函数回归:T 日 nav/当日收益只依赖 T 收盘价,与 T+1 开盘价无关。"""
+    data, T, eff = _setup(tmp_path)
+
+    def run(open_px):
+        acc = SimAccount(cash=1_000_000)
+        acc.positions["600519.SH"] = Position("600519.SH", 100, 20.0, "2024-01-01", "2024-01-01")
+        return run_eod(
+            data=data, codes=CODES, today=T, effective_date=eff, account=acc,
+            bench_closes=_rising(),
+            prices_today={c: 20.0 for c in CODES},
+            open_prices_next=open_px,
+            params={"buy_threshold": 0.0, "max_holdings": 5},
+            prev_nav=1_000_000,
+        )
+
+    a = run({c: 20.0 for c in CODES})
+    b = run({c: 999.0 for c in CODES})  # 截然不同的 T+1 开盘价
+    assert a.account["nav"] == b.account["nav"], "T 日净值被 T+1 价格影响 → 未来函数"
+    assert a.account["daily_return"] == b.account["daily_return"]
+
+
 def test_eod_degraded_when_no_northbound(tmp_path):
     dates = _dates(30)
     T, eff = dates[24], dates[25]
