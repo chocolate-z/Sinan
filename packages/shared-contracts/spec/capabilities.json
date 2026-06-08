@@ -1,0 +1,17 @@
+{
+  "$comment": "能力位单一真相源(总纲④裁决)。Provider 声明能力,调用方只表达需求,注册表按能力路由+降级。bit 用于引擎内位运算路由;name 用于 DTO/UI/DB caps_json。",
+  "capabilities": [
+    { "name": "DAILY_OHLCV", "bit": 0, "desc": "日线行情(OHLCV)" },
+    { "name": "ADJ_FACTOR", "bit": 1, "desc": "复权因子" },
+    { "name": "REALTIME_QUOTE", "bit": 2, "desc": "现价/昨收(当日收益、盘中刷新)" },
+    { "name": "FUNDAMENTAL", "bit": 3, "desc": "财务三表" },
+    { "name": "FINA_INDICATOR", "bit": 4, "desc": "财务指标" },
+    { "name": "DAILY_BASIC", "bit": 5, "desc": "PE/PB/换手/市值" },
+    { "name": "NORTHBOUND", "bit": 6, "desc": "北向资金 moneyflow_hsgt" },
+    { "name": "INDEX_OHLCV", "bit": 7, "desc": "指数行情(沪深300择时闸)" },
+    { "name": "INDEX_WEIGHT", "bit": 8, "desc": "指数成分权重" },
+    { "name": "SW_INDUSTRY", "bit": 9, "desc": "申万行业" },
+    { "name": "EARNINGS_FORECAST", "bit": 10, "desc": "盈利预测" },
+    { "name": "TRADE_CAL", "bit": 11, "desc": "交易日历" }
+  ]
+}

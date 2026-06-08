@@ -1,0 +1,76 @@
+{
+  "$comment": "司南打包默认配置(只读基线)。三层配置优先级:打包默认 < SQLite settings < SINAN_* 环境变量。机密(token)绝不进此体系,只走钥匙串。",
+  "schema_version": 1,
+  "ports": {
+    "api": 59914,
+    "engine": 59915,
+    "probe_start": 59900,
+    "probe_end": 59999
+  },
+  "settings_defaults": {
+    "theme": "light",
+    "pnl_invert": false,
+    "refresh_interval": 5,
+    "close_behavior": "tray",
+    "float_window": false,
+    "auto_signal": true,
+    "daily_run_time": "15:30",
+    "grow_cache_time": "15:35",
+    "grow_cache_per_day": 200,
+    "active_provider": "tushare",
+    "realtime_provider": "sina",
+    "train_device": "auto",
+    "train_threads": "auto"
+  },
+  "risk_defaults": {
+    "max_holdings": 5,
+    "max_position_ratio": 0.2,
+    "buy_threshold": 0.65,
+    "sell_threshold": 0.35,
+    "stop_loss": -0.12,
+    "take_profit": 0.3,
+    "portfolio_stop": -0.12,
+    "min_hold_days": 10,
+    "cooldown_days": 5,
+    "liq_window_days": 60,
+    "liq_min_amount_yi": 2.0,
+    "market_filter": true,
+    "market_ma_days": 20,
+    "signal_lag": 1
+  },
+  "split_defaults": {
+    "train": 0.7,
+    "valid": 0.15,
+    "test": 0.15,
+    "purge_days": 5,
+    "embargo_days": 6
+  },
+  "cost_defaults": {
+    "$comment": "交易成本:印花税仅卖出 0.05%;佣金双边万2.5最低5元;冲击/滑点 bps",
+    "stamp_tax": 0.0005,
+    "commission_rate": 0.00025,
+    "commission_min": 5.0,
+    "transfer_fee_rate": 0.00001,
+    "impact_bps": 5.0
+  },
+  "rate_limit_defaults": {
+    "tushare": { "per_min": 500 },
+    "akshare": { "per_min": 120, "concurrency": 4 },
+    "realtime_sina": { "per_min": 600 },
+    "realtime_tencent": { "per_min": 600 }
+  },
+  "cache_build_defaults": {
+    "start_year": 2018,
+    "datasets": ["price", "adj_factor", "daily_basic", "northbound"],
+    "boards": ["sh", "sz"],
+    "flush_every": 20
+  },
+  "benchmark": "000300.SH",
+  "engine": {
+    "request_timeout_s": 60,
+    "max_retries": 5,
+    "backoff_base_s": 1.0,
+    "circuit_break_failures": 5,
+    "circuit_break_cooldown_s": 30
+  }
+}

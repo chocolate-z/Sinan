@@ -1,0 +1,19 @@
+packages:
+  - 'packages/*'
+  - 'services/api'
+  - 'apps/desktop'
+
+allowBuilds:
+  '@nestjs/core': true
+  '@parcel/watcher': true
+  esbuild: true
+  vue-demi: true
+
+minimumReleaseAgeExclude:
+  - '@vue/language-core@3.3.4'
+  - vue-tsc@3.3.4
+
+# 仅允许这些依赖运行安装期构建脚本(其余被忽略以防供应链风险)。
+# esbuild 是 vitest 的依赖,需要其 postinstall 落地平台二进制。
+onlyBuiltDependencies:
+  - esbuild

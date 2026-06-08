@@ -1,0 +1,11 @@
+[package]
+name = "sinan-shell-core"
+version = "0.0.0"
+edition = "2024"
+description = "司南桌面外壳核心逻辑(端口探测 / 会话 token / sidecar 规格 / ports.json),与 Tauri 解耦,便于单测。"
+
+[lib]
+path = "src/lib.rs"
+
+# 刻意零外部依赖:仅 std,保证离线可编译可测(OS CSPRNG 经系统 FFI,ports.json 手写 JSON)。
+[dependencies]

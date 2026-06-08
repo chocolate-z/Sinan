@@ -1,0 +1,19 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "sinan-contracts"
+version = "0.0.0"
+description = "司南跨服务契约 Python 绑定(单一真相源 spec/*.json 的镜像)"
+requires-python = ">=3.11"
+dependencies = ["pydantic>=2.5"]
+
+[project.optional-dependencies]
+test = ["pytest>=8.0"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["sinan_contracts"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

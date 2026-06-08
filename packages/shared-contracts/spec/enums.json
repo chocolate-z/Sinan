@@ -1,0 +1,26 @@
+{
+  "$comment": "跨服务共享枚举单一真相源。TS 与 Python 绑定均以此校验,杜绝前后端漂移。",
+  "Provider": ["tushare", "akshare", "realtime_sina", "realtime_tencent"],
+  "ProviderStatus": ["ok", "error", "unknown"],
+  "Dataset": [
+    "price",
+    "adj_factor",
+    "daily_basic",
+    "fundamental",
+    "fina_indicator",
+    "northbound",
+    "index_ohlcv",
+    "index_weight",
+    "sw_industry"
+  ],
+  "JobType": ["cache_build", "incremental", "train", "signal_gen", "paper_run", "news_fetch"],
+  "JobStatus": ["queued", "running", "paused", "done", "failed", "canceled"],
+  "JobTrigger": ["manual", "schedule", "onboarding"],
+  "Board": ["sh", "sz", "bj"],
+  "Portfolio": ["model", "personal"],
+  "SignalAction": ["buy", "sell", "hold"],
+  "TradeSide": ["buy", "sell"],
+  "TradeReason": ["signal", "stop_loss", "take_profit", "rank_out", "market_filter", "manual"],
+  "LogLevel": ["debug", "info", "warn", "error"],
+  "OnboardingStep": ["welcome", "select_source", "credential", "test", "build_cache", "done"]
+}

@@ -1,0 +1,21 @@
+# 构建产物与依赖
+**/dist/
+**/node_modules/
+**/target/
+.venv/
+pnpm-lock.yaml
+
+# 运行期/数据(红线:零数据入库)
+**/*.parquet
+**/*.duckdb
+**/*.db
+cache/
+logs/
+runtime/
+
+# 大文档不重排
+SINAN_DESIGN.md
+
+# 其它语言交由各自格式化器
+**/*.py
+**/*.rs

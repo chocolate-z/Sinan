@@ -1,0 +1,60 @@
+"""列式缓存布局:parquet hive 分区(board + year),DuckDB 只读视图。
+
+cache/<dataset>/board=<sh|sz|bj>/year=<YYYY>/part.parquet
+分区键服务诚实评估:查询带 trade_date<=asof(或财务 ann_date<=asof),从存储层杜绝未来函数。
+"""
+
+from __future__ import annotations
+
+from pathlib import Path
+
+# 每个 dataset 的主键与日期列。财务类按 ann_date(公告日)做 PIT,非 end_date(报告期)。
+DATASET_KEYS: dict[str, tuple[str, ...]] = {
+    "price": ("stock_code", "trade_date"),
+    "adj_factor": ("stock_code", "trade_date"),
+    "daily_basic": ("stock_code", "trade_date"),
+    "northbound": ("stock_code", "trade_date"),
+    "index_ohlcv": ("stock_code", "trade_date"),
+    "fundamental": ("stock_code", "end_date"),
+    "fina_indicator": ("stock_code", "end_date"),
+    "index_weight": ("index_code", "trade_date", "stock_code"),
+    "sw_industry": ("stock_code", "in_date"),
+}
+
+# 财务类:asof 取 ann_date<=T 的最新一期(根除「一季报4月底才公告」的泄漏)。
+FINANCIAL_PIT: frozenset[str] = frozenset({"fundamental", "fina_indicator"})
+
+# 各 dataset 的「可见日」列(asof 比较列)。
+ASOF_DATE_COL: dict[str, str] = {
+    "price": "trade_date",
+    "adj_factor": "trade_date",
+    "daily_basic": "trade_date",
+    "northbound": "trade_date",
+    "index_ohlcv": "trade_date",
+    "index_weight": "trade_date",
+    "fundamental": "ann_date",
+    "fina_indicator": "ann_date",
+    "sw_industry": "in_date",
+}
+
+
+def dataset_dir(cache_root: Path, dataset: str) -> Path:
+    return Path(cache_root) / dataset
+
+
+def partition_dir(cache_root: Path, dataset: str, board: str, year: str | int) -> Path:
+    return dataset_dir(cache_root, dataset) / f"board={board}" / f"year={year}"
+
+
+def partition_file(cache_root: Path, dataset: str, board: str, year: str | int) -> Path:
+    return partition_dir(cache_root, dataset, board, year) / "part.parquet"
+
+
+def glob_for(cache_root: Path, dataset: str) -> str:
+    """DuckDB read_parquet 的 glob(hive 分区)。"""
+    return str(dataset_dir(cache_root, dataset) / "**" / "*.parquet")
+
+
+def has_any(cache_root: Path, dataset: str) -> bool:
+    d = dataset_dir(cache_root, dataset)
+    return d.exists() and any(d.rglob("*.parquet"))

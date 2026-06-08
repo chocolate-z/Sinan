@@ -1,0 +1,24 @@
+/* 盈亏色与系统色两组 class 互不相交。盈亏只出现在金额/涨跌/收益语境;
+   系统色只出现在任务/健康/连接语境(成功用主蓝,绝不用盈亏绿表达"成功")。 */
+.pnl-up {
+  color: var(--pnl-up);
+}
+.pnl-down {
+  color: var(--pnl-down);
+}
+.pnl-flat {
+  color: var(--pnl-flat);
+}
+
+.status-ok {
+  color: var(--st-ok);
+}
+.status-warn {
+  color: var(--st-warn);
+}
+.status-err {
+  color: var(--st-err);
+}
+.status-info {
+  color: var(--st-info);
+}

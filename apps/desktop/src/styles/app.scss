@@ -1,0 +1,26 @@
+// 全局 SCSS:演示变量 / 嵌套 / mixin,与设计令牌(CSS 变量)协同。
+// 注意:Tailwind 的 @import 放在 tailwind.css(交给 @tailwindcss/vite 处理),不混入 SCSS。
+
+$radius-card: var(--r-lg);
+$gap: var(--sp-3);
+
+@mixin surface-card {
+  background: var(--c-surface);
+  border: 1px solid var(--c-border);
+  border-radius: $radius-card;
+}
+
+// 可复用卡片类(SCSS 嵌套 + mixin)。
+.s-card {
+  @include surface-card;
+  padding: var(--sp-4);
+
+  & + & {
+    margin-top: $gap;
+  }
+
+  &__title {
+    font-weight: 600;
+    margin-bottom: var(--sp-2);
+  }
+}

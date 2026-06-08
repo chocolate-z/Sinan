@@ -1,0 +1,15 @@
+# 统一文本为 LF(与 .editorconfig / .prettierrc 一致),避免跨平台 CRLF 噪声。
+* text=auto eol=lf
+
+# 二进制文件不做行尾转换。
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.icns binary
+*.parquet binary
+*.duckdb binary
+*.woff binary
+*.woff2 binary
+*.ttf binary

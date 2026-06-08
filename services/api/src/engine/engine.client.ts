@@ -1,0 +1,73 @@
+/** engine 客户端:api→engine 内部调用(X-Sinan-Internal)。前端永不直连 engine(红线#6)。 */
+import { Injectable } from '@nestjs/common';
+import * as config from '../config.js';
+
+export interface ProviderTestResult {
+  status: string;
+  latency_ms?: number | null;
+  caps: Record<string, boolean>;
+  rate_limit?: { per_min: number; concurrency?: number };
+  points_hint?: number | null;
+  degraded: string[];
+  message?: string | null;
+}
+
+export interface CacheBuildRequest {
+  job_id: string;
+  params: Record<string, unknown>;
+  tokens: Record<string, string>;
+  cursor?: Record<string, unknown> | null;
+  end_date?: string | null;
+}
+
+export interface EngineClient {
+  providerTest(provider: string, token?: string): Promise<ProviderTestResult>;
+  /** 连接 engine cache/build SSE,逐事件回调。完成时 resolve。 */
+  cacheBuild(req: CacheBuildRequest, onEvent: (ev: any) => void): Promise<void>;
+}
+
+export const ENGINE_CLIENT = Symbol('ENGINE_CLIENT');
+
+@Injectable()
+export class HttpEngineClient implements EngineClient {
+  private headers(): Record<string, string> {
+    const h: Record<string, string> = { 'content-type': 'application/json' };
+    const tok = config.internalToken();
+    if (tok) h['X-Sinan-Internal'] = tok;
+    return h;
+  }
+
+  async providerTest(provider: string, token?: string): Promise<ProviderTestResult> {
+    const res = await fetch(`${config.engineBaseUrl()}/engine/provider/test`, {
+      method: 'POST',
+      headers: this.headers(),
+      body: JSON.stringify({ provider, token }),
+    });
+    if (!res.ok) throw new Error(`engine provider/test ${res.status}`);
+    return (await res.json()) as ProviderTestResult;
+  }
+
+  async cacheBuild(req: CacheBuildRequest, onEvent: (ev: any) => void): Promise<void> {
+    const res = await fetch(`${config.engineBaseUrl()}/engine/cache/build`, {
+      method: 'POST',
+      headers: this.headers(),
+      body: JSON.stringify(req),
+    });
+    if (!res.ok || !res.body) throw new Error(`engine cache/build ${res.status}`);
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buf = '';
+    for (;;) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buf += decoder.decode(value, { stream: true });
+      let nl: number;
+      while ((nl = buf.indexOf('\n\n')) >= 0) {
+        const chunk = buf.slice(0, nl);
+        buf = buf.slice(nl + 2);
+        const line = chunk.split('\n').find((l) => l.startsWith('data: '));
+        if (line) onEvent(JSON.parse(line.slice(6)));
+      }
+    }
+  }
+}

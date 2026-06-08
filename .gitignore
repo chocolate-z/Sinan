@@ -1,0 +1,48 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Build output
+dist/
+build/
+*.tsbuildinfo
+out/
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.egg-info/
+
+# Rust / Tauri
+target/
+apps/desktop/src-tauri/binaries/
+
+# Runtime user data (NEVER commit — zero data/token in repo)
+*.db
+*.db-wal
+*.db-shm
+*.duckdb
+*.parquet
+cache/
+models/
+runtime/
+logs/
+*.log
+
+# Secrets — red line: never commit any token/credential
+*.token
+.env
+.env.*
+secrets.*
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/*
+!.vscode/extensions.json
