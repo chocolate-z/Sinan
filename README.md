@@ -73,7 +73,7 @@ python -m venv .venv                          # 引擎 venv
 .venv/Scripts/python -m uvicorn sinan.app:app --host 127.0.0.1 --port 59915
 # api(:59914),指向 engine
 SINAN_ENGINE_PORT=59915 node services/api/dist/src/main.js
-# 前端(:5173)
+# 前端(:5914)
 pnpm --filter @sinan/desktop dev
 ```
 

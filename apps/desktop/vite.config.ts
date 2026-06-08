@@ -6,7 +6,8 @@ import tailwindcss from '@tailwindcss/vite';
 export default defineConfig({
   plugins: [vue(), tailwindcss()],
   clearScreen: false,
-  server: { port: 5173, strictPort: true },
+  // 固定非默认端口(避开 Vite 默认 5173;Tauri devUrl 必须与此一致)。
+  server: { port: 5914, strictPort: true },
   build: { target: 'es2022', outDir: 'dist', emptyOutDir: true },
   test: {
     environment: 'happy-dom',
