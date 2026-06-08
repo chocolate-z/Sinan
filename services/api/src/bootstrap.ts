@@ -13,7 +13,8 @@ export async function createApp(opts: AppOptions = {}): Promise<NestFastifyAppli
   );
   // 前缀去掉开头的 '/' 以符合 setGlobalPrefix 约定。
   app.setGlobalPrefix(API_BASE.replace(/^\//, ''));
-  // 本地单用户:仅放行 Tauri WebView 来源。
-  app.enableCors({ origin: ['tauri://localhost', 'http://localhost', 'http://127.0.0.1'] });
+  // 本地单用户:放行 Tauri WebView 与本机 localhost/127.0.0.1 任意端口(浏览器开发 :5914 等);
+  // 拒绝其它一切来源(红线:零外联)。
+  app.enableCors({ origin: ['tauri://localhost', /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/] });
   return app;
 }
