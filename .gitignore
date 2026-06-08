@@ -12,6 +12,7 @@ out/
 __pycache__/
 *.py[cod]
 .venv/
+.venv-*/
 venv/
 .pytest_cache/
 .mypy_cache/
@@ -22,17 +23,18 @@ venv/
 target/
 apps/desktop/src-tauri/binaries/
 
-# Runtime user data (NEVER commit — zero data/token in repo)
+# Runtime user data (NEVER commit — zero data/token in repo).
+# 运行期数据在 $APPDATA/Sinan(仓库外),这里只按文件类型忽略,
+# 绝不用 cache//logs//models/ 这类目录名(会误伤同名源码包:
+# services/engine/sinan/cache、apps/desktop/src/pages/logs 等)。
 *.db
 *.db-wal
 *.db-shm
 *.duckdb
 *.parquet
-cache/
-models/
-runtime/
-logs/
 *.log
+# 若把 SINAN_DATA_DIR 指到仓库内,请用此约定目录(已忽略)
+/.sinan-data/
 
 # Secrets — red line: never commit any token/credential
 *.token
