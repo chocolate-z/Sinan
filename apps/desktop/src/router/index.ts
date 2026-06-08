@@ -37,10 +37,14 @@ const routes: RouteRecordRaw[] = [
   },
   {
     path: '/signals',
-    component: () => import('../pages/Locked.vue'),
+    component: () => import('../pages/signals/Signals.vue'),
     meta: { title: '信号', needsData: true },
   },
-  { path: '/portfolio', component: () => import('../pages/Locked.vue'), meta: { title: '持仓' } },
+  {
+    path: '/portfolio',
+    component: () => import('../pages/portfolio/Portfolio.vue'),
+    meta: { title: '持仓' },
+  },
   {
     path: '/backtest',
     component: () => import('../pages/Locked.vue'),

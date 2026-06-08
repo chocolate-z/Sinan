@@ -114,4 +114,19 @@ export const api = {
   coverage: () => request<any>(API_ENDPOINTS.data_coverage),
   logs: () => request<any[]>(API_ENDPOINTS.logs_list),
   settings: () => request<Record<string, unknown>>(API_ENDPOINTS.settings_list),
+
+  // ── M1 交易域 ──────────────────────────────────────────────────────────
+  signals: (date: string) => request<any[]>(API_ENDPOINTS.signals_list, { query: { date } }),
+  generateSignals: (body: unknown) => request<any>(API_ENDPOINTS.signals_generate, { body }),
+  paperRun: (body: unknown) => request<any>(API_ENDPOINTS.paper_run, { body }),
+  modelHoldings: () => request<any[]>(API_ENDPOINTS.portfolios_model_holdings),
+  personalHoldings: () => request<any[]>(API_ENDPOINTS.portfolios_personal_holdings),
+  addPersonalHolding: (body: unknown) =>
+    request<any[]>(API_ENDPOINTS.portfolios_personal_add, { body }),
+  deletePersonalHolding: (code: string) =>
+    request<any[]>(API_ENDPOINTS.portfolios_personal_delete, { params: { code } }),
+  trades: (portfolio: 'model' | 'personal' = 'model', from?: string, to?: string) =>
+    request<any[]>(API_ENDPOINTS.trades_list, { query: { portfolio, from, to } }),
+  pnlDaily: (portfolio: 'model' | 'personal' = 'model') =>
+    request<any[]>(API_ENDPOINTS.pnl_daily, { query: { portfolio } }),
 };
