@@ -13,8 +13,8 @@
 技术形态:**Tauri 2(Rust 外壳)+ Vue3 前端 + 两个 sidecar:api(NestJS+Fastify,:59914)/ engine(FastAPI,:59915)**。
 存储:SQLite(事务元数据,**仅 api 写**)+ DuckDB/parquet(分析大矩阵,**仅 engine 写**)。
 
-**进度:M0 完成、M1 功能闭环基本完成、外加 M3/M4 的两个引擎核心。** 仓库 **公开**:https://github.com/chocolate-z/Sinan
-**CI 三 job 全绿**(node / python / rust),每次 push 自动验证。**约 159 个自动化测试**。
+**进度:M0 完成、M1 功能闭环完成、行情页 /market 完成、全局 macOS 原生风 UI 重构(主题三态 + 自定义 Win11 标题栏)完成、M2 回测引擎完成(四刀闭环 + 红线审计收口)。** 仓库 **公开**:https://github.com/chocolate-z/Sinan
+**CI 三 job 全绿**(node / python / rust),每次 push 自动验证。**约 214 个自动化测试**。
 
 已实现(可运行、带测试):
 
@@ -141,18 +141,26 @@ pnpm --filter @sinan/desktop dev    # 或 (cd apps/desktop && node node_modules/
 
 ## 7. 路线图与「下一刀」
 
-**M1 收尾(剩余,偏展示)**
+**已完成(本会话新增)**
 
-- **行情页 `/market`**:实时报价列表(api `/quotes` 经 RealtimeProvider)+ K 线(本地 parquet);免费源北向/财务字段置灰。当前 `/market` 仍是 Locked 占位。
-- **模型净值 vs 沪深300 曲线 + 回撤阴影**(总览/回测页)—— 需净值序列,衔接 M2。
+- ✅ **行情页 `/market`**:实时报价 + 本地 parquet K 线(`data.asof` PIT + qfq 前复权)+ 免费源北向/财务置灰。`engine /engine/prices` + api `GET /quotes`、`/prices/:code`。
+- ✅ **全局 macOS 原生风 UI 重构**:设计令牌(SF 字体 / Apple 浅深色板 / 低饱和红涨绿跌 / vibrancy / 分层阴影,`design/tokens.css`)+ 控件类库 `design/materials.css`(`m-*`)+ **主题三态**(浅/深/跟随系统,`lib/theme.ts` + `stores/app` + `main.ts` 的 `matchMedia`)+ **自定义标题栏 `shell/TitleBar.vue`**(`tauri.conf.json` `decorations:false` + Win11 右上角窗口控制,`lib/tauri.ts` 探测 + 浏览器降级)。设置页「外观」切主题 + 涨跌反转。三色通道仍严格解耦(pnl/status/accent)。
+- ✅ **M2 回测引擎(四刀闭环 + 红线审计收口)**:`backtest/splits.py`(时序切分 / purge / embargo / walk-forward / 硬守卫 `is_oos_clean`)+ `metrics.py`(绩效全集)+ `engine.py`(`run_backtest` 复用 `paper/` 逐日撮合,T 收盘估值 / T+1 开盘成交 / 含成本)+ `/engine/backtest` + api `/backtests`(migration `0003`)+ 回测页 `/backtest`(净值 vs 基准 + 回撤阴影 + 月度热力图 + 诚实口径提示条)。
+  **第三次多智能体红线审计**(对抗式 5 agent)结论 **PASS**:实现层四红线无在产违反;曾抓出并已修复红线#1 黄金测试「假绿」→ 换为白盒 `test_backtest_valuation_asof_never_leads_decision_day`(spy `engine._price_map`,断言收盘估值取数 asof 恰为决策日 T),并对抗式自验(注入「估值取数前移到 T+1」会让该测试变红)。
 
-**M2 回测引擎 + 诚实评估**(下一个大里程碑)
+**M2 遗留 minor(非阻断,见审计报告;可后续排期)**
 
-- 事件驱动+向量化、逐日撮合(T+1/成本/滑点);时序切分+purge+embargo;walk-forward 跨牛熊;绩效全集(年化/超额/IR/Sharpe/MaxDD/换手/RankIC/ICIR);硬校验 `backtest_start > train_end+purge` 否则拒跑;回测页(净值 vs 基准 + 回撤阴影 + 月度热力图 + 防未来函数提示条)。引擎里 `paper/` 的成本/账户/风控可复用。
+- 回测末日 T+1 成交「有成本无损益」(该笔持仓不进 nav 曲线)→ 末日 `fill=False` 或补一个终值估值点。
+- 守卫 `purge` 与训练 `label_horizon` 解耦:M3 引入 ML 标签后,应在守卫处强制 `purge>=label_horizon`(当前纯因子策略 PIT,purge=0 不泄漏;前端 input 已设 min=1)。
+- `metrics.daily_returns` 对 `nav=0` 跳过(组合 nav 恒>0 不触发)、`profit_factor` 可返回 inf(回测路径不传 `trade_pnls` 不触发)→ 健壮性可加固。
+- 胜率/盈亏比/换手率未接入回测报告(需成交 FIFO 配对 / 逐日权重)。
 
-**M3 训练**(设备解析 `training/device.py` 已就绪)、**M4 指标库 UI**(引擎 DSL 已就绪,缺三栏编辑器页 + IC 质检)、**M5 资讯/估值/桌面特性**、**M6 打包分发+自动更新**(release.yml 脚手架已在,需冻结 sidecar:engine PyInstaller / api Node SEA,放 `src-tauri/binaries`)。
+**下一个大里程碑(候选)**
 
-**建议接手第一刀**:行情页 `/market`(补齐 M1 最后可见页,纯前端+一个 quotes 端点,易测易演示),随后进入 M2 回测引擎。
+- **M3 训练**(`training/device.py` 设备解析已就绪;特征/标签/walk-forward 训 LightGBM/ElasticNet 叠加 + OOS 评估 + 模型版本库;**M2 的 `backtest/splits.py`+`metrics.py` 可直接复用**)。
+- **M4 指标库 UI**(引擎 DSL 已就绪,缺三栏编辑器页 + IC 质检)、**M5 资讯/估值/桌面特性**、**M6 打包分发+自动更新**(release.yml 脚手架已在,需冻结 sidecar)。
+
+> **数据/撮合一律日频**:`price` 是日线 OHLCV、撮合走 T+1 开盘价;**不支持分时(日内)交易**——这是契合 A 股 T+1 与多因子选股定位的有意设计,非数据缺陷(用户已确认知悉)。如要分时需新增 `MINUTE_OHLCV` 能力位 + 分钟数据集 + 分钟撮合,且依赖数据源能拿到分钟历史。
 
 ---
 
