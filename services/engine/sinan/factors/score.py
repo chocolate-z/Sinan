@@ -70,3 +70,30 @@ def score_universe(ctx: FactorContext, factors: list[Factor] = DEFAULT_FACTORS) 
     scored = composite_score(matrix, effective)
     coverage = len(effective) / len(factors) if factors else 0.0
     return ScoreResult(scores=scored, coverage=coverage, effective=effective, degraded=degraded)
+
+
+def model_score_universe(
+    ctx: FactorContext, model: dict, factors: list[Factor] = DEFAULT_FACTORS
+) -> ScoreResult:
+    """用已训练线性模型(系数 JSON,M3)给全市场打分:score = intercept + Σ coef·f。
+
+    红线#1:特征走同一 compute_factor_matrix(asof PIT,只见 <=T);模型仅线性加权,绝不引入未来。
+    缺失特征列(当日降级)按 0(z-score 截面中性值)计,诚实不补强;percentile 由模型分横截面排名。
+    模型无可匹配特征列时退化为常数分(无区分度),不静默造假。
+    """
+    matrix, effective, degraded = compute_factor_matrix(ctx, factors)
+    feature_cols = list(model.get("feature_cols", []))
+    coef = list(model.get("coef", []))
+    intercept = float(model.get("intercept", 0.0))
+
+    expr = pl.lit(intercept, dtype=pl.Float64)
+    for col, w in zip(feature_cols, coef):
+        if col in matrix.columns:
+            expr = expr + pl.col(col).fill_null(0.0) * float(w)
+    scored = matrix.with_columns(expr.alias("score"))
+    n = max(scored["score"].drop_nulls().len(), 1)
+    scored = scored.with_columns((pl.col("score").rank(method="average") / n).alias("percentile"))
+    scored = scored.sort("score", descending=True, nulls_last=True)
+
+    coverage = len(effective) / len(factors) if factors else 0.0
+    return ScoreResult(scores=scored, coverage=coverage, effective=effective, degraded=degraded)

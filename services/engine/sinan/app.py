@@ -167,6 +167,7 @@ class PaperRunReq(BaseModel):
     peak_nav: Optional[float] = None
     benchmark: str = "000300.SH"
     fill: bool = True
+    model: Optional[dict] = None  # 激活的 ML 模型系数(api 下发);在场则模型打分,否则等权
 
 
 def _price_map(dl, dataset: str, asof: str, field: str, codes) -> dict[str, float]:
@@ -209,6 +210,7 @@ def paper_run(req: PaperRunReq) -> dict:
         data=dl, codes=codes, today=req.today, effective_date=req.effective_date, account=acc,
         bench_closes=bench_closes, prices_today=prices_today, open_prices_next=open_next,
         params=req.params, prev_nav=req.prev_nav, peak_nav=req.peak_nav, fill=req.fill,
+        model=req.model,
     )
 
     return {

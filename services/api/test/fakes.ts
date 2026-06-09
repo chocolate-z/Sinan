@@ -105,7 +105,11 @@ export class FakeEngineClient implements EngineClient {
     for (const ev of this.events) onEvent({ ...ev, job_id: req.job_id });
   }
 
+  /** 记录最近一次 paper/run 请求,供测试断言「模型出信号」下发了激活模型系数。 */
+  lastPaperReq: PaperRunRequest | null = null;
+
   async paperRun(req: PaperRunRequest): Promise<any> {
+    this.lastPaperReq = req;
     return (
       this.paperResult ?? {
         trade_date: req.today,

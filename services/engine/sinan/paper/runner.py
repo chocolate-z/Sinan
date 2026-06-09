@@ -13,7 +13,7 @@ from typing import Mapping, Sequence
 import polars as pl
 
 from ..data import DataLayer
-from ..factors import FactorContext, score_universe
+from ..factors import FactorContext, model_score_universe, score_universe
 from .account import SimAccount, Trade
 from .eod import DEFAULTS, apply_fills, decide
 
@@ -59,10 +59,12 @@ def run_eod(
     prev_nav: float | None = None,
     peak_nav: float | None = None,
     fill: bool = True,
+    model: dict | None = None,
 ) -> EodResult:
     p = {**DEFAULTS, **(params or {})}
     ctx = FactorContext(data, today, codes)
-    sr = score_universe(ctx)
+    # 激活的 ML 模型在场 → 用模型线性打分(同一 asof 特征,红线#1);否则等权因子合成。
+    sr = model_score_universe(ctx, model) if model else score_universe(ctx)
     scores = sr.scores
     score_rows = {r["stock_code"]: r for r in scores.iter_rows(named=True)}
 

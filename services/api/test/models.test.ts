@@ -38,15 +38,16 @@ const TRAIN = {
 };
 
 async function build(trainResult: any) {
+  const engine = new FakeEngineClient(null, [], null, {}, {}, null, trainResult);
   const app = await createApp({
     dbPath: ':memory:',
     secretStore: new MemorySecretStore(),
-    engineClient: new FakeEngineClient(null, [], null, {}, {}, null, trainResult),
+    engineClient: engine,
   });
   await app.init();
   const fastify = app.getHttpAdapter().getInstance();
   await fastify.ready();
-  return { app, fastify };
+  return { app, fastify, engine };
 }
 
 test('POST /models/train 落库,GET 列表/详情含样本内外 IC + 系数模型 + 诚实标注', async () => {
@@ -140,6 +141,37 @@ test('GET /models/:id 不存在 → 404', async () => {
   try {
     const r = await fastify.inject({ method: 'GET', url: '/api/v1/models/nope' });
     assert.equal(r.statusCode, 404);
+  } finally {
+    await app.close();
+  }
+});
+
+test('激活模型后 paper/run 下发模型系数(模型出信号);无激活模型时下发 null', async () => {
+  const { app, fastify, engine } = await build(TRAIN);
+  try {
+    // 无激活模型:paper/run 下发 model=null(退回等权因子)
+    await fastify.inject({
+      method: 'POST',
+      url: '/api/v1/paper/run',
+      payload: { today: '2024-07-01', effective_date: '2024-07-02' },
+    });
+    assert.equal(engine.lastPaperReq?.model, null);
+
+    // 训练 + 激活 → paper/run 下发激活模型的系数
+    const created = (
+      await fastify.inject({
+        method: 'POST',
+        url: '/api/v1/models/train',
+        payload: { train_start: '2023-01-01', train_end: '2024-06-30' },
+      })
+    ).json();
+    await fastify.inject({ method: 'POST', url: `/api/v1/models/${created.id}/activate` });
+    await fastify.inject({
+      method: 'POST',
+      url: '/api/v1/paper/run',
+      payload: { today: '2024-07-03', effective_date: '2024-07-04' },
+    });
+    assert.deepEqual(engine.lastPaperReq?.model, TRAIN.model);
   } finally {
     await app.close();
   }

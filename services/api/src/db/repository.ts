@@ -793,6 +793,14 @@ export class Repository {
     };
   }
 
+  /** 当前激活(running)模型的系数 JSON,供「模型出信号」;无激活模型则 null(退回等权因子)。 */
+  activeModel(): Record<string, unknown> | null {
+    const r = this.db.get<any>(
+      "SELECT model_json FROM model_versions WHERE status='running' ORDER BY created_at DESC LIMIT 1",
+    );
+    return r?.model_json ? JSON.parse(r.model_json) : null;
+  }
+
   /** 激活某模型版本:置为 running,其余 running 降级 archived;若挂策略则回写 active_model_id。 */
   modelVersionActivate(id: string): any | null {
     const target = this.db.get<any>('SELECT id, strategy_id FROM model_versions WHERE id=?', id);

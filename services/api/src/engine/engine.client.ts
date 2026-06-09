@@ -31,6 +31,7 @@ export interface PaperRunRequest {
   peak_nav?: number | null;
   benchmark?: string;
   fill?: boolean;
+  model?: Record<string, unknown> | null; // 激活的 ML 模型系数;在场则模型打分(M3)
 }
 
 export interface Quote {

@@ -2,7 +2,13 @@
 
 from .context import FactorContext
 from .library import DEFAULT_FACTORS, Factor
-from .score import ScoreResult, compute_factor_matrix, composite_score, score_universe
+from .score import (
+    ScoreResult,
+    compute_factor_matrix,
+    composite_score,
+    model_score_universe,
+    score_universe,
+)
 
 __all__ = [
     "FactorContext",
@@ -11,5 +17,6 @@ __all__ = [
     "ScoreResult",
     "compute_factor_matrix",
     "composite_score",
+    "model_score_universe",
     "score_universe",
 ]
