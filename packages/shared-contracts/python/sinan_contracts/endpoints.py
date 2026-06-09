@@ -59,6 +59,7 @@ ENGINE_ENDPOINTS: dict[str, dict[str, str]] = {
     "indicators_validate": {"method": "POST", "path": "/engine/indicators/validate"},
     "device": {"method": "GET", "path": "/engine/device"},
     "paper_run": {"method": "POST", "path": "/engine/paper/run"},
+    "backtest": {"method": "POST", "path": "/engine/backtest"},
 }
 
 _PARAM_RE = re.compile(r":([A-Za-z_][A-Za-z0-9_]*)")

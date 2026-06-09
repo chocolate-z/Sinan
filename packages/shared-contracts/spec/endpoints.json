@@ -53,6 +53,7 @@
     "calendar_is_trade_day": { "method": "GET", "path": "/engine/calendar/is-trade-day" },
     "indicators_validate": { "method": "POST", "path": "/engine/indicators/validate" },
     "device": { "method": "GET", "path": "/engine/device" },
-    "paper_run": { "method": "POST", "path": "/engine/paper/run" }
+    "paper_run": { "method": "POST", "path": "/engine/paper/run" },
+    "backtest": { "method": "POST", "path": "/engine/backtest" }
   }
 }

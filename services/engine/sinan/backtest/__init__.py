@@ -4,6 +4,7 @@
 红线#3 不夸大收益:指标一律样本外口径(由调用层保证);walk-forward 跨牛熊。
 """
 
-from . import metrics, splits
+from . import engine, metrics, splits
+from .engine import BacktestGuardError, BacktestResult, run_backtest
 
-__all__ = ["metrics", "splits"]
+__all__ = ["metrics", "splits", "engine", "run_backtest", "BacktestResult", "BacktestGuardError"]

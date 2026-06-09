@@ -229,6 +229,52 @@ def paper_run(req: PaperRunReq) -> dict:
     }
 
 
+# ── 回测(事件驱动逐日;硬守卫 backtest_start>train_end+purge)────────────
+class BacktestReq(BaseModel):
+    backtest_start: str
+    backtest_end: str
+    train_end: str
+    codes: Optional[list[str]] = None
+    benchmark: str = "000300.SH"
+    purge: int = 5
+    params: dict = {}
+    initial_cash: float = 1_000_000.0
+
+
+@app.post("/engine/backtest", dependencies=[Depends(require_internal)])
+def backtest(req: BacktestReq) -> dict:
+    from .backtest import BacktestGuardError, run_backtest
+    from .data import DataLayer
+
+    dl = DataLayer(config.cache_dir())
+    # 交易日历从 price 缓存推断(distinct trade_date);全市场代码同理。
+    pdf = dl.asof("price", "99999999", fields=["stock_code", "trade_date"])
+    if pdf.is_empty():
+        raise HTTPException(status_code=400, detail="本地无行情缓存,先建缓存再回测")
+    trading_dates = sorted(set(pdf["trade_date"].to_list()))
+    codes = req.codes or sorted(set(pdf["stock_code"].to_list()))
+
+    try:
+        res = run_backtest(
+            dl,
+            codes=codes,
+            trading_dates=trading_dates,
+            backtest_start=req.backtest_start,
+            backtest_end=req.backtest_end,
+            train_end=req.train_end,
+            params=req.params,
+            benchmark=req.benchmark,
+            purge=req.purge,
+            initial_cash=req.initial_cash,
+        )
+    except BacktestGuardError as e:
+        # 422:语义合法但违反诚实样本外硬守卫(红线#2)。
+        raise HTTPException(status_code=422, detail=str(e))
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return res.to_dict()
+
+
 # ── 缓存覆盖 ────────────────────────────────────────────────────────────
 @app.get("/engine/cache/coverage", dependencies=[Depends(require_internal)])
 def coverage() -> dict:

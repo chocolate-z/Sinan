@@ -66,6 +66,7 @@ export const ENGINE_ENDPOINTS = {
   indicators_validate: { method: 'POST', path: '/engine/indicators/validate' },
   device: { method: 'GET', path: '/engine/device' },
   paper_run: { method: 'POST', path: '/engine/paper/run' },
+  backtest: { method: 'POST', path: '/engine/backtest' },
 } as const satisfies Record<string, EndpointDef>;
 
 /** 把含 :param 的路径模板填充为具体路径。 */

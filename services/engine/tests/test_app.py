@@ -87,6 +87,50 @@ def test_prices_endpoint(tmp_path, monkeypatch):
     assert [row["trade_date"] for row in body["rows"]] == dates[-3:]  # 末 3 根
 
 
+def test_backtest_endpoint(tmp_path, monkeypatch):
+    monkeypatch.setenv("SINAN_DATA_DIR", str(tmp_path))
+    import polars as pl
+
+    from sinan.data import store
+    from tests.test_backtest import _index_frames
+    from tests.test_factors import _build_frames, _dates, _write
+
+    dates = _dates(40)
+    cache = tmp_path / "cache"
+    _write(cache, _build_frames(dates))
+    store.write_dataset(cache, "index_ohlcv", _index_frames(dates))
+
+    # 守卫:backtest_start 落在 purge 区 → 422
+    bad = client.post(
+        "/engine/backtest",
+        json={
+            "backtest_start": dates[20],
+            "backtest_end": dates[38],
+            "train_end": dates[19],
+            "purge": 5,
+        },
+    )
+    assert bad.status_code == 422
+
+    # 正常回测
+    ok = client.post(
+        "/engine/backtest",
+        json={
+            "backtest_start": dates[26],
+            "backtest_end": dates[38],
+            "train_end": dates[19],
+            "purge": 5,
+            "params": {"buy_threshold": 0.0},
+        },
+    )
+    assert ok.status_code == 200
+    body = ok.json()
+    assert body["cost_included"] is True
+    assert body["n_days"] >= 2
+    assert "metrics" in body and "nav_curve" in body
+    assert isinstance(pl.DataFrame(body["nav_curve"]), pl.DataFrame)
+
+
 def test_internal_guard(monkeypatch):
     monkeypatch.setenv("SINAN_IPC_TOKEN", "secret-session")
     # 无头 → 403
