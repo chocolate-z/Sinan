@@ -167,9 +167,10 @@ pnpm --filter @sinan/desktop dev    # 或 (cd apps/desktop && node node_modules/
 **下一个大里程碑(候选)**
 
 - ✅ **M4 v1 指标库实接(本会话完成)**:`factors/quality.py`(复用 M3 特征面板+前向标签+`rank_ic`,逐因子真实 IC 均值/ICIR/覆盖度 + IC 时序 + 十分位分层)+ `/engine/factors/quality` + api `GET /indicators/quality`(按需重算不落库)+ 前端 `/indicators`(质检区间表单 → 因子表 + 详情 `ui/charts/{ICChart,DecileBars}.vue`)。契约 `indicators_quality`/`factors_quality` 端点。
-- **M4 v2**(指标库剩余):自定义因子**三栏 DSL 编辑器**(引擎 `indicators/` 安全沙箱 + `/engine/indicators/validate` 已就绪,缺前端编辑页 + 因子启用/权重落库)。
+- ✅ **M4 v2 MVP(本会话完成)**:自定义因子 **DSL 校验编辑器**(`/indicators` 表达式输入 → api `POST /indicators/validate` → engine 沙箱白名单 + 仅回看算子,结构上无未来函数)。**剩余 v3**:自定义因子持久化(表+CRUD)+ 接入 `compute_factor_matrix`/质检/打分(用 `indicators/safe_eval` 对 asof 截面求值)+ 启用/权重。
 - **M5 资讯/估值/桌面特性**(`/news` 仍锁定)、**M6 打包分发+自动更新**(release.yml 脚手架已在,需冻结 sidecar;**本环境 cargo 镜像曾不可达**)。
-- 诚实小缺口:总览净值曲线/风控闸仍空(待盘后逐日累计或接回测);回测胜率/盈亏比/换手率未进报告;设置页自动刷新/盘后落库为只读;未用真实 Tushare token 跑过端到端连通。
+- ✅ **诚实小缺口收口(本会话)**:总览净值曲线接最近一次回测(`EquityChart`,周期分段真实切片);总览风控闸接真实持仓(集中度/持仓占用/当日回撤 `RiskBar`,行业/波动待数据);回测补胜率/盈亏比/换手率(`_realized_trade_pnls` 移动加权成本重放;`profit_factor=inf` 置 None 保 JSON 安全)。
+- 剩余诚实缺口:设置页自动刷新/盘后落库为只读(缺 PUT settings 端点);风控闸行业暴露/波动率待行业分类+历史波动数据;**未用真实 Tushare token 跑过端到端连通(建议手测一次)**。
 
 > **数据/撮合一律日频**:`price` 是日线 OHLCV、撮合走 T+1 开盘价;**不支持分时(日内)交易**——这是契合 A 股 T+1 与多因子选股定位的有意设计,非数据缺陷(用户已确认知悉)。如要分时需新增 `MINUTE_OHLCV` 能力位 + 分钟数据集 + 分钟撮合,且依赖数据源能拿到分钟历史。
 
