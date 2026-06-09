@@ -793,6 +793,43 @@ export class Repository {
     };
   }
 
+  // ── 自定义因子(M4 v3:DSL 定义,api 落库,engine 与内置并列计算)─────────────
+  customFactorCreate(input: { name: string; expr: string; group?: string }): string {
+    const id = randomUUID();
+    this.db.run(
+      'INSERT INTO custom_factors(id,name,expr,factor_group,enabled,created_at) VALUES (?,?,?,?,?,?)',
+      id,
+      input.name,
+      input.expr,
+      input.group ?? 'custom',
+      1,
+      now(),
+    );
+    return id;
+  }
+
+  customFactorsList(): any[] {
+    return this.db
+      .all<any>(
+        'SELECT id,name,expr,factor_group,enabled,created_at FROM custom_factors ORDER BY created_at DESC',
+      )
+      .map((r) => ({ ...r, enabled: !!r.enabled }));
+  }
+
+  /** 启用的自定义因子,形如 engine 期望的 [{name, expr, group}](供质检下发)。 */
+  customFactorsForQuality(): Array<{ name: string; expr: string; group: string }> {
+    return this.db
+      .all<any>('SELECT name,expr,factor_group FROM custom_factors WHERE enabled=1')
+      .map((r) => ({ name: r.name, expr: r.expr, group: r.factor_group }));
+  }
+
+  customFactorDelete(id: string): boolean {
+    const before = this.db.get<any>('SELECT id FROM custom_factors WHERE id=?', id);
+    if (!before) return false;
+    this.db.run('DELETE FROM custom_factors WHERE id=?', id);
+    return true;
+  }
+
   /** 当前激活(running)模型的系数 JSON,供「模型出信号」;无激活模型则 null(退回等权因子)。 */
   activeModel(): Record<string, unknown> | null {
     const r = this.db.get<any>(

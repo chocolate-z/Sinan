@@ -60,6 +60,55 @@ test('engine 400(无缓存/区间过短)→ api 转发 400', async () => {
   }
 });
 
+test('自定义因子 CRUD:创建前经沙箱校验,落库/列表/删除;非法表达式拒绝', async () => {
+  const { app, fastify } = await build(null);
+  try {
+    // 合法表达式(fake validate: 不含 __ → ok)→ 落库
+    let r = await fastify.inject({
+      method: 'POST',
+      url: '/api/v1/custom-factors',
+      payload: { name: 'my_mom', expr: 'close / delay(close, 20) - 1' },
+    });
+    assert.equal(r.statusCode, 201);
+    const created = r.json();
+    assert.ok(created.id);
+
+    // 列表
+    r = await fastify.inject({ method: 'GET', url: '/api/v1/custom-factors' });
+    const list = r.json();
+    assert.equal(list.length, 1);
+    assert.equal(list[0].name, 'my_mom');
+    assert.equal(list[0].enabled, true);
+
+    // 非法表达式(含 __ → fake validate ok=false)→ 400,绝不落库
+    r = await fastify.inject({
+      method: 'POST',
+      url: '/api/v1/custom-factors',
+      payload: { name: 'evil', expr: "__import__('os')" },
+    });
+    assert.equal(r.statusCode, 400);
+
+    // name/expr 必填 → 400
+    r = await fastify.inject({
+      method: 'POST',
+      url: '/api/v1/custom-factors',
+      payload: { name: 'x' },
+    });
+    assert.equal(r.statusCode, 400);
+
+    // 删除
+    r = await fastify.inject({ method: 'DELETE', url: `/api/v1/custom-factors/${created.id}` });
+    assert.equal(r.statusCode, 200);
+    r = await fastify.inject({ method: 'GET', url: '/api/v1/custom-factors' });
+    assert.equal(r.json().length, 0);
+    // 删除不存在 → 404
+    r = await fastify.inject({ method: 'DELETE', url: '/api/v1/custom-factors/nope' });
+    assert.equal(r.statusCode, 404);
+  } finally {
+    await app.close();
+  }
+});
+
 test('POST /indicators/validate 代理 DSL 校验(ok / errors / fields / functions)', async () => {
   const { app, fastify } = await build(null);
   try {

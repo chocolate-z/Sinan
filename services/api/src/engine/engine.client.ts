@@ -101,6 +101,7 @@ export interface FactorQualityRequest {
   label_horizon?: number;
   n_deciles?: number;
   codes?: string[];
+  custom?: Array<{ name: string; expr: string; group?: string }>; // 自定义 DSL 因子(M4 v3)
 }
 
 /** engine 返回非 2xx 时抛出,携带状态码与 detail,供 api 决定转发何种 HTTP 错误。 */

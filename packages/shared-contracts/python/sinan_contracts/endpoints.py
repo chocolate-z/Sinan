@@ -54,6 +54,9 @@ API_ENDPOINTS: dict[str, dict[str, str]] = {
     "models_activate": {"method": "POST", "path": "/models/:id/activate"},
     "indicators_quality": {"method": "GET", "path": "/indicators/quality"},
     "indicators_validate": {"method": "POST", "path": "/indicators/validate"},
+    "custom_factors_create": {"method": "POST", "path": "/custom-factors"},
+    "custom_factors_list": {"method": "GET", "path": "/custom-factors"},
+    "custom_factors_delete": {"method": "DELETE", "path": "/custom-factors/:id"},
 }
 
 ENGINE_ENDPOINTS: dict[str, dict[str, str]] = {
