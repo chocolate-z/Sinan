@@ -125,6 +125,29 @@ def test_degrade_when_northbound_missing(tmp_path):
     assert res.scores["score"].drop_nulls().len() == len(CODES)
 
 
+def test_score_universe_with_custom_factor(tmp_path):
+    """自定义 DSL 因子进等权打分:与内置因子并列贡献综合分;无效表达式如实降级不崩。"""
+    dates = _dates(30)
+    T = dates[24]
+    cache = tmp_path / "c"
+    _write(cache, _build_frames(dates))
+
+    custom = [{"name": "mom10c", "expr": "close / delay(close, 10) - 1", "group": "custom"}]
+    res = score_universe(FactorContext(DataLayer(cache), T, CODES), custom=custom)
+    assert "mom10c" in res.effective  # 自定义因子进了等权合成
+    assert "f_mom10c" in res.scores.columns
+    assert "mom20" in res.effective  # 内置因子仍在
+    assert res.scores["score"].drop_nulls().len() == len(CODES)
+
+    # 无效表达式 → 沙箱拒 → 进 degraded,不崩、不入 effective(红线#3)。
+    bad = score_universe(
+        FactorContext(DataLayer(cache), T, CODES),
+        custom=[{"name": "evil", "expr": "__import__('os')"}],
+    )
+    assert any("evil" in d for d in bad.degraded)
+    assert "evil" not in bad.effective
+
+
 def test_cross_section_winsor_and_zscore():
     s = pl.Series("x", [1.0, 2.0, 3.0, 4.0, 100.0])  # 100 为极端值
     w = winsorize_mad(s, n=3.0)

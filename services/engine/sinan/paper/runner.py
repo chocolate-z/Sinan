@@ -60,11 +60,12 @@ def run_eod(
     peak_nav: float | None = None,
     fill: bool = True,
     model: dict | None = None,
+    custom: list[dict] | None = None,
 ) -> EodResult:
     p = {**DEFAULTS, **(params or {})}
     ctx = FactorContext(data, today, codes)
-    # 激活的 ML 模型在场 → 用模型线性打分(同一 asof 特征,红线#1);否则等权因子合成。
-    sr = model_score_universe(ctx, model) if model else score_universe(ctx)
+    # 激活的 ML 模型在场 → 用模型线性打分(同一 asof 特征,红线#1);否则等权因子合成(含启用的自定义因子)。
+    sr = model_score_universe(ctx, model) if model else score_universe(ctx, custom=custom)
     scores = sr.scores
     score_rows = {r["stock_code"]: r for r in scores.iter_rows(named=True)}
 

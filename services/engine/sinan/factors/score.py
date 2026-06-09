@@ -65,11 +65,38 @@ def composite_score(matrix: pl.DataFrame, effective: list[str]) -> pl.DataFrame:
     return scored.sort("score", descending=True, nulls_last=True)
 
 
-def score_universe(ctx: FactorContext, factors: list[Factor] = DEFAULT_FACTORS) -> ScoreResult:
-    matrix, effective, degraded = compute_factor_matrix(ctx, factors)
+def _with_custom(factors: list[Factor], custom: list[dict] | None) -> tuple[list[Factor], list[str]]:
+    """把启用的自定义 DSL 因子([{name,expr,group?}])包成 Factor 追加到内置因子后。
+
+    表达式无效(沙箱拒)→ 跳过并如实记 degraded,不静默(红线#3)。延迟 import 避免循环。
+    """
+    if not custom:
+        return list(factors), []
+    from .custom import custom_factor
+
+    out = list(factors)
+    degraded: list[str] = []
+    for c in custom:
+        try:
+            out.append(custom_factor(c["name"], c["expr"], c.get("group", "custom")))
+        except Exception as e:  # noqa: BLE001
+            degraded.append(f"{c.get('name', '?')}:表达式无效({e})")
+    return out, degraded
+
+
+def score_universe(
+    ctx: FactorContext,
+    factors: list[Factor] = DEFAULT_FACTORS,
+    custom: list[dict] | None = None,
+) -> ScoreResult:
+    """等权多因子合成打分。custom = 启用的自定义 DSL 因子,与内置因子并列进等权(M4 v3)。"""
+    all_factors, custom_degraded = _with_custom(factors, custom)
+    matrix, effective, degraded = compute_factor_matrix(ctx, all_factors)
     scored = composite_score(matrix, effective)
-    coverage = len(effective) / len(factors) if factors else 0.0
-    return ScoreResult(scores=scored, coverage=coverage, effective=effective, degraded=degraded)
+    coverage = len(effective) / len(all_factors) if all_factors else 0.0
+    return ScoreResult(
+        scores=scored, coverage=coverage, effective=effective, degraded=degraded + custom_degraded
+    )
 
 
 def model_score_universe(
