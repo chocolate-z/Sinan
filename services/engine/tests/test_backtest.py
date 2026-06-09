@@ -145,6 +145,44 @@ def test_backtest_truncation_invariance(tmp_path):
     assert round(r_full.total_cost, 4) == round(r_trunc.total_cost, 4)
 
 
+def test_backtest_detail_trades_positions_assets(tmp_path):
+    """可回溯明细:逐笔成交(买卖点,含成本)+ 逐日持仓快照 + 资产拆解(现金+持仓=净值)。"""
+    cache = tmp_path / "cache"
+    dates = _dates(40)
+    _setup(cache, dates)
+    res = run_backtest(
+        DataLayer(cache),
+        codes=CODES,
+        trading_dates=dates,
+        backtest_start=dates[26],
+        backtest_end=dates[38],
+        train_end=dates[19],
+        purge=5,
+        params={"buy_threshold": 0.0, "max_holdings": 5},
+    )
+
+    # 逐笔成交(买卖点):每笔含日期/代码/方向/股数/价/成本明细。
+    assert len(res.trades) == res.n_trades >= 1
+    t0 = res.trades[0]
+    assert t0["side"] in ("buy", "sell")
+    assert {"trade_date", "code", "shares", "price", "fee_total", "reason"} <= set(t0)
+    assert t0["fee_total"] > 0  # 含成本
+
+    # 逐日明细:资产拆解一致(现金 + 持仓市值 == 净值),且含当日盈亏/回撤/持仓快照。
+    for r in res.nav_curve:
+        assert abs(r["cash"] + r["holding_value"] - r["nav"]) < 1.0  # round 误差容忍
+        assert "day_return" in r and "drawdown" in r and "positions" in r
+    # 首日撮合前空仓,净值=初始资金。
+    assert res.nav_curve[0]["positions"] == []
+    assert abs(res.nav_curve[0]["nav"] - 1_000_000) < 1e-6
+    # 持仓变化:后续确有持仓,且快照字段完整。
+    held = [r for r in res.nav_curve if r["positions"]]
+    assert held
+    p0 = held[0]["positions"][0]
+    assert {"code", "shares", "avg_cost", "value"} <= set(p0)
+    # 持仓快照估值与净值估值同源(prices_today),已由 test_backtest_valuation_asof_* 守护无未来函数。
+
+
 def test_backtest_rejects_short_window(tmp_path):
     cache = tmp_path / "cache"
     dates = _dates(40)

@@ -31,7 +31,11 @@ class BacktestResult:
     n_trades: int
     total_cost: float
     cost_included: bool
-    nav_curve: list[dict]  # [{date, nav, benchmark}](benchmark 为归一化净值口径)
+    # 逐日明细(可回溯):[{date, nav, cash, holding_value, benchmark, day_return, drawdown, positions}]
+    # positions = [{code, shares, avg_cost, value}](撮合前 @ T 收盘,与 nav 同口径:cash+holding=nav)
+    nav_curve: list[dict]
+    # 逐笔成交(买卖点):account.trades 全量(trade_date=撮合日, side, shares, price, fee_total, reason, ...)
+    trades: list[dict]
     metrics: dict
     degraded: list[str]
 
@@ -115,6 +119,20 @@ def run_backtest(
             "index_ohlcv", t, fields=["trade_date", "close"], codes=[benchmark]
         )
         bcloses = bench_df.sort("trade_date")["close"].to_list() if not bench_df.is_empty() else []
+
+        # 撮合前持仓快照 + 现金(与 T 收盘估值同口径:cash + Σ value == nav,无未来函数)。
+        cash_before = account.cash
+        snapshot = [
+            {
+                "code": p.code,
+                "shares": p.shares,
+                "avg_cost": round(p.avg_cost, 4),
+                "value": round(p.shares * prices_today.get(p.code, p.avg_cost), 2),
+            }
+            for p in account.positions.values()
+        ]
+        holding_value = round(sum(s["value"] for s in snapshot), 2)
+
         res = run_eod(
             data=data,
             codes=codes,
@@ -130,7 +148,16 @@ def run_backtest(
             fill=True,
         )
         nav_curve.append(
-            {"date": t, "nav": res.account["nav"], "benchmark": bcloses[-1] if bcloses else None}
+            {
+                "date": t,
+                "nav": round(res.account["nav"], 2),
+                "cash": round(cash_before, 2),
+                "holding_value": holding_value,
+                "benchmark": bcloses[-1] if bcloses else None,
+                "day_return": res.account["daily_return"],
+                "drawdown": res.account["drawdown"],
+                "positions": snapshot,
+            }
         )
         prev_nav = res.account["nav"]
         peak_nav = res.account["peak"]
@@ -145,6 +172,7 @@ def run_backtest(
         r["benchmark"] = bench_nav[i] if bench_nav else None
 
     total_cost = sum(t.fee_total for t in account.trades)
+    trades = [asdict(tr) for tr in account.trades]  # 逐笔成交(买卖点)
     return BacktestResult(
         backtest_start=backtest_start,
         backtest_end=backtest_end,
@@ -157,6 +185,7 @@ def run_backtest(
         total_cost=total_cost,
         cost_included=True,
         nav_curve=nav_curve,
+        trades=trades,
         metrics=perf,
         degraded=sorted(degraded_all),
     )

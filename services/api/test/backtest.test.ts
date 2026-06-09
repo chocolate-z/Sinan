@@ -16,8 +16,38 @@ const RESULT = {
   total_cost: 123.45,
   cost_included: true,
   nav_curve: [
-    { date: '2024-02-01', nav: 1_000_000, benchmark: 1_000_000 },
-    { date: '2024-02-02', nav: 1_001_000, benchmark: 1_000_500 },
+    {
+      date: '2024-02-01',
+      nav: 1_000_000,
+      cash: 1_000_000,
+      holding_value: 0,
+      benchmark: 1_000_000,
+      day_return: 0,
+      drawdown: 0,
+      positions: [],
+    },
+    {
+      date: '2024-02-02',
+      nav: 1_001_000,
+      cash: 600_000,
+      holding_value: 401_000,
+      benchmark: 1_000_500,
+      day_return: 0.001,
+      drawdown: 0,
+      positions: [{ code: '600519.SH', shares: 100, avg_cost: 4000, value: 401_000 }],
+    },
+  ],
+  trades: [
+    {
+      trade_date: '2024-02-02',
+      code: '600519.SH',
+      side: 'buy',
+      shares: 100,
+      price: 4000,
+      amount: 400_000,
+      fee_total: 100,
+      reason: 'signal',
+    },
   ],
   metrics: { annual_return: 0.12, excess_return: 0.03, information_ratio: 0.6, max_drawdown: 0.08 },
   degraded: [],
@@ -59,12 +89,19 @@ test('POST /backtests 落库,GET 列表/详情可查(含 nav_curve + metrics)', 
     assert.equal(r.json()[0].n_days, 20);
     assert.equal(r.json()[0].cost_included, true);
 
-    // 详情(含 nav_curve)
+    // 详情(含 nav_curve 逐日明细 + 逐笔成交,可回溯)
     r = await fastify.inject({ method: 'GET', url: `/api/v1/backtests/${created.id}` });
     const got = r.json();
     assert.equal(got.nav_curve.length, 2);
     assert.equal(got.metrics.excess_return, 0.03);
     assert.equal(got.benchmark, '000300.SH');
+    // 逐笔成交(买卖点)落库可回溯
+    assert.equal(got.trades.length, 1);
+    assert.equal(got.trades[0].side, 'buy');
+    assert.equal(got.trades[0].code, '600519.SH');
+    // 逐日明细:资产拆解 + 持仓快照
+    assert.equal(got.nav_curve[1].cash, 600_000);
+    assert.equal(got.nav_curve[1].positions[0].code, '600519.SH');
   } finally {
     await app.close();
   }

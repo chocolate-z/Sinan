@@ -635,6 +635,7 @@ export class Repository {
       cost_included: boolean;
       metrics: unknown;
       nav_curve: unknown;
+      trades?: unknown;
       degraded?: unknown;
     },
   ): string {
@@ -642,8 +643,8 @@ export class Repository {
     this.db.run(
       `INSERT INTO backtests(id,strategy_id,backtest_start,backtest_end,train_end,purge,benchmark,
          initial_cash,n_days,n_trades,total_cost,cost_included,metrics_json,nav_curve_json,
-         degraded_json,status,created_at)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+         trades_json,degraded_json,status,created_at)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
       id,
       input.strategy_id ?? null,
       input.backtest_start,
@@ -658,6 +659,7 @@ export class Repository {
       result.cost_included ? 1 : 0,
       JSON.stringify(result.metrics ?? null),
       JSON.stringify(result.nav_curve ?? []),
+      JSON.stringify(result.trades ?? []),
       JSON.stringify(result.degraded ?? []),
       'done',
       now(),
@@ -688,9 +690,11 @@ export class Repository {
       cost_included: !!r.cost_included,
       metrics: r.metrics_json ? JSON.parse(r.metrics_json) : null,
       nav_curve: r.nav_curve_json ? JSON.parse(r.nav_curve_json) : [],
+      trades: r.trades_json ? JSON.parse(r.trades_json) : [],
       degraded: r.degraded_json ? JSON.parse(r.degraded_json) : [],
       metrics_json: undefined,
       nav_curve_json: undefined,
+      trades_json: undefined,
       degraded_json: undefined,
     };
   }
