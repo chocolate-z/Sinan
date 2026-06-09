@@ -52,6 +52,7 @@ API_ENDPOINTS: dict[str, dict[str, str]] = {
     "models_list": {"method": "GET", "path": "/models"},
     "models_get": {"method": "GET", "path": "/models/:id"},
     "models_activate": {"method": "POST", "path": "/models/:id/activate"},
+    "indicators_quality": {"method": "GET", "path": "/indicators/quality"},
 }
 
 ENGINE_ENDPOINTS: dict[str, dict[str, str]] = {
@@ -68,6 +69,7 @@ ENGINE_ENDPOINTS: dict[str, dict[str, str]] = {
     "paper_run": {"method": "POST", "path": "/engine/paper/run"},
     "backtest": {"method": "POST", "path": "/engine/backtest"},
     "train": {"method": "POST", "path": "/engine/train"},
+    "factors_quality": {"method": "POST", "path": "/engine/factors/quality"},
 }
 
 _PARAM_RE = re.compile(r":([A-Za-z_][A-Za-z0-9_]*)")

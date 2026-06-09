@@ -47,7 +47,8 @@
     "models_train": { "method": "POST", "path": "/models/train" },
     "models_list": { "method": "GET", "path": "/models" },
     "models_get": { "method": "GET", "path": "/models/:id" },
-    "models_activate": { "method": "POST", "path": "/models/:id/activate" }
+    "models_activate": { "method": "POST", "path": "/models/:id/activate" },
+    "indicators_quality": { "method": "GET", "path": "/indicators/quality" }
   },
   "engine": {
     "health": { "method": "GET", "path": "/healthz" },
@@ -62,6 +63,7 @@
     "device": { "method": "GET", "path": "/engine/device" },
     "paper_run": { "method": "POST", "path": "/engine/paper/run" },
     "backtest": { "method": "POST", "path": "/engine/backtest" },
-    "train": { "method": "POST", "path": "/engine/train" }
+    "train": { "method": "POST", "path": "/engine/train" },
+    "factors_quality": { "method": "POST", "path": "/engine/factors/quality" }
   }
 }

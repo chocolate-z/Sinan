@@ -58,6 +58,7 @@ export const API_ENDPOINTS = {
   models_list: { method: 'GET', path: '/models' },
   models_get: { method: 'GET', path: '/models/:id' },
   models_activate: { method: 'POST', path: '/models/:id/activate' },
+  indicators_quality: { method: 'GET', path: '/indicators/quality' },
 } as const satisfies Record<string, EndpointDef>;
 
 /** api ↔ engine 内部(:59915,X-Sinan-Internal)。 */
@@ -75,6 +76,7 @@ export const ENGINE_ENDPOINTS = {
   paper_run: { method: 'POST', path: '/engine/paper/run' },
   backtest: { method: 'POST', path: '/engine/backtest' },
   train: { method: 'POST', path: '/engine/train' },
+  factors_quality: { method: 'POST', path: '/engine/factors/quality' },
 } as const satisfies Record<string, EndpointDef>;
 
 /** 把含 :param 的路径模板填充为具体路径。 */

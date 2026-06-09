@@ -333,6 +333,44 @@ def train(req: TrainReq) -> dict:
     return res.to_dict()
 
 
+# ── 因子质检(M4):逐因子真实 IC/ICIR/覆盖度 + IC 时序 + 十分位分层 ──────────
+class FactorQualityReq(BaseModel):
+    start: str
+    end: str
+    label_horizon: int = 5
+    n_deciles: int = 10
+    codes: Optional[list[str]] = None
+
+
+@app.post("/engine/factors/quality", dependencies=[Depends(require_internal)])
+def factors_quality(req: FactorQualityReq) -> dict:
+    from dataclasses import asdict
+
+    from .factors.quality import factor_quality
+
+    dl = DataLayer(config.cache_dir())
+    pdf = dl.asof("price", "99999999", fields=["stock_code", "trade_date"])
+    if pdf.is_empty():
+        raise HTTPException(status_code=400, detail="本地无行情缓存,先建缓存再做因子质检")
+    all_dates = sorted(set(pdf["trade_date"].to_list()))
+    dates = [d for d in all_dates if req.start <= d <= req.end]
+    if len(dates) < req.n_deciles:
+        raise HTTPException(status_code=400, detail="评估区间交易日不足(需 >= n_deciles)")
+    codes = req.codes or sorted(set(pdf["stock_code"].to_list()))
+    results, degraded = factor_quality(
+        dl, codes, dates, label_horizon=req.label_horizon, n_deciles=req.n_deciles
+    )
+    return {
+        "start": req.start,
+        "end": req.end,
+        "label_horizon": req.label_horizon,
+        "n_dates": len(dates),
+        "n_codes": len(codes),
+        "factors": [asdict(r) for r in results],
+        "degraded": degraded,
+    }
+
+
 # ── 缓存覆盖 ────────────────────────────────────────────────────────────
 @app.get("/engine/cache/coverage", dependencies=[Depends(require_internal)])
 def coverage() -> dict:
