@@ -47,7 +47,7 @@ const routes: RouteRecordRaw[] = [
   },
   {
     path: '/backtest',
-    component: () => import('../pages/Locked.vue'),
+    component: () => import('../pages/backtest/Backtest.vue'),
     meta: { title: '回测', needsData: true },
   },
   { path: '/logs', component: () => import('../pages/logs/Logs.vue'), meta: { title: '日志' } },
