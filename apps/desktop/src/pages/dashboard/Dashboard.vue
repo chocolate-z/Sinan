@@ -3,16 +3,19 @@ import { computed, onMounted, ref } from 'vue';
 import { useRouter } from 'vue-router';
 import { useAppStore } from '../../stores/app';
 import { useTradingStore } from '../../stores/trading';
+import { api } from '../../api/client';
 import { formatPnl } from '../../lib/pnl';
 import { fmt } from '../../lib/format';
+import { drawdownSeries } from '../../lib/backtest';
 import PageHero from '../../ui/PageHero.vue';
+import EquityChart from '../../ui/charts/EquityChart.vue';
 import Icon from '../../shell/Icon.vue';
 
 const app = useAppStore();
 const trading = useTradingStore();
 const router = useRouter();
 
-// 净值图周期(图表壳 chrome;数据待接入,切换仅切视图区间标签)。
+// 净值图周期:对最近一次回测净值曲线按区间切片(真实数据,非死控件)。
 const PERIODS = [
   { key: '1m', label: '近1月' },
   { key: '6m', label: '近6月' },
@@ -20,15 +23,61 @@ const PERIODS = [
   { key: 'all', label: '全部' },
 ];
 const period = ref('6m');
-const periodLabel = computed(() => PERIODS.find((p) => p.key === period.value)?.label ?? '');
 
-onMounted(() => {
-  if (app.onboardingDone) {
-    trading.fetchModel();
-    trading.fetchPersonal();
-    trading.fetchLivePnl();
+// 总览净值曲线来源 = 最近一次回测(样本外);无回测则诚实空状态。
+const equity = ref<any | null>(null);
+
+onMounted(async () => {
+  if (!app.onboardingDone) return;
+  trading.fetchModel();
+  trading.fetchPersonal();
+  trading.fetchLivePnl();
+  try {
+    const list = await api.backtests(); // 按 created_at 倒序
+    if (list.length) equity.value = await api.backtest(list[0].id);
+  } catch {
+    equity.value = null;
   }
 });
+
+// ── 净值曲线 → EquityChart(按周期切片;组合/基准各自归一化到区间首值=1)──────
+const navPoints = computed<any[]>(() => equity.value?.nav_curve ?? []);
+const periodPoints = computed(() => {
+  const pts = navPoints.value;
+  if (!pts.length) return [];
+  if (period.value === 'all') return pts;
+  if (period.value === 'ytd') {
+    const yr = pts[pts.length - 1].date.slice(0, 4);
+    return pts.filter((p) => p.date >= `${yr}-01-01`);
+  }
+  return pts.slice(period.value === '1m' ? -21 : -126);
+});
+const eqModel = computed(() => {
+  const navs = periodPoints.value.map((p) => p.nav ?? 0);
+  const base = navs[0] || 1;
+  return navs.map((v) => v / base);
+});
+const eqBench = computed(() => {
+  const raw = periodPoints.value.map((p) => (p.benchmark ?? null) as number | null);
+  const b0 = raw.find((v) => v != null) ?? null;
+  if (b0 == null) return [];
+  return raw.map((v) => (v != null ? v / b0 : 0)) as number[];
+});
+const eqDD = computed(() => {
+  const navs = periodPoints.value.map((p) => p.nav ?? 0);
+  return drawdownSeries(navs).map((v) => v * 100);
+});
+const eqMarkers = computed(() => {
+  const idx = new Map<string, number>();
+  periodPoints.value.forEach((p, i) => idx.set(p.date, i));
+  const out: Array<{ i: number; t: 'buy' | 'sell' }> = [];
+  for (const t of equity.value?.trades ?? []) {
+    const i = idx.get(t.trade_date);
+    if (i != null) out.push({ i, t: t.side === 'buy' ? 'buy' : 'sell' });
+  }
+  return out;
+});
+const hasEquity = computed(() => eqModel.value.length >= 2);
 
 function mvSum(holds: Array<{ market_value?: number | null }>): number {
   return holds.reduce((s, h) => s + (h.market_value ?? 0), 0);
@@ -130,15 +179,17 @@ function pct(v: number | null | undefined, dec = 2): string {
         </div>
       </div>
 
-      <!-- 净值曲线(待接入)+ 风控闸 -->
+      <!-- 净值曲线(最近一次回测,样本外)+ 风控闸 -->
       <div class="grid-21">
         <div class="card">
           <div class="card-head">
             <div>
               <h3 class="card-title">模型净值 vs 沪深300</h3>
-              <span class="card-sub">累计净值 · 前复权 · 含回撤</span>
+              <span class="card-sub">{{
+                hasEquity ? '最近一次回测 · 样本外 · 含回撤' : '累计净值 · 前复权 · 含回撤'
+              }}</span>
             </div>
-            <div class="segmented">
+            <div v-if="hasEquity" class="segmented">
               <button
                 v-for="p in PERIODS"
                 :key="p.key"
@@ -149,7 +200,7 @@ function pct(v: number | null | undefined, dec = 2): string {
               </button>
             </div>
           </div>
-          <div class="eq-legend">
+          <div v-if="hasEquity" class="eq-legend">
             <span class="lg"><i class="ln model" />模型净值</span>
             <span class="lg"><i class="ln bench" />沪深300</span>
             <span class="lg"><i class="sw dd" />回撤</span>
@@ -157,14 +208,21 @@ function pct(v: number | null | undefined, dec = 2): string {
             <span class="lg"><i class="mk sell" />卖</span>
           </div>
           <div class="card-pad">
-            <div class="empty">
+            <EquityChart
+              v-if="hasEquity"
+              :model="eqModel"
+              :bench="eqBench"
+              :dd="eqDD"
+              :markers="eqMarkers"
+              :height="232"
+            />
+            <div v-else class="empty">
               <div class="empty-icon"><Icon name="market" :size="20" /></div>
               <div class="empty-title">净值曲线待接入</div>
               <div class="empty-desc">
                 到「回测」生成一次样本外净值曲线,或随盘后调度逐日累计后在此展示(模型线=品牌紫,基准=中性虚线,回撤阴影,买卖点
                 ▲蓝/▼橙)。
               </div>
-              <div class="empty-range cap">选定区间 · {{ periodLabel }}</div>
               <button class="btn btn-primary btn-sm" @click="router.push('/backtest')">
                 去回测 →
               </button>
@@ -332,9 +390,6 @@ function pct(v: number | null | undefined, dec = 2): string {
 }
 .mk.sell {
   border-top: 7px solid var(--status-warn);
-}
-.empty-range {
-  color: var(--text-3);
 }
 
 .guide {
