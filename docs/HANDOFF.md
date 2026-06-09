@@ -167,7 +167,7 @@ pnpm --filter @sinan/desktop dev    # 或 (cd apps/desktop && node node_modules/
 **下一个大里程碑(候选)**
 
 - ✅ **M4 v1 指标库实接(本会话完成)**:`factors/quality.py`(复用 M3 特征面板+前向标签+`rank_ic`,逐因子真实 IC 均值/ICIR/覆盖度 + IC 时序 + 十分位分层)+ `/engine/factors/quality` + api `GET /indicators/quality`(按需重算不落库)+ 前端 `/indicators`(质检区间表单 → 因子表 + 详情 `ui/charts/{ICChart,DecileBars}.vue`)。契约 `indicators_quality`/`factors_quality` 端点。
-- ✅ **M4 v2 MVP(本会话完成)**:自定义因子 **DSL 校验编辑器**(`/indicators` 表达式输入 → api `POST /indicators/validate` → engine 沙箱白名单 + 仅回看算子,结构上无未来函数)。**剩余 v3**:自定义因子持久化(表+CRUD)+ 接入 `compute_factor_matrix`/质检/打分(用 `indicators/safe_eval` 对 asof 截面求值)+ 启用/权重。
+- ✅ **M4 v2 + v3(本会话完成,自定义因子端到端打通)**:DSL 校验编辑器(`/indicators` → api `indicators_validate` → engine 沙箱白名单+仅回看算子);**v3**:`factors/custom.py` 把 DSL 表达式包成与内置同构的 `Factor`(`_build_dsl_panel(ctx)` 经 FactorContext 取 <=asof 面板 PIT → `indicators/eval_compiled`)→ 接入 `factor_quality`(`custom=[{name,expr,group}]`,与内置并列算真实 IC/分层);api `0006_custom_factors` + CRUD(`custom_factors_*` 端点,创建前经沙箱校验拒非法/前视)+ `/indicators/quality` 自动下发启用的自定义因子;前端 `/indicators` 编辑→校验→保存→列表/删除。**红线#1 双保险**:PIT(ctx 只见<=asof)+ DSL 仅回看算子(结构上写不出前视),自定义因子过穿越测试(`test_custom_factor_no_future_function`)。⚠️ roe 按股广播(latest_financial asof 值,对 roe 做 ts 算子=扁平,非泄漏但丢时间变化,MVP 限制)。**剩余**:因子启用/权重接入打分(score)、更多内置因子。
 - **M5 资讯/估值/桌面特性**(`/news` 仍锁定)、**M6 打包分发+自动更新**(release.yml 脚手架已在,需冻结 sidecar;**本环境 cargo 镜像曾不可达**)。
 - ✅ **诚实小缺口收口(本会话)**:总览净值曲线接最近一次回测(`EquityChart`,周期分段真实切片);总览风控闸接真实持仓(集中度/持仓占用/当日回撤 `RiskBar`,行业/波动待数据);回测补胜率/盈亏比/换手率(`_realized_trade_pnls` 移动加权成本重放;`profit_factor=inf` 置 None 保 JSON 安全)。
 - 剩余诚实缺口:设置页自动刷新/盘后落库为只读(缺 PUT settings 端点);风控闸行业暴露/波动率待行业分类+历史波动数据;**未用真实 Tushare token 跑过端到端连通(建议手测一次)**。
