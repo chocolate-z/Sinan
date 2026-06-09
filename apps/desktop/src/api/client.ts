@@ -141,4 +141,9 @@ export const api = {
     code: string,
     opts: { adjust?: 'qfq' | 'none'; limit?: number; start?: string; end?: string } = {},
   ) => request<any>(API_ENDPOINTS.prices_get, { params: { code }, query: { ...opts } }),
+
+  // ── 回测域(M2)────────────────────────────────────────────────────────────
+  createBacktest: (body: unknown) => request<any>(API_ENDPOINTS.backtests_create, { body }),
+  backtests: () => request<any[]>(API_ENDPOINTS.backtests_list),
+  backtest: (id: string) => request<any>(API_ENDPOINTS.backtests_get, { params: { id } }),
 };

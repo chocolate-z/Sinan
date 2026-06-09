@@ -51,6 +51,9 @@ export const API_ENDPOINTS = {
   pnl_today: { method: 'GET', path: '/pnl/today' },
   quotes_list: { method: 'GET', path: '/quotes' },
   prices_get: { method: 'GET', path: '/prices/:code' },
+  backtests_create: { method: 'POST', path: '/backtests' },
+  backtests_list: { method: 'GET', path: '/backtests' },
+  backtests_get: { method: 'GET', path: '/backtests/:id' },
 } as const satisfies Record<string, EndpointDef>;
 
 /** api ↔ engine 内部(:59915,X-Sinan-Internal)。 */

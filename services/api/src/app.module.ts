@@ -11,6 +11,7 @@ import { JobBus, JobsController, JobsService } from './modules/jobs.js';
 import { ProvidersController } from './modules/providers.js';
 import { PaperService, PortfolioController, TradingController } from './modules/trading.js';
 import { MarketController } from './modules/market.js';
+import { BacktestController } from './modules/backtest.js';
 import { SchedulerService } from './modules/scheduler.js';
 import {
   CoverageController,
@@ -43,6 +44,7 @@ export class AppModule {
         TradingController,
         PortfolioController,
         MarketController,
+        BacktestController,
       ],
       providers: [
         {

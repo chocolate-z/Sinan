@@ -40,7 +40,10 @@
     "pnl_daily": { "method": "GET", "path": "/pnl/daily" },
     "pnl_today": { "method": "GET", "path": "/pnl/today" },
     "quotes_list": { "method": "GET", "path": "/quotes" },
-    "prices_get": { "method": "GET", "path": "/prices/:code" }
+    "prices_get": { "method": "GET", "path": "/prices/:code" },
+    "backtests_create": { "method": "POST", "path": "/backtests" },
+    "backtests_list": { "method": "GET", "path": "/backtests" },
+    "backtests_get": { "method": "GET", "path": "/backtests/:id" }
   },
   "engine": {
     "health": { "method": "GET", "path": "/healthz" },

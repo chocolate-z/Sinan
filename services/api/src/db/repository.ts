@@ -616,4 +616,82 @@ export class Repository {
   personalDelete(code: string): void {
     this.db.run('DELETE FROM holdings_personal WHERE stock_code=?', code);
   }
+
+  // ── 回测(engine 计算,api 落库展示;红线#6:engine 不写 SQLite)─────────────
+  insertBacktest(
+    input: {
+      strategy_id?: string | null;
+      backtest_start: string;
+      backtest_end: string;
+      train_end: string;
+      purge: number;
+      benchmark: string;
+      initial_cash: number;
+    },
+    result: {
+      n_days: number;
+      n_trades: number;
+      total_cost: number;
+      cost_included: boolean;
+      metrics: unknown;
+      nav_curve: unknown;
+      degraded?: unknown;
+    },
+  ): string {
+    const id = randomUUID();
+    this.db.run(
+      `INSERT INTO backtests(id,strategy_id,backtest_start,backtest_end,train_end,purge,benchmark,
+         initial_cash,n_days,n_trades,total_cost,cost_included,metrics_json,nav_curve_json,
+         degraded_json,status,created_at)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+      id,
+      input.strategy_id ?? null,
+      input.backtest_start,
+      input.backtest_end,
+      input.train_end,
+      input.purge,
+      input.benchmark,
+      input.initial_cash,
+      result.n_days,
+      result.n_trades,
+      result.total_cost,
+      result.cost_included ? 1 : 0,
+      JSON.stringify(result.metrics ?? null),
+      JSON.stringify(result.nav_curve ?? []),
+      JSON.stringify(result.degraded ?? []),
+      'done',
+      now(),
+    );
+    return id;
+  }
+
+  backtestsList(): any[] {
+    return this.db
+      .all<any>(
+        `SELECT id,strategy_id,backtest_start,backtest_end,train_end,purge,benchmark,initial_cash,
+           n_days,n_trades,total_cost,cost_included,metrics_json,status,created_at
+         FROM backtests ORDER BY created_at DESC`,
+      )
+      .map((r) => ({
+        ...r,
+        cost_included: !!r.cost_included,
+        metrics: r.metrics_json ? JSON.parse(r.metrics_json) : null,
+        metrics_json: undefined,
+      }));
+  }
+
+  backtestGet(id: string): any | null {
+    const r = this.db.get<any>('SELECT * FROM backtests WHERE id=?', id);
+    if (!r) return null;
+    return {
+      ...r,
+      cost_included: !!r.cost_included,
+      metrics: r.metrics_json ? JSON.parse(r.metrics_json) : null,
+      nav_curve: r.nav_curve_json ? JSON.parse(r.nav_curve_json) : [],
+      degraded: r.degraded_json ? JSON.parse(r.degraded_json) : [],
+      metrics_json: undefined,
+      nav_curve_json: undefined,
+      degraded_json: undefined,
+    };
+  }
 }

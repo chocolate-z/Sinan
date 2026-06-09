@@ -66,6 +66,27 @@ export interface PricesResult {
   degraded: boolean;
 }
 
+export interface BacktestRequest {
+  backtest_start: string;
+  backtest_end: string;
+  train_end: string;
+  codes?: string[];
+  benchmark?: string;
+  purge?: number;
+  params?: Record<string, unknown>;
+  initial_cash?: number;
+}
+
+/** engine 返回非 2xx 时抛出,携带状态码与 detail,供 api 决定转发何种 HTTP 错误。 */
+export class EngineError extends Error {
+  constructor(
+    public status: number,
+    public detail: unknown,
+  ) {
+    super(`engine error ${status}`);
+  }
+}
+
 export interface EngineClient {
   providerTest(provider: string, token?: string): Promise<ProviderTestResult>;
   /** 连接 engine cache/build SSE,逐事件回调。完成时 resolve。 */
@@ -76,6 +97,8 @@ export interface EngineClient {
   quotes(codes: string[]): Promise<Record<string, Quote>>;
   /** 历史日 K(本地 parquet,PIT 安全),供行情页 KLineChart。 */
   prices(req: PricesRequest): Promise<PricesResult>;
+  /** 回测(逐日撮合 + 硬守卫 + 含成本)。守卫违反抛 EngineError(422)。 */
+  backtest(req: BacktestRequest): Promise<any>;
 }
 
 export const ENGINE_CLIENT = Symbol('ENGINE_CLIENT');
@@ -151,5 +174,23 @@ export class HttpEngineClient implements EngineClient {
     });
     if (!res.ok) throw new Error(`engine prices ${res.status}`);
     return (await res.json()) as PricesResult;
+  }
+
+  async backtest(req: BacktestRequest): Promise<any> {
+    const res = await fetch(`${config.engineBaseUrl()}/engine/backtest`, {
+      method: 'POST',
+      headers: this.headers(),
+      body: JSON.stringify(req),
+    });
+    if (!res.ok) {
+      let detail: unknown;
+      try {
+        detail = ((await res.json()) as { detail?: unknown }).detail;
+      } catch {
+        detail = await res.text();
+      }
+      throw new EngineError(res.status, detail);
+    }
+    return res.json();
   }
 }
