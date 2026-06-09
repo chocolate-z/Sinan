@@ -9,6 +9,7 @@ import { fmt } from '../../lib/format';
 import { drawdownSeries } from '../../lib/backtest';
 import PageHero from '../../ui/PageHero.vue';
 import EquityChart from '../../ui/charts/EquityChart.vue';
+import RiskBar from '../../ui/charts/RiskBar.vue';
 import Icon from '../../shell/Icon.vue';
 
 const app = useAppStore();
@@ -78,6 +79,19 @@ const eqMarkers = computed(() => {
   return out;
 });
 const hasEquity = computed(() => eqModel.value.length >= 2);
+
+// ── 风控闸:从真实模型持仓算可计算的约束(集中度/持仓占用/当日回撤);行业/波动待数据接入 ──────
+const hasRisk = computed(() => trading.modelHoldings.length > 0);
+const maxHolding = computed(() =>
+  trading.modelHoldings.reduce((m, h) => Math.max(m, h.market_value ?? 0), 0),
+);
+const concentration = computed(() =>
+  modelMV.value > 0 ? Number(((maxHolding.value / modelMV.value) * 100).toFixed(1)) : 0,
+);
+const modelDD = computed(() => {
+  const d = trading.modelPnlLatest?.drawdown;
+  return d != null ? Number((Math.abs(d) * 100).toFixed(1)) : null;
+});
 
 function mvSum(holds: Array<{ market_value?: number | null }>): number {
   return holds.reduce((s, h) => s + (h.market_value ?? 0), 0);
@@ -234,17 +248,31 @@ function pct(v: number | null | undefined, dec = 2): string {
           <div class="card-head">
             <div>
               <h3 class="card-title">风控闸</h3>
-              <span class="card-sub">集中度 / 行业暴露 / 波动率 / 当日回撤</span>
+              <span class="card-sub">集中度 / 持仓占用 / 当日回撤(组合级,约束=默认基线)</span>
             </div>
-            <span class="badge badge-idle"><span class="dot" />待跑一轮</span>
+            <span class="badge" :class="hasRisk ? 'badge-ok' : 'badge-idle'"
+              ><span class="dot" />{{ hasRisk ? '当前组合' : '待跑一轮' }}</span
+            >
           </div>
           <div class="card-pad">
-            <div class="empty">
+            <div v-if="hasRisk" class="risk-list">
+              <RiskBar label="单票集中度" :used="concentration" :limit="20" unit="%" />
+              <RiskBar label="持仓占用" :used="trading.modelHoldings.length" :limit="5" unit="" />
+              <RiskBar
+                v-if="modelDD != null"
+                label="当日回撤"
+                :used="modelDD"
+                :limit="12"
+                unit="%"
+              />
+              <div class="risk-note cap">行业暴露 / 波动率 待接入(需行业分类与历史波动数据)</div>
+            </div>
+            <div v-else class="empty">
               <div class="empty-icon"><Icon name="shield" :size="20" /></div>
               <div class="empty-title">风控校验待生成</div>
               <div class="empty-desc">
-                盘后跑一轮后,这里展示组合集中度、行业暴露、波动率与当日回撤的占用进度与校验项(按用量
-                ok→warn→err 变色)。
+                盘后跑一轮、模型盘建仓后,这里按真实持仓展示集中度、持仓占用与当日回撤的占用进度(按用量
+                ok→warn→err 变色);行业暴露 / 波动率待数据接入。
               </div>
             </div>
           </div>
@@ -390,6 +418,16 @@ function pct(v: number | null | undefined, dec = 2): string {
 }
 .mk.sell {
   border-top: 7px solid var(--status-warn);
+}
+.risk-list {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.risk-note {
+  color: var(--text-3);
+  padding-top: 4px;
+  border-top: 0.5px solid var(--border-faint);
 }
 
 .guide {
