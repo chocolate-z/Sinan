@@ -1,20 +1,7 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
+import { onBeforeUnmount, onMounted, ref } from 'vue';
 import { getAppWindow, isTauri } from '../lib/tauri';
-import { useAppStore } from '../stores/app';
-import { themePrefIcon, themePrefLabel, THEME_PREFS, type ThemePref } from '../lib/theme';
-
-const app = useAppStore();
-
-const providerLabel = computed(() => {
-  const active = app.providers.find((p) => p.id === app.activeProvider);
-  return active ? active.display_name : (app.activeProvider ?? '未配置');
-});
-
-function cycleTheme() {
-  const i = THEME_PREFS.indexOf(app.themePref);
-  app.setThemePref(THEME_PREFS[(i + 1) % THEME_PREFS.length] as ThemePref);
-}
+import Icon from './Icon.vue';
 
 const inTauri = isTauri();
 const maximized = ref(false);
@@ -43,41 +30,34 @@ onMounted(async () => {
       maximized.value = await w.isMaximized();
     });
   } catch {
-    /* 非关键:状态图标退化为「最大化」即可 */
+    /* 非关键 */
   }
 });
 onBeforeUnmount(() => unlisten?.());
 </script>
 
 <template>
-  <!-- 自定义标题栏(配 tauri decorations:false)。窗口控制按钮按 Win11 习惯置于右上角。
-       浏览器开发环境(非 Tauri)隐藏控制按钮,用浏览器原生标题栏。 -->
+  <!-- 自定义标题栏(玻璃)。Win11 窗口控制置于右上;浏览器开发环境隐藏控制按钮。 -->
   <header class="titlebar" data-tauri-drag-region>
     <div class="tb-brand" data-tauri-drag-region>
-      <span class="tb-logo">🧭</span>
+      <span class="tb-logo"><Icon name="compass" :size="15" /></span>
       <span class="tb-name">司南</span>
       <span class="tb-sub">Sinan</span>
+      <span class="tb-ver mono">v2.4.0</span>
     </div>
     <div class="tb-drag" data-tauri-drag-region></div>
 
-    <!-- 状态 + 主题切换(原顶栏功能并入标题栏右侧) -->
-    <div class="tb-right">
-      <span class="m-badge tb-prov" :class="app.activeProvider ? 'status-ok' : 'status-err'">
-        {{ providerLabel }}
-      </span>
-      <button
-        class="tb-theme"
-        :title="`主题:${themePrefLabel(app.themePref)}(点按切换)`"
-        @click="cycleTheme"
-      >
-        {{ themePrefIcon(app.themePref) }}
-      </button>
-    </div>
-
     <div v-if="inTauri" class="win-controls">
       <button class="win-btn" title="最小化" aria-label="最小化" @click="minimize">
-        <svg width="11" height="11" viewBox="0 0 11 11" aria-hidden="true">
-          <path d="M1 5.5 H10" stroke="currentColor" stroke-width="1" fill="none" />
+        <svg
+          width="10"
+          height="10"
+          viewBox="0 0 10 10"
+          stroke="currentColor"
+          stroke-width="1"
+          fill="none"
+        >
+          <line x1="1" y1="5" x2="9" y2="5" />
         </svg>
       </button>
       <button
@@ -86,30 +66,40 @@ onBeforeUnmount(() => unlisten?.());
         :aria-label="maximized ? '还原' : '最大化'"
         @click="toggleMaximize"
       >
-        <svg v-if="!maximized" width="11" height="11" viewBox="0 0 11 11" aria-hidden="true">
-          <rect
-            x="1"
-            y="1"
-            width="9"
-            height="9"
-            rx="0.5"
-            stroke="currentColor"
-            stroke-width="1"
-            fill="none"
-          />
+        <svg
+          v-if="!maximized"
+          width="10"
+          height="10"
+          viewBox="0 0 10 10"
+          stroke="currentColor"
+          stroke-width="1"
+          fill="none"
+        >
+          <rect x="1.5" y="1.5" width="7" height="7" />
         </svg>
-        <svg v-else width="11" height="11" viewBox="0 0 11 11" aria-hidden="true">
-          <path
-            d="M3 3 V1.5 H9.5 V8 H8 M1.5 3.5 H8 V9.5 H1.5 Z"
-            stroke="currentColor"
-            stroke-width="1"
-            fill="none"
-          />
+        <svg
+          v-else
+          width="10"
+          height="10"
+          viewBox="0 0 10 10"
+          stroke="currentColor"
+          stroke-width="1"
+          fill="none"
+        >
+          <path d="M2.5 2.5V1.5H8.5V7.5H7.5M1.5 3.5H6.5V8.5H1.5Z" />
         </svg>
       </button>
       <button class="win-btn close" title="关闭" aria-label="关闭" @click="close">
-        <svg width="11" height="11" viewBox="0 0 11 11" aria-hidden="true">
-          <path d="M1 1 L10 10 M10 1 L1 10" stroke="currentColor" stroke-width="1" fill="none" />
+        <svg
+          width="10"
+          height="10"
+          viewBox="0 0 10 10"
+          stroke="currentColor"
+          stroke-width="1"
+          fill="none"
+        >
+          <line x1="1.5" y1="1.5" x2="8.5" y2="8.5" />
+          <line x1="8.5" y1="1.5" x2="1.5" y2="8.5" />
         </svg>
       </button>
     </div>
@@ -118,95 +108,71 @@ onBeforeUnmount(() => unlisten?.());
 
 <style scoped>
 .titlebar {
-  display: flex;
-  align-items: stretch;
-  height: 34px;
+  height: var(--titlebar-h);
   flex: none;
-  background: var(--c-titlebar);
-  border-bottom: 1px solid var(--c-hairline);
-  backdrop-filter: var(--blur-thin);
-  -webkit-backdrop-filter: var(--blur-thin);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-left: 14px;
+  background: var(--glass-chrome);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  border-bottom: 0.5px solid var(--border);
   user-select: none;
+  z-index: 10;
 }
 .tb-brand {
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 0 var(--sp-3);
+  gap: 8px;
 }
 .tb-logo {
-  font-size: 14px;
-  line-height: 1;
+  display: inline-flex;
+  color: var(--accent);
 }
 .tb-name {
-  font-size: var(--fs-cap);
-  font-weight: 700;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text-1);
   letter-spacing: 0.01em;
 }
 .tb-sub {
+  font-size: 12px;
+  color: var(--text-3);
+}
+.tb-ver {
   font-size: 10px;
-  font-weight: 500;
-  color: var(--c-text-3);
-  letter-spacing: 0.04em;
+  color: var(--text-3);
+  margin-left: 2px;
+  padding: 1px 5px;
+  border: 0.5px solid var(--border);
+  border-radius: 4px;
 }
 .tb-drag {
   flex: 1;
-}
-.tb-right {
-  display: flex;
-  align-items: center;
-  gap: var(--sp-2);
-  padding: 0 var(--sp-3);
-  flex: none;
-}
-.tb-prov {
-  font-size: 11px;
-}
-.tb-theme {
-  border: none;
-  background: transparent;
-  color: var(--c-text-2);
-  font-size: 13px;
-  line-height: 1;
-  padding: 3px 6px;
-  border-radius: var(--r-sm);
-  cursor: pointer;
-  transition: background var(--dur-fast) var(--ease);
-}
-.tb-theme:hover {
-  background: var(--c-surface-2);
-  color: var(--c-text);
+  align-self: stretch;
 }
 .win-controls {
   display: flex;
-  flex: none;
+  height: 100%;
 }
 .win-btn {
-  width: 46px;
+  width: 44px;
   height: 100%;
   display: grid;
   place-items: center;
   border: none;
   background: transparent;
-  color: var(--c-text-2);
+  color: var(--text-2);
   cursor: default;
-  transition:
-    background var(--dur-fast) var(--ease),
-    color var(--dur-fast) var(--ease);
+  transition: background 0.1s;
 }
 .win-btn:hover {
-  background: var(--c-surface-2);
-  color: var(--c-text);
-}
-.win-btn:active {
-  background: var(--c-border);
+  background: var(--bg-elevated);
+  color: var(--text-1);
 }
 .win-btn.close:hover {
-  background: #c42b1c;
-  color: #fff;
-}
-.win-btn.close:active {
-  background: #b02418;
+  background: #e34a3f;
   color: #fff;
 }
 </style>

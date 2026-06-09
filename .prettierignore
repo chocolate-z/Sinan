@@ -16,6 +16,9 @@ runtime/
 # 大文档不重排
 SINAN_DESIGN.md
 
+# 设计交接参考稿(外部产出,不参与本仓库格式化)
+docs/design_handoff_sinan/
+
 # 其它语言交由各自格式化器
 **/*.py
 **/*.rs

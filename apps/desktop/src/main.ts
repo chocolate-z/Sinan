@@ -4,6 +4,7 @@ import './styles/tailwind.css';
 import './design/tokens.css';
 import './design/pnl.css';
 import './design/materials.css';
+import './design/components.css';
 import './styles/app.scss';
 import App from './App.vue';
 import { router } from './router';

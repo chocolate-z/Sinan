@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>司南 Sinan — 设计规范 / Design Tokens</title>
+<style>
+  :root{
+    --ink:#1b1c20; --ink2:#5d616a; --ink3:#9498a1; --line:rgba(0,0,0,0.10); --line2:rgba(0,0,0,0.06);
+    --paper:#f7f7f8; --card:#fff; --accent:#6e63f5;
+    --sans:-apple-system,"SF Pro Text","Segoe UI","PingFang SC","Microsoft YaHei",system-ui,sans-serif;
+    --mono:"SF Mono","JetBrains Mono","Roboto Mono",ui-monospace,Menlo,Consolas,monospace;
+  }
+  *{box-sizing:border-box;}
+  body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--sans);font-size:14px;line-height:1.55;-webkit-font-smoothing:antialiased;}
+  .mono{font-family:var(--mono);font-variant-numeric:tabular-nums;}
+  .doc{max-width:1040px;margin:0 auto;padding:56px 56px 80px;}
+  .cap{font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink3);font-weight:700;}
+  h1{font-size:30px;font-weight:700;letter-spacing:-.025em;margin:0;}
+  h2{font-size:19px;font-weight:700;letter-spacing:-.02em;margin:0 0 4px;}
+  h3{font-size:13px;font-weight:700;margin:0 0 10px;color:var(--ink);}
+  p.lede{color:var(--ink2);margin:8px 0 0;max-width:62ch;}
+  section{margin-top:48px;}
+  .sec-head{display:flex;align-items:baseline;gap:12px;padding-bottom:14px;margin-bottom:22px;border-bottom:1px solid var(--line);}
+  .sec-head .n{font-family:var(--mono);font-size:12px;color:var(--accent);font-weight:600;}
+  .grid{display:grid;gap:14px;}
+  .card{background:var(--card);border:1px solid var(--line2);border-radius:12px;padding:18px;box-shadow:0 1px 2px rgba(0,0,0,.03);}
+  /* swatch */
+  .sw-row{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px;}
+  .sw{border:1px solid var(--line2);border-radius:10px;overflow:hidden;background:#fff;}
+  .sw .chip{height:54px;}
+  .sw .meta{padding:9px 11px;}
+  .sw .nm{font-size:12px;font-weight:600;}
+  .sw .hex{font-family:var(--mono);font-size:11px;color:var(--ink2);margin-top:2px;}
+  .sw .use{font-size:10.5px;color:var(--ink3);margin-top:3px;}
+  .tag{display:inline-flex;align-items:center;gap:5px;font-family:var(--mono);font-size:10px;font-weight:600;padding:2px 7px;border-radius:999px;}
+  .tag i{width:7px;height:7px;border-radius:2px;}
+  .t-pnl{background:rgba(227,93,91,.12);color:#b5403e;} .t-pnl i{background:#e35d5b;}
+  .t-status{background:rgba(74,144,217,.14);color:#356ea3;} .t-status i{background:#4a90d9;}
+  .t-accent{background:rgba(110,99,245,.14);color:#5347c8;} .t-accent i{background:#6e63f5;}
+  .t-neutral{background:rgba(0,0,0,.05);color:var(--ink2);} .t-neutral i{background:#9498a1;}
+  table{width:100%;border-collapse:collapse;font-size:13px;}
+  th{text-align:left;font-size:11px;letter-spacing:.04em;text-transform:uppercase;color:var(--ink3);font-weight:600;padding:8px 12px;border-bottom:1px solid var(--line);}
+  td{padding:9px 12px;border-bottom:1px solid var(--line2);vertical-align:middle;}
+  td.mono{color:var(--ink2);}
+  .pill{display:inline-block;border:1px solid var(--line);border-radius:7px;padding:3px 9px;font-family:var(--mono);font-size:12px;background:#fff;}
+  .two{display:grid;grid-template-columns:1fr 1fr;gap:14px;}
+  .rule-note{font-size:12.5px;color:var(--ink2);background:#fff;border:1px solid var(--line2);border-left:3px solid var(--accent);border-radius:8px;padding:12px 14px;margin-top:6px;}
+  .scale-bar{height:10px;border-radius:3px;background:var(--accent);}
+  .radii-demo{display:flex;align-items:flex-end;gap:14px;}
+  .radii-demo .b{width:62px;height:62px;background:#fff;border:1px solid var(--line);}
+  .sp-demo{display:flex;align-items:center;gap:10px;}
+  .sp-demo .b{background:var(--accent);height:18px;border-radius:3px;}
+  .head-wrap{display:flex;justify-content:space-between;align-items:flex-end;gap:20px;border-bottom:2px solid var(--ink);padding-bottom:22px;}
+  .brand{display:flex;align-items:center;gap:14px;}
+  .brand .logo{width:46px;height:46px;border-radius:13px;background:linear-gradient(135deg,#6e63f5,#a06bff);display:grid;place-items:center;box-shadow:0 8px 22px -8px rgba(110,99,245,.55);}
+  @media print{ body{background:#fff;} .doc{padding:24px;} section{break-inside:avoid;} .card,.sw{break-inside:avoid;} }
+</style>
+</head>
+<body>
+<div class="doc">
+
+  <header class="head-wrap">
+    <div class="brand">
+      <div class="logo">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.6"><circle cx="12" cy="12" r="9"/><path d="M15.5 8.5l-2 5-5 2 2-5z" fill="#fff" stroke="none"/></svg>
+      </div>
+      <div>
+        <h1>司南 Sinan</h1>
+        <div style="color:var(--ink2);font-size:13px;margin-top:3px;">设计规范 · Design Tokens · v2.4</div>
+      </div>
+    </div>
+    <div style="text-align:right;font-size:12px;color:var(--ink3);">
+      本机量化研究桌面 · 深色默认<br/>仿苹果克制美学 · 工程深色基调
+    </div>
+  </header>
+
+  <p class="lede" style="margin-top:24px;">完整可落地的设计变量。<b>核心铁律:三套色彩通道互不交叉</b> —— 盈亏色(PnL)、系统状态色(Status)、品牌强调色(Accent)。深浅两套主题共用同一套尺度(字号 / 间距 / 圆角 / 动效)。</p>
+
+  <!-- 色彩铁律 -->
+  <div class="rule-note" style="margin-top:22px;">
+    <b>配色铁律</b> · ① <span class="tag t-pnl"><i></i>PnL 盈亏</span> 仅用于金额/涨跌/收益,A股惯例<b>红涨绿跌</b>(可在设置反转)。 ② <span class="tag t-status"><i></i>Status 状态</span> 仅用于任务/连接/健康/校验与<b>买卖方向</b>(买=蓝 卖=橙)。 ③ <span class="tag t-accent"><i></i>Accent 品牌</span> 仅用于交互/选中/主按钮。三者永不交叉。
+  </div>
+
+  <!-- 1. 通道色 -->
+  <section>
+    <div class="sec-head"><span class="n">01</span><h2>色彩 · 三通道(深色)</h2></div>
+
+    <h3>① 盈亏 PnL <span class="tag t-pnl"><i></i>PnL</span></h3>
+    <div class="sw-row">
+      <div class="sw"><div class="chip" style="background:#e35d5b"></div><div class="meta"><div class="nm">pnl-up · 涨/盈</div><div class="hex">#e35d5b</div><div class="use">金额上涨、正收益</div></div></div>
+      <div class="sw"><div class="chip" style="background:#34b27e"></div><div class="meta"><div class="nm">pnl-down · 跌/亏</div><div class="hex">#34b27e</div><div class="use">金额下跌、负收益</div></div></div>
+      <div class="sw"><div class="chip" style="background:#989ba1"></div><div class="meta"><div class="nm">pnl-flat</div><div class="hex">= text-2</div><div class="use">持平 / 0</div></div></div>
+    </div>
+
+    <h3 style="margin-top:22px;">② 系统状态 Status <span class="tag t-status"><i></i>Status</span></h3>
+    <div class="sw-row">
+      <div class="sw"><div class="chip" style="background:#4a90d9"></div><div class="meta"><div class="nm">status-ok · 正常</div><div class="hex">#4a90d9</div><div class="use">连接/校验通过/买入方向</div></div></div>
+      <div class="sw"><div class="chip" style="background:#d9913a"></div><div class="meta"><div class="nm">status-warn · 警告</div><div class="hex">#d9913a</div><div class="use">接近阈值/卖出方向</div></div></div>
+      <div class="sw"><div class="chip" style="background:#d65953"></div><div class="meta"><div class="nm">status-err · 错误</div><div class="hex">#d65953</div><div class="use">失败/超限/风控拦截</div></div></div>
+      <div class="sw"><div class="chip" style="background:#6b6e74"></div><div class="meta"><div class="nm">status-idle · 空闲</div><div class="hex">#6b6e74</div><div class="use">未连接/未授权</div></div></div>
+    </div>
+
+    <h3 style="margin-top:22px;">③ 品牌强调 Accent <span class="tag t-accent"><i></i>Accent</span></h3>
+    <div class="sw-row">
+      <div class="sw"><div class="chip" style="background:#6e63f5"></div><div class="meta"><div class="nm">accent</div><div class="hex">#6e63f5</div><div class="use">主按钮/选中/交互</div></div></div>
+      <div class="sw"><div class="chip" style="background:#8579ff"></div><div class="meta"><div class="nm">accent-hover</div><div class="hex">#8579ff</div><div class="use">悬停</div></div></div>
+      <div class="sw"><div class="chip" style="background:#a06bff"></div><div class="meta"><div class="nm">accent-2</div><div class="hex">#a06bff</div><div class="use">渐变终点</div></div></div>
+      <div class="sw"><div class="chip" style="background:linear-gradient(135deg,#6e63f5,#a06bff)"></div><div class="meta"><div class="nm">accent-grad</div><div class="hex">135° 6e63f5→a06bff</div><div class="use">主按钮/选中态/品牌</div></div></div>
+    </div>
+  </section>
+
+  <!-- 2. 中性灰阶 + 浅色 -->
+  <section>
+    <div class="sec-head"><span class="n">02</span><h2>中性灰阶 · 深色 / 浅色 <span class="tag t-neutral"><i></i>Neutral</span></h2></div>
+    <div class="two">
+      <div class="card">
+        <div class="cap" style="margin-bottom:12px;">深色 Dark(默认)</div>
+        <div class="sw-row" style="grid-template-columns:repeat(2,1fr);">
+          <div class="sw"><div class="chip" style="background:#151618"></div><div class="meta"><div class="nm">bg-window</div><div class="hex">#151618</div></div></div>
+          <div class="sw"><div class="chip" style="background:#18191c"></div><div class="meta"><div class="nm">bg-base</div><div class="hex">#18191c</div></div></div>
+          <div class="sw"><div class="chip" style="background:#212327"></div><div class="meta"><div class="nm">bg-panel</div><div class="hex">#212327</div></div></div>
+          <div class="sw"><div class="chip" style="background:#2e3036"></div><div class="meta"><div class="nm">bg-elevated</div><div class="hex">#2e3036</div></div></div>
+          <div class="sw"><div class="chip" style="background:#e7e8ea"></div><div class="meta"><div class="nm">text-1</div><div class="hex">#e7e8ea</div></div></div>
+          <div class="sw"><div class="chip" style="background:#989ba1"></div><div class="meta"><div class="nm">text-2</div><div class="hex">#989ba1</div></div></div>
+          <div class="sw"><div class="chip" style="background:#686b72"></div><div class="meta"><div class="nm">text-3</div><div class="hex">#686b72</div></div></div>
+          <div class="sw"><div class="chip" style="background:#0e0f11;position:relative;"><span style="position:absolute;inset:0;background:rgba(255,255,255,.072);"></span></div><div class="meta"><div class="nm">border</div><div class="hex">#fff α.072</div></div></div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="cap" style="margin-bottom:12px;">浅色 Light</div>
+        <div class="sw-row" style="grid-template-columns:repeat(2,1fr);">
+          <div class="sw"><div class="chip" style="background:#ececee;border-bottom:1px solid var(--line2)"></div><div class="meta"><div class="nm">bg-window</div><div class="hex">#ececee</div></div></div>
+          <div class="sw"><div class="chip" style="background:#f6f6f7;border-bottom:1px solid var(--line2)"></div><div class="meta"><div class="nm">bg-base</div><div class="hex">#f6f6f7</div></div></div>
+          <div class="sw"><div class="chip" style="background:#ffffff;border-bottom:1px solid var(--line2)"></div><div class="meta"><div class="nm">bg-panel</div><div class="hex">#ffffff</div></div></div>
+          <div class="sw"><div class="chip" style="background:#f0f0f2"></div><div class="meta"><div class="nm">bg-elevated</div><div class="hex">#f0f0f2</div></div></div>
+          <div class="sw"><div class="chip" style="background:#1c1d21"></div><div class="meta"><div class="nm">text-1</div><div class="hex">#1c1d21</div></div></div>
+          <div class="sw"><div class="chip" style="background:#5d616a"></div><div class="meta"><div class="nm">text-2</div><div class="hex">#5d616a</div></div></div>
+          <div class="sw"><div class="chip" style="background:#5a4fe0"></div><div class="meta"><div class="nm">accent</div><div class="hex">#5a4fe0</div></div></div>
+          <div class="sw"><div class="chip" style="background:#d23a37"></div><div class="meta"><div class="nm">pnl-up</div><div class="hex">#d23a37</div></div></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 3. 排版 -->
+  <section>
+    <div class="sec-head"><span class="n">03</span><h2>排版 Typography</h2></div>
+    <div class="two">
+      <div class="card">
+        <h3>字体栈</h3>
+        <div style="margin-bottom:14px;"><div class="cap">Sans · 界面</div><div class="mono" style="font-size:11.5px;color:var(--ink2);margin-top:4px;">-apple-system, "SF Pro Text", "Segoe UI", "PingFang SC", system-ui</div></div>
+        <div><div class="cap">Mono · 所有数字/金额/代码(tabular)</div><div class="mono" style="font-size:11.5px;color:var(--ink2);margin-top:4px;">"SF Mono", "JetBrains Mono", "Roboto Mono", ui-monospace</div>
+        <div class="mono" style="margin-top:8px;font-size:16px;">+1,486.30　+24.8%　600519.SH</div></div>
+      </div>
+      <div class="card">
+        <h3>字号 / 字重层级</h3>
+        <table>
+          <tr><td style="font-size:30px;font-weight:700;letter-spacing:-.02em;padding:4px 12px;">页面标题</td><td class="mono">30 / 700</td></tr>
+          <tr><td style="font-size:19px;font-weight:700;padding:4px 12px;">区块标题 H2</td><td class="mono">19 / 700</td></tr>
+          <tr><td style="font-size:15px;font-weight:600;padding:4px 12px;">卡片标题 H3</td><td class="mono">15 / 600</td></tr>
+          <tr><td style="font-size:13px;padding:4px 12px;">正文 Body</td><td class="mono">13 / 400</td></tr>
+          <tr><td style="font-size:12px;color:var(--ink2);padding:4px 12px;">副文 Sub</td><td class="mono">12 / 400</td></tr>
+          <tr><td style="font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--ink3);font-weight:600;padding:4px 12px;">标签 Caption</td><td class="mono">11 / 600</td></tr>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <!-- 4. 间距 圆角 描边 -->
+  <section>
+    <div class="sec-head"><span class="n">04</span><h2>间距 · 圆角 · 描边</h2></div>
+    <div class="grid" style="grid-template-columns:1.2fr 1fr;">
+      <div class="card">
+        <h3>间距尺度(px)</h3>
+        <div style="display:flex;flex-direction:column;gap:9px;">
+          <div class="sp-demo"><div class="b" style="width:4px"></div><span class="mono" style="font-size:12px;">4</span></div>
+          <div class="sp-demo"><div class="b" style="width:8px"></div><span class="mono" style="font-size:12px;">8</span></div>
+          <div class="sp-demo"><div class="b" style="width:12px"></div><span class="mono" style="font-size:12px;">12</span></div>
+          <div class="sp-demo"><div class="b" style="width:16px"></div><span class="mono" style="font-size:12px;">16</span></div>
+          <div class="sp-demo"><div class="b" style="width:20px"></div><span class="mono" style="font-size:12px;">20</span></div>
+          <div class="sp-demo"><div class="b" style="width:24px"></div><span class="mono" style="font-size:12px;">24 · 卡片内边距</span></div>
+          <div class="sp-demo"><div class="b" style="width:32px"></div><span class="mono" style="font-size:12px;">32</span></div>
+          <div class="sp-demo"><div class="b" style="width:40px"></div><span class="mono" style="font-size:12px;">40</span></div>
+        </div>
+      </div>
+      <div class="card">
+        <h3>圆角(px)</h3>
+        <div class="radii-demo">
+          <div style="text-align:center;"><div class="b" style="border-radius:5px"></div><div class="mono" style="font-size:11px;margin-top:6px;color:var(--ink2)">xs 5</div></div>
+          <div style="text-align:center;"><div class="b" style="border-radius:7px"></div><div class="mono" style="font-size:11px;margin-top:6px;color:var(--ink2)">sm 7</div></div>
+          <div style="text-align:center;"><div class="b" style="border-radius:10px"></div><div class="mono" style="font-size:11px;margin-top:6px;color:var(--ink2)">md 10</div></div>
+          <div style="text-align:center;"><div class="b" style="border-radius:14px"></div><div class="mono" style="font-size:11px;margin-top:6px;color:var(--ink2)">lg 14 · 卡片</div></div>
+          <div style="text-align:center;"><div class="b" style="border-radius:18px"></div><div class="mono" style="font-size:11px;margin-top:6px;color:var(--ink2)">xl 18</div></div>
+        </div>
+        <h3 style="margin-top:20px;">描边 Hairline</h3>
+        <p style="font-size:12.5px;color:var(--ink2);margin:0;">统一 <span class="pill">0.5px</span> 细描边分层,优先于投影。深色 <span class="mono">#fff α.045~.12</span>。</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- 5. 阴影 玻璃 动效 -->
+  <section>
+    <div class="sec-head"><span class="n">05</span><h2>玻璃 · 阴影 · 极光 · 动效</h2></div>
+    <div class="two">
+      <div class="card">
+        <h3>磨砂玻璃 Glass</h3>
+        <table>
+          <tr><td>卡片 glass-card</td><td class="mono">rgba(34,36,43,.64) + blur(22px)</td></tr>
+          <tr><td>外框 glass-chrome</td><td class="mono">rgba(20,21,25,.62)</td></tr>
+          <tr><td>滤镜 glass-blur</td><td class="mono">saturate(170%) blur(22px)</td></tr>
+        </table>
+        <h3 style="margin-top:16px;">阴影 / 发光</h3>
+        <table>
+          <tr><td>卡片 shadow-card</td><td class="mono">0 8px 22px −14 / .7</td></tr>
+          <tr><td>品牌发光 accent-glow</td><td class="mono">0 8px 24px −8 / α.55</td></tr>
+        </table>
+      </div>
+      <div class="card">
+        <h3>动效 Motion</h3>
+        <table>
+          <tr><td>fast · hover</td><td class="mono">110ms</td></tr>
+          <tr><td>med · 开关/过渡</td><td class="mono">180ms</td></tr>
+          <tr><td>ease</td><td class="mono">cubic-bezier(.2,.6,.2,1)</td></tr>
+          <tr><td>ease-out</td><td class="mono">cubic-bezier(.16,1,.3,1)</td></tr>
+        </table>
+        <h3 style="margin-top:16px;">极光 Aurora</h3>
+        <p style="font-size:12.5px;color:var(--ink2);margin:0;">主区背景叠加 3 处低透明度径向渐变(紫 / 青 / 品红),为玻璃面板提供景深。</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- 6. 组件状态 -->
+  <section>
+    <div class="sec-head"><span class="n">06</span><h2>组件状态速览</h2></div>
+    <table>
+      <thead><tr><th style="width:130px;">组件</th><th>默认</th><th>Hover</th><th>选中 / 激活</th><th>禁用</th></tr></thead>
+      <tbody>
+        <tr><td>主按钮</td><td class="mono">accent-grad + glow</td><td class="mono">brightness 1.08</td><td class="mono">brightness .96</td><td class="mono">opacity .4</td></tr>
+        <tr><td>次按钮</td><td class="mono">bg-elevated + 描边</td><td class="mono">bg-popover</td><td>—</td><td class="mono">opacity .4</td></tr>
+        <tr><td>表格行</td><td class="mono">透明</td><td class="mono">bg-elevated</td><td class="mono">accent-bg + 左 2px accent</td><td>—</td></tr>
+        <tr><td>侧栏项</td><td class="mono">text-2</td><td class="mono">bg-elevated</td><td class="mono">accent-grad 胶囊 + glow</td><td>—</td></tr>
+        <tr><td>输入框</td><td class="mono">bg-input + 描边</td><td>—</td><td class="mono">accent 边 + 3px ring</td><td class="mono">opacity .4</td></tr>
+        <tr><td>徽章 Badge</td><td class="mono">圆点 + 文字(状态色)</td><td>—</td><td>—</td><td>—</td></tr>
+      </tbody>
+    </table>
+    <div class="rule-note" style="margin-top:18px;">所有<b>数字列右对齐</b>并使用等宽 tabular 字体;表头弱化(text-3 / 11px);行高紧凑 34–40px;金融表格优先列对齐与可读性。</div>
+  </section>
+
+  <footer style="margin-top:56px;padding-top:20px;border-top:1px solid var(--line);font-size:11.5px;color:var(--ink3);text-align:center;">
+    司南 Sinan · 设计规范 v2.4 — 本工具仅供量化研究与策略验证,不构成任何投资建议
+  </footer>
+</div>
+</body>
+</html>

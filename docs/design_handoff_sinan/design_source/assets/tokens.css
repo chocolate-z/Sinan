@@ -1,0 +1,219 @@
+/* ============================================================
+   司南 Sinan — Design Tokens
+   三套互不混用的色彩通道: PnL(盈亏) / Status(状态) / Accent(品牌)
+   Dark default, Light variant. A股惯例: 红涨绿跌(可在设置中反转)
+   ============================================================ */
+
+:root,
+[data-theme="dark"] {
+  /* ---- Neutral surfaces (layered, hairline-separated) ---- */
+  --bg-window:   #151618;   /* deepest: titlebar + sidebar */
+  --bg-base:     #18191c;    /* main content background      */
+  --bg-panel:    #212327;    /* cards / panels — one notch up */
+  --bg-panel-2:  #282a2f;    /* nested panel / table header   */
+  --bg-elevated: #2e3036;    /* hover / elevated surfaces      */
+  --bg-input:    #1b1c1f;    /* inputs                         */
+  --bg-popover:  #2a2c31;    /* menus, tooltips                */
+
+  /* ---- Hairline borders (low-contrast, lean on these not shadows) ---- */
+  --border:        rgba(255,255,255,0.072);
+  --border-strong: rgba(255,255,255,0.12);
+  --border-faint:  rgba(255,255,255,0.045);
+
+  /* ---- Text (three levels, soft white — never pure #fff) ---- */
+  --text-1: #e7e8ea;   /* primary    */
+  --text-2: #989ba1;   /* secondary  */
+  --text-3: #686b72;   /* tertiary / disabled */
+  --text-on-accent: #ffffff;
+
+  /* ---- Channel 1 · PnL (盈亏) — A股红涨绿跌, muted ---- */
+  --pnl-up:      #e35d5b;   /* 涨 / 盈利  */
+  --pnl-up-bg:   rgba(227,93,91,0.13);
+  --pnl-up-dim:  #b85452;
+  --pnl-down:    #34b27e;   /* 跌 / 亏损  */
+  --pnl-down-bg: rgba(52,178,126,0.13);
+  --pnl-down-dim:#3a9a72;
+  --pnl-flat:    var(--text-2);
+
+  /* ---- Channel 2 · Status (系统状态) — 蓝/橙/红 ---- */
+  --status-ok:     #4a90d9;   /* 正常 / 连接 / 校验通过 (蓝, 偏冷与品牌区分) */
+  --status-ok-bg:  rgba(74,144,217,0.14);
+  --status-warn:   #d9913a;   /* 警告 */
+  --status-warn-bg:rgba(217,145,58,0.14);
+  --status-err:    #d65953;   /* 错误 */
+  --status-err-bg: rgba(214,89,83,0.14);
+  --status-idle:   #6b6e74;   /* 空闲 / 未连接 */
+  --status-idle-bg:rgba(255,255,255,0.05);
+
+  /* ---- Channel 3 · Accent (品牌强调) — 现代靖紫渐变, 仅交互/选中/主按钮 ---- */
+  --accent:        #6e63f5;
+  --accent-hover:  #8579ff;
+  --accent-press:  #5a4fe0;
+  --accent-2:      #a06bff;
+  --accent-grad:   linear-gradient(135deg, #6e63f5 0%, #a06bff 100%);
+  --accent-grad-soft: linear-gradient(135deg, rgba(110,99,245,0.18), rgba(160,107,255,0.18));
+  --accent-bg:     rgba(110,99,245,0.15);
+  --accent-bg-2:   rgba(110,99,245,0.26);
+  --accent-ring:   rgba(110,99,245,0.5);
+  --accent-glow:   0 8px 24px -8px rgba(110,99,245,0.55);
+
+  /* ---- Glass (磨砂玻璃) + aurora ---- */
+  --glass-card:    rgba(34,36,43,0.64);
+  --glass-chrome:  rgba(20,21,25,0.62);
+  --glass-head:    rgba(34,36,43,0.92);
+  --glass-blur:    saturate(170%) blur(22px);
+  --aurora:
+    radial-gradient(900px 540px at 10% -10%, rgba(110,99,245,0.18), transparent 58%),
+    radial-gradient(820px 520px at 102% -4%, rgba(60,180,200,0.12), transparent 55%),
+    radial-gradient(760px 620px at 86% 112%, rgba(210,90,160,0.12), transparent 55%);
+
+  /* ---- Chart-only neutrals ---- */
+  --grid-line:   rgba(255,255,255,0.05);
+  --axis-text:   #686b72;
+  --benchmark:   #7c8088;   /* 基准线 (中性灰, 非通道色) */
+  --dd-fill:     rgba(214,89,83,0.10); /* 回撤阴影 */
+
+  /* ---- Shadows — soft Apple-style elevation on cards ---- */
+  --shadow-pop: 0 8px 28px -6px rgba(0,0,0,0.6), 0 0 0 0.5px rgba(0,0,0,0.5);
+  --shadow-card: 0 0 0 0.5px rgba(0,0,0,0.35), 0 1px 2px rgba(0,0,0,0.25), 0 8px 22px -14px rgba(0,0,0,0.7);
+  --hi-edge: inset 0 0.5px 0 rgba(255,255,255,0.05);
+
+  color-scheme: dark;
+}
+
+/* ============================================================
+   Light theme variant
+   ============================================================ */
+[data-theme="light"] {
+  --bg-window:   #ececee;
+  --bg-base:     #f6f6f7;
+  --bg-panel:    #ffffff;
+  --bg-panel-2:  #f3f3f5;
+  --bg-elevated: #f0f0f2;
+  --bg-input:    #ffffff;
+  --bg-popover:  #ffffff;
+
+  --border:        rgba(0,0,0,0.10);
+  --border-strong: rgba(0,0,0,0.16);
+  --border-faint:  rgba(0,0,0,0.06);
+
+  --text-1: #1c1d21;
+  --text-2: #5d616a;
+  --text-3: #989ca4;
+  --text-on-accent: #ffffff;
+
+  --pnl-up:      #d23a37;
+  --pnl-up-bg:   rgba(210,58,55,0.10);
+  --pnl-up-dim:  #b8332f;
+  --pnl-down:    #1a9968;
+  --pnl-down-bg: rgba(26,153,104,0.10);
+  --pnl-down-dim:#178257;
+  --pnl-flat:    var(--text-2);
+
+  --status-ok:     #2f77c2;
+  --status-ok-bg:  rgba(47,119,194,0.10);
+  --status-warn:   #c47d24;
+  --status-warn-bg:rgba(196,125,36,0.12);
+  --status-err:    #c8413b;
+  --status-err-bg: rgba(200,65,59,0.10);
+  --status-idle:   #989ca4;
+  --status-idle-bg:rgba(0,0,0,0.045);
+
+  --accent:        #5a4fe0;
+  --accent-hover:  #4a40d0;
+  --accent-press:  #3f36c0;
+  --accent-2:      #8b5cf6;
+  --accent-grad:   linear-gradient(135deg, #5a4fe0 0%, #8b5cf6 100%);
+  --accent-grad-soft: linear-gradient(135deg, rgba(90,79,224,0.12), rgba(139,92,246,0.12));
+  --accent-bg:     rgba(90,79,224,0.10);
+  --accent-bg-2:   rgba(90,79,224,0.18);
+  --accent-ring:   rgba(90,79,224,0.40);
+  --accent-glow:   0 8px 22px -8px rgba(90,79,224,0.42);
+
+  --glass-card:    rgba(255,255,255,0.66);
+  --glass-chrome:  rgba(248,248,250,0.66);
+  --glass-head:    rgba(255,255,255,0.9);
+  --glass-blur:    saturate(180%) blur(22px);
+  --aurora:
+    radial-gradient(900px 540px at 10% -10%, rgba(90,79,224,0.10), transparent 58%),
+    radial-gradient(820px 520px at 102% -4%, rgba(60,180,200,0.08), transparent 55%),
+    radial-gradient(760px 620px at 86% 112%, rgba(210,90,160,0.07), transparent 55%);
+
+  --grid-line:   rgba(0,0,0,0.06);
+  --axis-text:   #989ca4;
+  --benchmark:   #aeb2ba;
+  --dd-fill:     rgba(200,65,59,0.08);
+
+  --shadow-pop: 0 8px 28px -6px rgba(0,0,0,0.18), 0 0 0 0.5px rgba(0,0,0,0.08);
+  --shadow-card: 0 0 0 0.5px rgba(0,0,0,0.05), 0 1px 2px rgba(0,0,0,0.04), 0 6px 18px -12px rgba(0,0,0,0.2);
+  --hi-edge: inset 0 0.5px 0 rgba(255,255,255,0.6);
+
+  color-scheme: light;
+}
+
+/* ============================================================
+   Scale tokens (theme-independent)
+   ============================================================ */
+:root {
+  /* Type */
+  --font-sans: -apple-system, "SF Pro Text", "SF Pro Display", "Segoe UI",
+               "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+  --font-mono: "SF Mono", "JetBrains Mono", "Roboto Mono", ui-monospace,
+               "Menlo", "Consolas", monospace;
+
+  /* Type scale (desktop-dense, base 13) */
+  --fs-display: 30px;   /* page hero title          */
+  --fs-h2:      20px;
+  --fs-h3:      15px;
+  --fs-body:    13px;
+  --fs-sub:     12px;
+  --fs-cap:     11px;   /* uppercase labels         */
+  --fs-mono-lg: 30px;   /* big metric numbers       */
+
+  /* Spacing scale */
+  --sp-1: 4px;  --sp-2: 8px;  --sp-3: 12px; --sp-4: 16px;
+  --sp-5: 20px; --sp-6: 24px; --sp-8: 32px; --sp-10: 40px;
+
+  /* Radii (Apple-grouped, generous) */
+  --r-xs: 5px; --r-sm: 7px; --r-md: 10px; --r-lg: 14px; --r-xl: 18px;
+
+  /* Layout */
+  --nav-w: 216px;
+  --titlebar-h: 36px;
+  --statusbar-h: 28px;
+
+  /* Motion */
+  --ease: cubic-bezier(0.2, 0.6, 0.2, 1);
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --t-fast: 110ms;
+  --t-med: 180ms;
+}
+
+/* ============================================================
+   Base
+   ============================================================ */
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; }
+body {
+  font-family: var(--font-sans);
+  font-size: var(--fs-body);
+  color: var(--text-1);
+  background: var(--bg-base);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+.mono { font-family: var(--font-mono); font-feature-settings: "tnum" 1, "cv01" 1; font-variant-numeric: tabular-nums; }
+.cap {
+  font-size: var(--fs-cap); letter-spacing: 0.06em; text-transform: uppercase;
+  color: var(--text-3); font-weight: 600; white-space: nowrap;
+}
+::selection { background: var(--accent-bg-2); }
+
+/* Custom scrollbars — thin, engineering-grade */
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb {
+  background: var(--border-strong); border-radius: 8px;
+  border: 2.5px solid transparent; background-clip: padding-box;
+}
+::-webkit-scrollbar-thumb:hover { background: var(--text-3); background-clip: padding-box; }

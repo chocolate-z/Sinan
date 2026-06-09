@@ -1,165 +1,293 @@
-/* 设计令牌 · macOS 桌面原生风(Apple HIG)。
-   三套色彩通道严格解耦(红线,前端):
-     · 盈亏色 PnL  —— 只用于金额/涨跌/收益,经 pnl.css 的 .pnl-* + lib/pnl.ts
-     · 系统状态色 Status —— 只用于任务/健康/连接,经 .status-*
-     · 品牌强调 Accent(系统蓝)—— 交互/选中/主按钮,绝不表达盈亏
-   盈亏用 Apple 低饱和红绿(红涨绿跌,A 股习惯);"成功"用系统蓝,绝不复用盈亏绿。 */
+/* ============================================================
+   司南 Sinan — 设计令牌(忠实迁移自 docs/design_handoff_sinan)
+   三套互不混用的色彩通道:PnL(盈亏)/ Status(状态)/ Accent(品牌)
+   深色默认 + 浅色变体。A 股惯例:红涨绿跌(可在设置反转,经 data-pnl-invert)。
+   兼容层:旧 --c-、--st- 等别名映射到新令牌,未迁移页面仍可构建(见底部)。
+   ============================================================ */
+:root,
+[data-theme='dark'] {
+  /* 中性表层(分层,细描边分隔) */
+  --bg-window: #151618; /* 最深:标题栏 + 侧栏 */
+  --bg-base: #18191c; /* 主内容背景 */
+  --bg-panel: #212327; /* 卡片 */
+  --bg-panel-2: #282a2f; /* 嵌套面板 / 表头 */
+  --bg-elevated: #2e3036; /* hover / 悬浮 */
+  --bg-input: #1b1c1f; /* 输入框 */
+  --bg-popover: #2a2c31; /* 菜单 / tooltip */
+
+  --border: rgba(255, 255, 255, 0.072);
+  --border-strong: rgba(255, 255, 255, 0.12);
+  --border-faint: rgba(255, 255, 255, 0.045);
+
+  --text-1: #e7e8ea; /* 主文本(柔白,非纯白) */
+  --text-2: #989ba1;
+  --text-3: #686b72;
+  --text-on-accent: #ffffff;
+
+  /* 通道① PnL(盈亏)— A股红涨绿跌,低饱和;经 pos/neg 基准支持反转 */
+  --pnl-pos: #e35d5b;
+  --pnl-pos-bg: rgba(227, 93, 91, 0.13);
+  --pnl-neg: #34b27e;
+  --pnl-neg-bg: rgba(52, 178, 126, 0.13);
+  --pnl-up: var(--pnl-pos);
+  --pnl-up-bg: var(--pnl-pos-bg);
+  --pnl-down: var(--pnl-neg);
+  --pnl-down-bg: var(--pnl-neg-bg);
+  --pnl-up-dim: #b85452;
+  --pnl-down-dim: #3a9a72;
+  --pnl-flat: var(--text-2);
+
+  /* 通道② Status(系统状态)— 蓝/橙/红;买卖方向亦用此通道 */
+  --status-ok: #4a90d9;
+  --status-ok-bg: rgba(74, 144, 217, 0.14);
+  --status-warn: #d9913a;
+  --status-warn-bg: rgba(217, 145, 58, 0.14);
+  --status-err: #d65953;
+  --status-err-bg: rgba(214, 89, 83, 0.14);
+  --status-idle: #6b6e74;
+  --status-idle-bg: rgba(255, 255, 255, 0.05);
+
+  /* 通道③ Accent(品牌)— 紫色渐变,仅交互/选中/主按钮/模型净值线 */
+  --accent: #6e63f5;
+  --accent-hover: #8579ff;
+  --accent-press: #5a4fe0;
+  --accent-2: #a06bff;
+  --accent-grad: linear-gradient(135deg, #6e63f5 0%, #a06bff 100%);
+  --accent-grad-soft: linear-gradient(135deg, rgba(110, 99, 245, 0.18), rgba(160, 107, 255, 0.18));
+  --accent-bg: rgba(110, 99, 245, 0.15);
+  --accent-bg-2: rgba(110, 99, 245, 0.26);
+  --accent-ring: rgba(110, 99, 245, 0.5);
+  --accent-glow: 0 8px 24px -8px rgba(110, 99, 245, 0.55);
+
+  /* 玻璃 + 极光 */
+  --glass-card: rgba(34, 36, 43, 0.64);
+  --glass-chrome: rgba(20, 21, 25, 0.62);
+  --glass-head: rgba(34, 36, 43, 0.92);
+  --glass-blur: saturate(170%) blur(22px);
+  --aurora:
+    radial-gradient(900px 540px at 10% -10%, rgba(110, 99, 245, 0.18), transparent 58%),
+    radial-gradient(820px 520px at 102% -4%, rgba(60, 180, 200, 0.12), transparent 55%),
+    radial-gradient(760px 620px at 86% 112%, rgba(210, 90, 160, 0.12), transparent 55%);
+
+  /* 图表专用中性 */
+  --grid-line: rgba(255, 255, 255, 0.05);
+  --axis-text: #686b72;
+  --benchmark: #7c8088;
+  --dd-fill: rgba(214, 89, 83, 0.1);
+
+  /* 阴影(Apple 柔和分层) */
+  --shadow-pop: 0 8px 28px -6px rgba(0, 0, 0, 0.6), 0 0 0 0.5px rgba(0, 0, 0, 0.5);
+  --shadow-card:
+    0 0 0 0.5px rgba(0, 0, 0, 0.35), 0 1px 2px rgba(0, 0, 0, 0.25),
+    0 8px 22px -14px rgba(0, 0, 0, 0.7);
+  --hi-edge: inset 0 0.5px 0 rgba(255, 255, 255, 0.05);
+
+  color-scheme: dark;
+}
+
+[data-theme='light'] {
+  --bg-window: #ececee;
+  --bg-base: #f6f6f7;
+  --bg-panel: #ffffff;
+  --bg-panel-2: #f3f3f5;
+  --bg-elevated: #f0f0f2;
+  --bg-input: #ffffff;
+  --bg-popover: #ffffff;
+
+  --border: rgba(0, 0, 0, 0.1);
+  --border-strong: rgba(0, 0, 0, 0.16);
+  --border-faint: rgba(0, 0, 0, 0.06);
+
+  --text-1: #1c1d21;
+  --text-2: #5d616a;
+  --text-3: #989ca4;
+  --text-on-accent: #ffffff;
+
+  --pnl-pos: #d23a37;
+  --pnl-pos-bg: rgba(210, 58, 55, 0.1);
+  --pnl-neg: #1a9968;
+  --pnl-neg-bg: rgba(26, 153, 104, 0.1);
+  --pnl-up-dim: #b8332f;
+  --pnl-down-dim: #178257;
+
+  --status-ok: #2f77c2;
+  --status-ok-bg: rgba(47, 119, 194, 0.1);
+  --status-warn: #c47d24;
+  --status-warn-bg: rgba(196, 125, 36, 0.12);
+  --status-err: #c8413b;
+  --status-err-bg: rgba(200, 65, 59, 0.1);
+  --status-idle: #989ca4;
+  --status-idle-bg: rgba(0, 0, 0, 0.045);
+
+  --accent: #5a4fe0;
+  --accent-hover: #4a40d0;
+  --accent-press: #3f36c0;
+  --accent-2: #8b5cf6;
+  --accent-grad: linear-gradient(135deg, #5a4fe0 0%, #8b5cf6 100%);
+  --accent-grad-soft: linear-gradient(135deg, rgba(90, 79, 224, 0.12), rgba(139, 92, 246, 0.12));
+  --accent-bg: rgba(90, 79, 224, 0.1);
+  --accent-bg-2: rgba(90, 79, 224, 0.18);
+  --accent-ring: rgba(90, 79, 224, 0.4);
+  --accent-glow: 0 8px 22px -8px rgba(90, 79, 224, 0.42);
+
+  --glass-card: rgba(255, 255, 255, 0.66);
+  --glass-chrome: rgba(248, 248, 250, 0.66);
+  --glass-head: rgba(255, 255, 255, 0.9);
+  --glass-blur: saturate(180%) blur(22px);
+  --aurora:
+    radial-gradient(900px 540px at 10% -10%, rgba(90, 79, 224, 0.1), transparent 58%),
+    radial-gradient(820px 520px at 102% -4%, rgba(60, 180, 200, 0.08), transparent 55%),
+    radial-gradient(760px 620px at 86% 112%, rgba(210, 90, 160, 0.07), transparent 55%);
+
+  --grid-line: rgba(0, 0, 0, 0.06);
+  --axis-text: #989ca4;
+  --benchmark: #aeb2ba;
+  --dd-fill: rgba(200, 65, 59, 0.08);
+
+  --shadow-pop: 0 8px 28px -6px rgba(0, 0, 0, 0.18), 0 0 0 0.5px rgba(0, 0, 0, 0.08);
+  --shadow-card:
+    0 0 0 0.5px rgba(0, 0, 0, 0.05), 0 1px 2px rgba(0, 0, 0, 0.04),
+    0 6px 18px -12px rgba(0, 0, 0, 0.2);
+  --hi-edge: inset 0 0.5px 0 rgba(255, 255, 255, 0.6);
+
+  color-scheme: light;
+}
+
+/* 涨跌反转:只交换 PnL 的 pos/neg 映射(无循环引用),不动系统色与品牌色。 */
+[data-pnl-invert='true'] {
+  --pnl-up: var(--pnl-neg);
+  --pnl-up-bg: var(--pnl-neg-bg);
+  --pnl-down: var(--pnl-pos);
+  --pnl-down-bg: var(--pnl-pos-bg);
+}
+
+/* ============================================================
+   尺度令牌(与主题无关)
+   ============================================================ */
 :root {
-  /* 间距(8pt grid) */
+  --font-sans:
+    -apple-system, 'SF Pro Text', 'SF Pro Display', 'Segoe UI', 'PingFang SC', 'Microsoft YaHei',
+    system-ui, sans-serif;
+  --font-mono:
+    'SF Mono', 'JetBrains Mono', 'Roboto Mono', ui-monospace, 'Menlo', 'Consolas', monospace;
+
+  --fs-display: 30px;
+  --fs-h2: 20px;
+  --fs-h3: 15px;
+  --fs-body: 13px;
+  --fs-sub: 12px;
+  --fs-cap: 11px;
+  --fs-mono-lg: 30px;
+
   --sp-1: 4px;
   --sp-2: 8px;
   --sp-3: 12px;
   --sp-4: 16px;
-  --sp-5: 24px;
-  --sp-6: 32px;
+  --sp-5: 20px;
+  --sp-6: 24px;
   --sp-7: 48px;
+  --sp-8: 32px;
+  --sp-10: 40px;
 
-  /* 圆角(深色专业工具风,偏小、克制) */
-  --r-sm: 4px;
-  --r-md: 5px;
-  --r-lg: 7px;
-  --r-xl: 10px;
+  --r-xs: 5px;
+  --r-sm: 7px;
+  --r-md: 10px;
+  --r-lg: 14px;
+  --r-xl: 18px;
   --r-pill: 999px;
 
-  /* 字体:SF 优先,Win/中文优雅回退 */
-  --font-ui:
-    -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'SF Pro Display', 'Segoe UI Variable',
-    'Segoe UI', 'PingFang SC', 'HarmonyOS Sans', 'Microsoft YaHei', system-ui, sans-serif;
-  --font-num:
-    'SF Mono', ui-monospace, 'JetBrains Mono', 'DIN Alternate', 'SF Pro Text', Menlo, Consolas,
-    monospace;
+  --nav-w: 216px;
+  --titlebar-h: 36px;
+  --statusbar-h: 28px;
 
-  /* 字号(SF 体系) */
-  --fs-cap: 12px;
-  --fs-body: 13px;
-  --fs-sub: 15px;
-  --fs-h3: 17px;
-  --fs-h2: 21px;
-  --fs-h1: 26px;
-  --lh: 1.5;
+  --ease: cubic-bezier(0.2, 0.6, 0.2, 1);
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --t-fast: 110ms;
+  --t-med: 180ms;
 
-  /* 动效(macOS 顺滑;选中/弹层带轻微 spring) */
-  --dur-fast: 0.12s;
-  --dur: 0.2s;
-  --ease: cubic-bezier(0.32, 0.72, 0, 1);
-  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
-
-  /* 玻璃材质模糊(vibrancy 近似:对页面内容做毛玻璃) */
-  --blur-thin: saturate(180%) blur(20px);
-  --blur-thick: saturate(180%) blur(40px);
+  /* ── 兼容别名:旧令牌名 → 新令牌(未迁移页面继续可用,过渡期保留)── */
+  --c-bg: var(--bg-base);
+  --c-surface: var(--bg-panel);
+  --c-surface-2: var(--bg-panel-2);
+  --c-elevated: var(--bg-elevated);
+  --c-sidebar: var(--bg-window);
+  --c-titlebar: var(--bg-window);
+  --c-border: var(--border);
+  --c-border-strong: var(--border-strong);
+  --c-hairline: var(--border-faint);
+  --c-text: var(--text-1);
+  --c-text-2: var(--text-2);
+  --c-text-3: var(--text-3);
+  --accent-weak: var(--accent-bg);
+  --accent-contrast: var(--text-on-accent);
+  --st-ok: var(--status-ok);
+  --st-warn: var(--status-warn);
+  --st-err: var(--status-err);
+  --st-info: var(--status-ok);
+  --shadow-1: var(--shadow-card);
+  --shadow-2: var(--shadow-card);
+  --shadow-3: var(--shadow-pop);
+  --ring: 0 0 0 3px var(--accent-ring);
+  --font-ui: var(--font-sans);
+  --font-num: var(--font-mono);
+  --fs-h1: var(--fs-display);
+  --dur: var(--t-med);
+  --dur-fast: var(--t-fast);
+  --ease-spring: var(--ease-out);
+  --blur-thin: var(--glass-blur);
+  --blur-thick: var(--glass-blur);
 }
 
-[data-theme='light'] {
-  /* 背景分层:窗口浅灰 → 内容白卡 */
-  --c-bg: #ececee;
-  --c-surface: #ffffff;
-  --c-surface-2: #f4f4f6;
-  --c-elevated: #ffffff;
-  --c-sidebar: rgba(245, 245, 247, 0.72);
-  --c-titlebar: rgba(245, 245, 247, 0.8);
-
-  /* 分隔线/描边(Apple separator) */
-  --c-border: #e3e3e6;
-  --c-border-strong: #d1d1d6;
-  --c-hairline: rgba(0, 0, 0, 0.08);
-
-  /* 文本三级(label / secondary / tertiary) */
-  --c-text: #1d1d1f;
-  --c-text-2: rgba(60, 60, 67, 0.66);
-  --c-text-3: #8e8e93;
-
-  /* 系统蓝(品牌强调) */
-  --accent: #007aff;
-  --accent-hover: #0a6ce8;
-  --accent-weak: rgba(0, 122, 255, 0.12);
-  --accent-contrast: #ffffff;
-
-  /* 盈亏基准色(低饱和;pos=涨 neg=跌)→ 默认 红涨绿跌 */
-  --pnl-pos: #d8453c;
-  --pnl-neg: #2e9e63;
-  --pnl-up: var(--pnl-pos);
-  --pnl-down: var(--pnl-neg);
-  --pnl-flat: #8e8e93;
-
-  /* 系统状态色(与盈亏解耦) */
-  --st-ok: #007aff;
-  --st-warn: #ff9500;
-  --st-err: #ff3b30;
-  --st-info: #007aff;
-
-  /* 阴影分层(柔和) */
-  --shadow-1: 0 0.5px 1px rgba(0, 0, 0, 0.04), 0 1px 2px rgba(0, 0, 0, 0.06);
-  --shadow-2: 0 1px 2px rgba(0, 0, 0, 0.04), 0 6px 16px rgba(0, 0, 0, 0.08);
-  --shadow-3: 0 12px 40px rgba(0, 0, 0, 0.16);
-  --ring: 0 0 0 3.5px rgba(0, 122, 255, 0.35);
-}
-
-/* 深色 = 专业开发工具风(Trae/VS Code 系):近黑深空灰、冷峻、低对比、靠细描边分层。 */
-[data-theme='dark'] {
-  --c-bg: #1a1b1e; /* 主背景:近黑深空灰 */
-  --c-surface: #202125; /* 面板/卡片:比 bg 略亮一档 */
-  --c-surface-2: #282a2f; /* 次级/hover */
-  --c-elevated: #26282d; /* 弹层 */
-  --c-sidebar: #16171a; /* 侧栏更深 */
-  --c-titlebar: #16171a; /* 标题栏与侧栏同深 */
-
-  --c-border: #2c2e33; /* 细描边(分层主力) */
-  --c-border-strong: #3a3d44;
-  --c-hairline: rgba(255, 255, 255, 0.06);
-
-  --c-text: #d7dae0; /* 柔白,非纯白(护眼) */
-  --c-text-2: #9a9ea7;
-  --c-text-3: #6b6f78;
-
-  --accent: #4c8dff; /* IDE 亮蓝(选中/交互) */
-  --accent-hover: #6aa1ff;
-  --accent-weak: rgba(76, 141, 255, 0.16);
-  --accent-contrast: #ffffff;
-
-  --pnl-pos: #f25c54; /* 红涨(深色下略提亮度,仍克制) */
-  --pnl-neg: #36b37e; /* 绿跌 */
-  --pnl-up: var(--pnl-pos);
-  --pnl-down: var(--pnl-neg);
-  --pnl-flat: #8a8f99;
-
-  --st-ok: #4c8dff;
-  --st-warn: #e0a23a;
-  --st-err: #e5564b;
-  --st-info: #4c8dff;
-
-  /* 阴影极弱:工具风靠描边分层,不靠浮起;shadow-1 退化为一道描边。 */
-  --shadow-1: 0 0 0 1px rgba(0, 0, 0, 0.25);
-  --shadow-2: 0 2px 10px rgba(0, 0, 0, 0.4);
-  --shadow-3: 0 10px 30px rgba(0, 0, 0, 0.55);
-  --ring: 0 0 0 2px rgba(76, 141, 255, 0.45);
-}
-
-/* 用户偏好涨跌反转:只交换盈亏映射(经 pos/neg 基准,无循环引用),不动系统色。 */
-[data-pnl-invert='true'] {
-  --pnl-up: var(--pnl-neg);
-  --pnl-down: var(--pnl-pos);
-}
-
+/* ============================================================
+   Base
+   ============================================================ */
 * {
   box-sizing: border-box;
 }
 html,
 body,
 #app {
-  height: 100%;
   margin: 0;
+  height: 100%;
 }
 body {
-  background: var(--c-bg);
-  color: var(--c-text);
-  font-family: var(--font-ui);
+  font-family: var(--font-sans);
   font-size: var(--fs-body);
-  line-height: var(--lh);
+  color: var(--text-1);
+  background: var(--bg-base);
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
 }
+.mono,
 .num {
-  font-family: var(--font-num);
+  font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
-  letter-spacing: -0.01em;
+}
+.cap {
+  font-size: var(--fs-cap);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-3);
+  font-weight: 600;
+  white-space: nowrap;
+}
+::selection {
+  background: var(--accent-bg-2);
+}
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--border-strong);
+  border-radius: 8px;
+  border: 2.5px solid transparent;
+  background-clip: padding-box;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--text-3);
+  background-clip: padding-box;
 }

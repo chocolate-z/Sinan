@@ -7,7 +7,7 @@ import StatusBar from './StatusBar.vue';
   <div class="shell">
     <Sidebar />
     <main class="main">
-      <section class="body">
+      <section class="body main-aurora">
         <div class="body-inner">
           <slot />
         </div>
@@ -21,22 +21,19 @@ import StatusBar from './StatusBar.vue';
 .shell {
   display: flex;
   height: 100%;
-  background: var(--c-bg);
+  background: var(--bg-base);
 }
 .main {
   display: flex;
   flex-direction: column;
   flex: 1;
   min-width: 0;
-  background: var(--c-bg);
 }
 .body {
   flex: 1;
   overflow: auto;
 }
 .body-inner {
-  max-width: 1180px;
-  margin: 0 auto;
-  padding: var(--sp-5) var(--sp-5) var(--sp-6);
+  min-height: 100%;
 }
 </style>

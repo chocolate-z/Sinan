@@ -16,6 +16,7 @@ export default tseslint.config(
       '**/*.d.ts',
       'packages/shared-contracts/python/**',
       'apps/desktop/src-tauri/**',
+      'docs/design_handoff_sinan/**',
     ],
   },
   js.configs.recommended,
