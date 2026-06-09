@@ -152,4 +152,12 @@ export const api = {
   models: () => request<any[]>(API_ENDPOINTS.models_list),
   model: (id: string) => request<any>(API_ENDPOINTS.models_get, { params: { id } }),
   activateModel: (id: string) => request<any>(API_ENDPOINTS.models_activate, { params: { id } }),
+
+  // ── 指标 / 因子质检域(M4)──────────────────────────────────────────────────
+  indicatorsQuality: (q: {
+    start: string;
+    end: string;
+    label_horizon?: number;
+    n_deciles?: number;
+  }) => request<any>(API_ENDPOINTS.indicators_quality, { query: q }),
 };
