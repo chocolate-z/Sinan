@@ -1,7 +1,7 @@
 <script setup lang="ts">
 // 指标 · 因子库(M4 接真实)。对因子库逐因子算真实 IC 均值 / ICIR / 覆盖度 + IC 时序 + 十分位分层收益。
 // 红线#3:IC/ICIR/覆盖度 中性通道;分层收益 PnL 通道;缺数据 coverage=0 如实(不造假)。
-import { computed, reactive, ref } from 'vue';
+import { computed, onMounted, reactive, ref } from 'vue';
 import { api, ApiError } from '../../api/client';
 import PageHero from '../../ui/PageHero.vue';
 import Icon from '../../shell/Icon.vue';
@@ -16,11 +16,24 @@ const form = reactive({ start: '', end: '', label_horizon: 5 });
 
 // 自定义因子 DSL 编辑器:沙箱白名单 + 仅回看算子(结构上防未来函数,红线#1)。
 const expr = ref('zscore(-pe_ttm) + rank(roe)');
+const factorName = ref('');
 const validating = ref(false);
+const saving = ref(false);
+const saveError = ref<string | null>(null);
 const validation = ref<any | null>(null);
+const customList = ref<any[]>([]);
+
+async function loadCustom() {
+  try {
+    customList.value = await api.customFactors();
+  } catch {
+    customList.value = [];
+  }
+}
 async function validateExpr() {
   if (!expr.value.trim()) return;
   validating.value = true;
+  saveError.value = null;
   try {
     validation.value = await api.validateIndicator(expr.value);
   } catch (e) {
@@ -30,6 +43,30 @@ async function validateExpr() {
     validating.value = false;
   }
 }
+async function saveFactor() {
+  if (!factorName.value.trim() || !validation.value?.ok) return;
+  saving.value = true;
+  saveError.value = null;
+  try {
+    await api.createCustomFactor({ name: factorName.value.trim(), expr: expr.value });
+    factorName.value = '';
+    await loadCustom();
+  } catch (e) {
+    const d = e instanceof ApiError ? e.detail : e;
+    saveError.value = d && typeof d === 'object' ? JSON.stringify(d) : String(d ?? e);
+  } finally {
+    saving.value = false;
+  }
+}
+async function delFactor(id: string) {
+  try {
+    await api.deleteCustomFactor(id);
+    await loadCustom();
+  } catch {
+    /* 删除失败忽略 */
+  }
+}
+onMounted(loadCustom);
 
 const GROUP_LABEL: Record<string, string> = {
   value: '价值',
@@ -181,10 +218,32 @@ async function run() {
             </span>
           </div>
         </div>
-        <p class="dsl-note cap">
-          注册自定义因子(持久化 +
-          接入打分/质检)在后续里程碑;当前可用本工具校验表达式的安全性与无未来函数。
-        </p>
+        <!-- 保存为因子(校验通过后)-->
+        <div v-if="validation && validation.ok" class="dsl-save">
+          <input
+            v-model="factorName"
+            class="input mono dsl-name"
+            placeholder="因子名(英文,如 my_mom)"
+          />
+          <button
+            class="btn btn-secondary"
+            :disabled="saving || !factorName.trim()"
+            @click="saveFactor"
+          >
+            {{ saving ? '保存中…' : '保存为因子' }}
+          </button>
+        </div>
+        <p v-if="saveError" class="dsl-err"><Icon name="alert" :size="13" /> {{ saveError }}</p>
+
+        <!-- 已保存的自定义因子(质检时与内置并列计算真实 IC/分层)-->
+        <div v-if="customList.length" class="dsl-saved">
+          <div class="cap dsl-saved-k">已保存因子 · 运行质检时与内置因子并列计算真实 IC/分层</div>
+          <div v-for="c in customList" :key="c.id" class="dsl-saved-row">
+            <span class="dsl-saved-name mono">{{ c.name }}</span>
+            <span class="dsl-saved-expr mono">{{ c.expr }}</span>
+            <button class="btn btn-ghost btn-sm" @click="delFactor(c.id)">删除</button>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -405,6 +464,46 @@ async function run() {
   color: var(--text-3);
   letter-spacing: 0;
   text-transform: none;
+}
+.dsl-save {
+  display: flex;
+  gap: 10px;
+  margin-top: 16px;
+}
+.dsl-name {
+  max-width: 240px;
+}
+.dsl-saved {
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 0.5px solid var(--border-faint);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.dsl-saved-k {
+  letter-spacing: 0;
+  text-transform: none;
+  margin-bottom: 2px;
+}
+.dsl-saved-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.dsl-saved-name {
+  font-size: var(--fs-sub);
+  color: var(--text-1);
+  width: 110px;
+  flex: none;
+}
+.dsl-saved-expr {
+  flex: 1;
+  font-size: 11.5px;
+  color: var(--text-2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .cols {
