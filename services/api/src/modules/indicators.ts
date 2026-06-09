@@ -1,6 +1,6 @@
 /** 指标 / 因子质检域(M4):engine 算真实 IC/ICIR/覆盖度 + 十分位分层 → api 转发。
  * 研究报告按需重算,不落库;engine 400(无缓存/区间过短)如实转发,不静默。 */
-import { BadRequestException, Controller, Get, Inject, Query } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Get, Inject, Post, Query } from '@nestjs/common';
 import { ENGINE_CLIENT, EngineError, type EngineClient } from '../engine/engine.client.js';
 
 @Controller()
@@ -29,5 +29,11 @@ export class IndicatorsController {
       }
       throw e;
     }
+  }
+
+  @Post('indicators/validate')
+  async validate(@Body() body: { expr?: string }): Promise<any> {
+    if (!body?.expr) throw new BadRequestException('expr 必填');
+    return this.engine.indicatorsValidate(body.expr);
   }
 }

@@ -14,6 +14,23 @@ const loading = ref(false);
 const error = ref<string | null>(null);
 const form = reactive({ start: '', end: '', label_horizon: 5 });
 
+// 自定义因子 DSL 编辑器:沙箱白名单 + 仅回看算子(结构上防未来函数,红线#1)。
+const expr = ref('zscore(-pe_ttm) + rank(roe)');
+const validating = ref(false);
+const validation = ref<any | null>(null);
+async function validateExpr() {
+  if (!expr.value.trim()) return;
+  validating.value = true;
+  try {
+    validation.value = await api.validateIndicator(expr.value);
+  } catch (e) {
+    const d = e instanceof ApiError ? e.detail : e;
+    validation.value = { ok: false, errors: [String(d ?? e)], fields: [], functions: [] };
+  } finally {
+    validating.value = false;
+  }
+}
+
 const GROUP_LABEL: Record<string, string> = {
   value: '价值',
   quality: '质量',
@@ -107,6 +124,67 @@ async function run() {
           </button>
         </div>
         <p v-if="error" class="msg-err"><Icon name="alert" :size="14" /> {{ error }}</p>
+      </div>
+    </div>
+
+    <!-- 自定义因子 DSL 编辑器(防未来函数:仅回看算子)-->
+    <div class="card">
+      <div class="card-head">
+        <div>
+          <h3 class="card-title">自定义因子 · DSL 校验</h3>
+          <span class="card-sub"
+            >白名单字段 + 仅「回看」算子(rolling/shift 正向),结构上无未来函数 ——
+            写不出前视表达式(红线#1)</span
+          >
+        </div>
+      </div>
+      <div class="card-pad">
+        <div class="dsl-row">
+          <input
+            v-model="expr"
+            class="input mono dsl-input"
+            placeholder="如 zscore(-pe_ttm) + rank(roe)"
+            @keyup.enter="validateExpr"
+          />
+          <button
+            class="btn btn-primary"
+            :disabled="validating || !expr.trim()"
+            @click="validateExpr"
+          >
+            {{ validating ? '校验中…' : '校验表达式' }}
+          </button>
+        </div>
+
+        <div v-if="validation" class="dsl-result">
+          <span class="badge" :class="validation.ok ? 'badge-ok' : 'badge-err'">
+            <span class="dot" />{{ validation.ok ? '校验通过 · 结构上无未来函数' : '校验失败' }}
+          </span>
+          <p v-for="(er, i) in validation.errors" :key="i" class="dsl-err">
+            <Icon name="alert" :size="13" /> {{ er }}
+          </p>
+        </div>
+
+        <div
+          v-if="validation && (validation.fields?.length || validation.functions?.length)"
+          class="dsl-ref"
+        >
+          <div class="dsl-ref-row">
+            <span class="dsl-ref-k">可用字段</span>
+            <span class="dsl-chips">
+              <span v-for="f in validation.fields" :key="f" class="chip mono">{{ f }}</span>
+            </span>
+          </div>
+          <div class="dsl-ref-row">
+            <span class="dsl-ref-k">可用算子</span>
+            <span class="dsl-chips">
+              <span v-for="fn in validation.functions" :key="fn" class="chip mono">{{ fn }}</span>
+            </span>
+          </div>
+        </div>
+        <p class="dsl-note cap">
+          注册自定义因子(持久化 +
+          接入打分/质检)在后续里程碑;当前可用本工具校验表达式的安全性与无未来函数。
+        </p>
       </div>
     </div>
 
@@ -276,6 +354,57 @@ async function run() {
   color: var(--status-err);
   background: var(--status-err-bg);
   border: 0.5px solid color-mix(in srgb, var(--status-err) 30%, transparent);
+}
+
+/* DSL 编辑器 */
+.dsl-row {
+  display: flex;
+  gap: 10px;
+}
+.dsl-input {
+  flex: 1;
+}
+.dsl-result {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 14px;
+}
+.dsl-err {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  font-size: var(--fs-sub);
+  color: var(--status-err);
+}
+.dsl-ref {
+  margin-top: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.dsl-ref-row {
+  display: flex;
+  gap: 12px;
+  align-items: baseline;
+}
+.dsl-ref-k {
+  flex: none;
+  width: 64px;
+  font-size: var(--fs-cap);
+  color: var(--text-3);
+}
+.dsl-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.dsl-note {
+  margin: 16px 0 0;
+  color: var(--text-3);
+  letter-spacing: 0;
+  text-transform: none;
 }
 
 .cols {

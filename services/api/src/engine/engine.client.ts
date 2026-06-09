@@ -129,6 +129,8 @@ export interface EngineClient {
   train(req: TrainRequest): Promise<any>;
   /** 因子质检(真实 IC/ICIR/覆盖度 + IC 时序 + 十分位分层)。无缓存/区间过短抛 EngineError(400)。 */
   factorQuality(req: FactorQualityRequest): Promise<any>;
+  /** 自定义因子 DSL 校验(白名单 + 回看算子,结构上防未来函数)。返回 ok/errors/fields/functions。 */
+  indicatorsValidate(expr: string): Promise<any>;
 }
 
 export const ENGINE_CLIENT = Symbol('ENGINE_CLIENT');
@@ -257,6 +259,16 @@ export class HttpEngineClient implements EngineClient {
       }
       throw new EngineError(res.status, detail);
     }
+    return res.json();
+  }
+
+  async indicatorsValidate(expr: string): Promise<any> {
+    const res = await fetch(`${config.engineBaseUrl()}/engine/indicators/validate`, {
+      method: 'POST',
+      headers: this.headers(),
+      body: JSON.stringify({ expr }),
+    });
+    if (!res.ok) throw new EngineError(res.status, await res.text());
     return res.json();
   }
 }

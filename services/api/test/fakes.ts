@@ -25,6 +25,17 @@ export class FakeEngineClient implements EngineClient {
     private readonly qualityResult: any = null,
   ) {}
 
+  async indicatorsValidate(expr: string): Promise<any> {
+    const banned = expr.includes('__');
+    return {
+      ok: !banned,
+      errors: banned ? ['不安全表达式'] : [],
+      lookahead_ok: null,
+      fields: ['close', 'pe_ttm', 'roe', 'north_hold_ratio'],
+      functions: ['zscore', 'rank', 'ma', 'delay', 'ts_std', 'rsi'],
+    };
+  }
+
   async factorQuality(req: FactorQualityRequest): Promise<any> {
     if (this.qualityResult && this.qualityResult.__error) {
       throw new EngineError(this.qualityResult.__error.status, this.qualityResult.__error.detail);

@@ -59,3 +59,34 @@ test('engine 400(无缓存/区间过短)→ api 转发 400', async () => {
     await app.close();
   }
 });
+
+test('POST /indicators/validate 代理 DSL 校验(ok / errors / fields / functions)', async () => {
+  const { app, fastify } = await build(null);
+  try {
+    let r = await fastify.inject({
+      method: 'POST',
+      url: '/api/v1/indicators/validate',
+      payload: { expr: 'zscore(-pe_ttm) + rank(roe)' },
+    });
+    assert.equal(r.statusCode, 201);
+    let body = r.json();
+    assert.equal(body.ok, true);
+    assert.ok(body.functions.includes('zscore'));
+
+    // 不安全表达式 → ok=false + errors
+    r = await fastify.inject({
+      method: 'POST',
+      url: '/api/v1/indicators/validate',
+      payload: { expr: "__import__('os')" },
+    });
+    body = r.json();
+    assert.equal(body.ok, false);
+    assert.ok(body.errors.length >= 1);
+
+    // expr 必填 → 400
+    r = await fastify.inject({ method: 'POST', url: '/api/v1/indicators/validate', payload: {} });
+    assert.equal(r.statusCode, 400);
+  } finally {
+    await app.close();
+  }
+});

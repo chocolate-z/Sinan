@@ -53,6 +53,7 @@ API_ENDPOINTS: dict[str, dict[str, str]] = {
     "models_get": {"method": "GET", "path": "/models/:id"},
     "models_activate": {"method": "POST", "path": "/models/:id/activate"},
     "indicators_quality": {"method": "GET", "path": "/indicators/quality"},
+    "indicators_validate": {"method": "POST", "path": "/indicators/validate"},
 }
 
 ENGINE_ENDPOINTS: dict[str, dict[str, str]] = {

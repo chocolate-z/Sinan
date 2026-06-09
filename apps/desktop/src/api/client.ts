@@ -160,4 +160,6 @@ export const api = {
     label_horizon?: number;
     n_deciles?: number;
   }) => request<any>(API_ENDPOINTS.indicators_quality, { query: q }),
+  validateIndicator: (expr: string) =>
+    request<any>(API_ENDPOINTS.indicators_validate, { body: { expr } }),
 };
