@@ -284,3 +284,34 @@ labels.py   build_forward_return_labels(hfq[T+h]/hfq[T]-1,前向,尾 h 日 null)
 `services/engine/sinan/training/{features,labels,train,device}.py`、`factors/score.py`(`model_score_universe`)、`paper/runner.py`、`app.py`(`/engine/train`、`PaperRunReq.model`);`services/api/src/{db/migrations/0005_models.sql,db/repository.ts,engine/engine.client.ts,modules/models.ts}`;`apps/desktop/src/pages/models/Models.vue`。测试:`tests/test_training_{data,train}.py`、`test_model_signals.py`、`api/test/models.test.ts`。
 
 > 改训练相关代码后,建议再跑一次 §6 的对抗式红线审计(本里程碑那次抓出 purge 语义瑕疵 + 分层口径标注不够硬,均已修)。
+
+---
+
+## 11. 可扩展方向与技术债(候选路线,接手可挑)
+
+> 当前司南端到端可跑(配源 → 缓存 → 因子质检/自定义因子 → 训练 → 回测 → 模拟盘出信号),诚实/纪律/本机三性守住,约 270 测试 CI 绿。
+> **最关键的下一步不是加功能,而是在联网环境用真实 Tushare token 跑一次端到端 + `cargo build` 编译 Tauri 壳,验证「可分发」这条地基。**
+
+### 11.1 可扩展功能(按价值/可做性排序)
+
+1. **回测用激活模型 / 自定义因子**:`run_backtest` 目前走等权 `score_universe`;让回测也支持 `model=`/`custom=`(已有 `model_score_universe`/`score_universe(custom=)`),口径与实盘一致 —— 小而有用。
+2. **自定义因子权重**:目前等权合成;加权重(ICIR 加权或手动),`custom_factors` 表加 `weight` 列,`composite_score` 支持加权。
+3. **更多内置因子 + DSL 算子**:扩 `factors/library.py`(成长/情绪/反转族)与 `indicators/operators.py`(更多回看算子);新因子若需新数据走 `required_caps` 降级。
+4. **M3 v2 LightGBM / ensemble**:`ModelType` 加 `lightgbm`;`training/train.py` 加非线性分支(lightgbm 建议做可选 extra 保「可分发」轻量);GPU 走 `resolve_device` 已就绪。
+5. **M5 资讯 / 估值**:`/news` 解锁;新增 provider 能力位 + 抓取管线 + 估值分析页。
+6. **真实净值累计**:盘后调度逐日累计一条持久净值曲线(替代总览「取最近回测」),`daily_pnl` 已有逐日数据。
+7. **业绩归因 + 报告导出**:因子贡献归因;回测/信号导出 PDF/Excel。
+8. **桌面特性**(SINAN_DESIGN 已规划):盘后通知、悬浮窗、托盘最小化。
+9. **模型组合 / 对比**:多模型 portfolio、版本对比择优。
+
+### 11.2 需改进 / 技术债(均非阻断,诚实记录)
+
+- **roe 按股广播=扁平**(`factors/custom.py`):自定义因子对 `roe` 做时序算子会退化(非泄漏,用的是 asof 值;但丢时间变化)→ 可做财务 PIT as-of join(`join_asof` by `ann_date`)修正。
+- **/models 分层夏普非完整回测**:已用 `layered_*`+`metrics_note` 诚实标注;可接 M2 事件驱动 OOS 回测得更严口径。
+- **回测末日 T+1「有成本无损益」**:M2 遗留 minor;末日 `fill=False` 或补终值估值点。
+- **设置页只读**:自动刷新/盘后落库为展示;需 `settings_put` 端点接前端才能编辑。
+- **风控闸 行业/波动待数据**:需 `sw_industry` 行业分类 + 历史波动序列。
+- **前端页面大量 `any`**:api 响应未加 DTO;可在契约加响应 schema 提升类型安全。
+- **性能**:`factor_quality`/`build_feature_panel` 逐日 asof 循环,大股票池可批量取数优化(一次 asof 拉全区间,内存切片)。
+- **测试 fixture 单调合成盘**:IC 饱和到 1.0,IC 量级无法区分真信号与泄漏 —— 真护栏是结构守卫(已测);可加噪声盘让合法 OOS IC 落 0.3~0.7,提升「假绿」鉴别力。
+- **Tauri 壳本环境未编译**:cargo 镜像不可达;联网环境需验证 sidecar supervisor 起停。
