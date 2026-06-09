@@ -3,6 +3,7 @@ import { createPinia } from 'pinia';
 import './styles/tailwind.css';
 import './design/tokens.css';
 import './design/pnl.css';
+import './design/materials.css';
 import './styles/app.scss';
 import App from './App.vue';
 import { router } from './router';
@@ -17,7 +18,11 @@ async function bootstrap() {
   app.mount('#app');
 
   const store = useAppStore();
-  store.setTheme(store.theme);
+  // 主题三态:跟随系统时监听操作系统浅/深色切换。
+  const mql = window.matchMedia('(prefers-color-scheme: dark)');
+  store.setSystemDark(mql.matches);
+  mql.addEventListener('change', (e) => store.setSystemDark(e.matches));
+  store.setThemePref(store.themePref);
   store.setPnlInvert(store.pnlInvert);
   await store.bootstrap();
 }

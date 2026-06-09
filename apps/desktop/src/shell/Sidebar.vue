@@ -9,20 +9,21 @@ interface Item {
   to: string;
   label: string;
   group: string;
+  icon: string;
   needsData?: boolean;
 }
 
 const items: Item[] = [
-  { to: '/dashboard', label: '总览', group: '监控' },
-  { to: '/market', label: '行情', group: '监控', needsData: true },
-  { to: '/news', label: '资讯', group: '监控', needsData: true },
-  { to: '/indicators', label: '指标', group: '研究', needsData: true },
-  { to: '/models', label: '模型', group: '研究', needsData: true },
-  { to: '/backtest', label: '回测', group: '研究', needsData: true },
-  { to: '/signals', label: '信号', group: '交易', needsData: true },
-  { to: '/portfolio', label: '持仓', group: '交易' },
-  { to: '/logs', label: '日志', group: '系统' },
-  { to: '/settings', label: '设置', group: '系统' },
+  { to: '/dashboard', label: '总览', group: '监控', icon: '◎' },
+  { to: '/market', label: '行情', group: '监控', icon: '📈', needsData: true },
+  { to: '/news', label: '资讯', group: '监控', icon: '📰', needsData: true },
+  { to: '/indicators', label: '指标', group: '研究', icon: '𝑓', needsData: true },
+  { to: '/models', label: '模型', group: '研究', icon: '◐', needsData: true },
+  { to: '/backtest', label: '回测', group: '研究', icon: '⟳', needsData: true },
+  { to: '/signals', label: '信号', group: '交易', icon: '◈', needsData: true },
+  { to: '/portfolio', label: '持仓', group: '交易', icon: '▤' },
+  { to: '/logs', label: '日志', group: '系统', icon: '≣' },
+  { to: '/settings', label: '设置', group: '系统', icon: '⚙' },
 ];
 
 const groups = computed(() => {
@@ -37,16 +38,23 @@ function locked(it: Item): boolean {
 </script>
 
 <template>
-  <nav class="sidebar">
-    <div class="brand">司南 <span class="sub">Sinan</span></div>
+  <nav class="sidebar m-vibrancy">
+    <div class="brand">
+      <span class="logo">🧭</span>
+      <span class="name">司南</span>
+      <span class="sub">Sinan</span>
+    </div>
     <template v-for="(list, group) in groups" :key="group">
       <div class="group-label">{{ group }}</div>
       <template v-for="it in list" :key="it.to">
         <RouterLink v-if="!locked(it)" :to="it.to" class="item" active-class="active">
-          {{ it.label }}
+          <span class="ic">{{ it.icon }}</span>
+          <span class="label">{{ it.label }}</span>
         </RouterLink>
         <span v-else class="item locked" title="请先在『设置 → 数据源』配置并建立本地缓存">
-          {{ it.label }} <span class="lock">🔒</span>
+          <span class="ic">{{ it.icon }}</span>
+          <span class="label">{{ it.label }}</span>
+          <span class="lock">🔒</span>
         </span>
       </template>
     </template>
@@ -55,51 +63,101 @@ function locked(it: Item): boolean {
 
 <style scoped lang="scss">
 .sidebar {
-  width: 200px;
-  background: var(--c-surface);
-  border-right: 1px solid var(--c-border);
-  padding: var(--sp-3);
+  width: 216px;
+  flex: none;
+  background: var(--c-sidebar);
+  border-right: 1px solid var(--c-hairline);
+  padding: var(--sp-3) var(--sp-2) var(--sp-4);
   overflow: auto;
 }
 
 .brand {
-  font-size: var(--fs-h3);
-  font-weight: 600;
-  padding: var(--sp-2) var(--sp-2) var(--sp-4);
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  padding: var(--sp-2) var(--sp-3) var(--sp-5);
 
+  .logo {
+    font-size: 18px;
+  }
+  .name {
+    font-size: var(--fs-sub);
+    font-weight: 700;
+    letter-spacing: 0.01em;
+  }
   .sub {
     color: var(--c-text-3);
-    font-size: var(--fs-cap);
+    font-size: 11px;
+    font-weight: 500;
+    letter-spacing: 0.04em;
   }
 }
 
 .group-label {
   color: var(--c-text-3);
-  font-size: var(--fs-cap);
-  margin: var(--sp-3) var(--sp-2) var(--sp-1);
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin: var(--sp-4) var(--sp-3) var(--sp-1);
 }
 
 .item {
   display: flex;
-  justify-content: space-between;
-  padding: var(--sp-2);
+  align-items: center;
+  gap: var(--sp-2);
+  padding: 7px var(--sp-3);
+  margin-bottom: 1px;
   border-radius: var(--r-md);
-  color: var(--c-text-2);
+  color: var(--c-text);
   text-decoration: none;
+  font-size: var(--fs-body);
+  font-weight: 450;
   cursor: pointer;
+  transition:
+    background var(--dur-fast) var(--ease),
+    color var(--dur-fast) var(--ease);
+
+  .ic {
+    width: 18px;
+    text-align: center;
+    font-size: 13px;
+    color: var(--c-text-2);
+    flex: none;
+  }
+  .label {
+    flex: 1;
+  }
+
+  &:hover {
+    background: var(--c-surface-2);
+  }
 
   &.active {
-    background: var(--accent-weak);
-    color: var(--accent);
+    background: var(--accent);
+    color: var(--accent-contrast);
+    box-shadow: var(--shadow-1);
+
+    .ic {
+      color: var(--accent-contrast);
+    }
   }
 
   &.locked {
     color: var(--c-text-3);
     cursor: not-allowed;
+
+    &:hover {
+      background: transparent;
+    }
+    .ic {
+      color: var(--c-text-3);
+      opacity: 0.6;
+    }
   }
 }
 
 .lock {
-  font-size: var(--fs-cap);
+  font-size: 11px;
 }
 </style>

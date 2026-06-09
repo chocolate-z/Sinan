@@ -10,7 +10,9 @@ import StatusBar from './StatusBar.vue';
     <main class="main">
       <TopBar />
       <section class="body">
-        <slot />
+        <div class="body-inner">
+          <slot />
+        </div>
       </section>
       <StatusBar />
     </main>
@@ -21,16 +23,22 @@ import StatusBar from './StatusBar.vue';
 .shell {
   display: flex;
   height: 100%;
+  background: var(--c-bg);
 }
 .main {
   display: flex;
   flex-direction: column;
   flex: 1;
   min-width: 0;
+  background: var(--c-bg);
 }
 .body {
   flex: 1;
   overflow: auto;
-  padding: var(--sp-5);
+}
+.body-inner {
+  max-width: 1180px;
+  margin: 0 auto;
+  padding: var(--sp-5) var(--sp-5) var(--sp-6);
 }
 </style>

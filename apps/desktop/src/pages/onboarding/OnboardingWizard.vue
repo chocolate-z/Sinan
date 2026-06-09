@@ -121,251 +121,431 @@ function capEntries(caps: Record<string, boolean>) {
 </script>
 
 <template>
-  <div class="wizard">
-    <div class="steps">
-      <span :class="{ on: step === 'welcome' }">欢迎</span> ›
-      <span :class="{ on: step === 'select_source' }">选数据源</span> ›
-      <span :class="{ on: step === 'credential' }">填凭据</span> ›
-      <span :class="{ on: step === 'test' }">测试连接</span> ›
-      <span :class="{ on: step === 'build_cache' }">建缓存</span> ›
-      <span :class="{ on: step === 'done' }">完成</span>
-    </div>
+  <div class="wizard-stage">
+    <div class="m-panel wizard">
+      <!-- 步骤进度条:圆点 + 连接线,当前/已过步用系统蓝 -->
+      <nav class="stepper">
+        <span class="step" :class="{ on: step === 'welcome' }">
+          <span class="dot" /><span class="lbl">欢迎</span>
+        </span>
+        <span class="link" />
+        <span class="step" :class="{ on: step === 'select_source' }">
+          <span class="dot" /><span class="lbl">选数据源</span>
+        </span>
+        <span class="link" />
+        <span class="step" :class="{ on: step === 'credential' }">
+          <span class="dot" /><span class="lbl">填凭据</span>
+        </span>
+        <span class="link" />
+        <span class="step" :class="{ on: step === 'test' }">
+          <span class="dot" /><span class="lbl">测试连接</span>
+        </span>
+        <span class="link" />
+        <span class="step" :class="{ on: step === 'build_cache' }">
+          <span class="dot" /><span class="lbl">建缓存</span>
+        </span>
+        <span class="link" />
+        <span class="step" :class="{ on: step === 'done' }">
+          <span class="dot" /><span class="lbl">完成</span>
+        </span>
+      </nav>
 
-    <!-- 欢迎 -->
-    <section v-if="step === 'welcome'" class="card">
-      <h1>司南 Sinan</h1>
-      <p>全本机量化助手 —— 你的数据、你的 token、你的电脑;我们不碰任何数据。</p>
-      <div class="promises">
-        <span>🖥 全本机运行</span><span>🔑 BYO 自带数据源</span><span>🔒 凭据加密</span>
-      </div>
-      <button class="primary" @click="go('select_source')">开始 →</button>
-    </section>
+      <!-- 欢迎 -->
+      <section v-if="step === 'welcome'" class="pane">
+        <h1>司南 Sinan</h1>
+        <p class="lead">全本机量化助手 —— 你的数据、你的 token、你的电脑;我们不碰任何数据。</p>
+        <div class="promises">
+          <span class="m-chip">🖥 全本机运行</span>
+          <span class="m-chip">🔑 BYO 自带数据源</span>
+          <span class="m-chip">🔒 凭据加密</span>
+        </div>
+        <div class="actions end">
+          <button class="m-btn m-btn--primary" @click="go('select_source')">开始 →</button>
+        </div>
+      </section>
 
-    <!-- 选数据源 -->
-    <section v-else-if="step === 'select_source'" class="card">
-      <h2>选择你自己的数据来源</h2>
-      <p class="muted">
-        司南不提供数据。Tushare Pro 能力最全(需自备 token);AkShare 免费但字段受限。
-      </p>
-      <div class="sources">
-        <label class="source" :class="{ sel: provider === 'tushare' }">
-          <input v-model="provider" type="radio" value="tushare" />
-          <strong>Tushare Pro</strong>
-          <span class="muted">财务/北向/估值/复权/指数 全能力,需 token</span>
-        </label>
-        <label class="source" :class="{ sel: provider === 'akshare' }">
-          <input v-model="provider" type="radio" value="akshare" />
-          <strong>AkShare(免费)</strong>
-          <span class="muted">价量/指数,无北向/财务 —— 样本外预期更低</span>
-        </label>
-      </div>
-      <button class="primary" @click="go('credential')">下一步 →</button>
-    </section>
-
-    <!-- 填凭据 -->
-    <section v-else-if="step === 'credential'" class="card">
-      <h2>填入凭据</h2>
-      <template v-if="needsToken()">
-        <label class="field">
-          <span>Tushare Token</span>
-          <div class="token-row">
-            <input
-              v-model="token"
-              :type="showToken ? 'text' : 'password'"
-              placeholder="粘贴你的 Tushare token"
-            />
-            <button class="ghost" @click="showToken = !showToken">
-              {{ showToken ? '隐藏' : '显示' }}
-            </button>
-          </div>
-        </label>
-        <p class="muted">🔒 token 仅加密存本机系统钥匙串,绝不上传、绝不落明文。</p>
-      </template>
-      <p v-else class="muted">AkShare 免费源无需 token。</p>
-      <button class="primary" :disabled="needsToken() && !token" @click="saveCredentialAndContinue">
-        保存并测试连接 →
-      </button>
-    </section>
-
-    <!-- 测试连接 -->
-    <section v-else-if="step === 'test'" class="card">
-      <h2>测试连接</h2>
-      <p v-if="testResult.loading" class="muted">正在探测能力与限频…</p>
-      <p v-else-if="testResult.error" class="status-err">连接失败:{{ testResult.error }}</p>
-      <template v-else-if="testResult.data">
-        <p :class="testResult.data.status === 'ok' ? 'status-ok' : 'status-err'">
-          ● {{ testResult.data.status === 'ok' ? '连接成功' : '连接异常' }}
-          <span v-if="testResult.data.message">— {{ testResult.data.message }}</span>
+      <!-- 选数据源 -->
+      <section v-else-if="step === 'select_source'" class="pane">
+        <h2>选择你自己的数据来源</h2>
+        <p class="m-muted lead">
+          司南不提供数据。Tushare Pro 能力最全(需自备 token);AkShare 免费但字段受限。
         </p>
-        <div class="caps">
-          <span
-            v-for="[name, ok] in capEntries(testResult.data.caps)"
-            :key="name"
-            :class="ok ? 'status-ok' : 'muted'"
-            >{{ ok ? '✓' : '✗' }} {{ name }}</span
+        <div class="sources">
+          <label class="m-card source" :class="{ sel: provider === 'tushare' }">
+            <input v-model="provider" type="radio" value="tushare" class="src-radio" />
+            <span class="src-body">
+              <strong>Tushare Pro</strong>
+              <span class="m-muted">财务/北向/估值/复权/指数 全能力,需 token</span>
+            </span>
+          </label>
+          <label class="m-card source" :class="{ sel: provider === 'akshare' }">
+            <input v-model="provider" type="radio" value="akshare" class="src-radio" />
+            <span class="src-body">
+              <strong>AkShare(免费)</strong>
+              <span class="m-muted">价量/指数,无北向/财务 —— 样本外预期更低</span>
+            </span>
+          </label>
+        </div>
+        <div class="actions end">
+          <button class="m-btn m-btn--primary" @click="go('credential')">下一步 →</button>
+        </div>
+      </section>
+
+      <!-- 填凭据 -->
+      <section v-else-if="step === 'credential'" class="pane">
+        <h2>填入凭据</h2>
+        <template v-if="needsToken()">
+          <label class="field">
+            <span class="field-lbl">Tushare Token</span>
+            <div class="token-row">
+              <input
+                v-model="token"
+                class="m-field token-input"
+                :type="showToken ? 'text' : 'password'"
+                placeholder="粘贴你的 Tushare token"
+              />
+              <button class="m-btn m-btn--ghost" @click="showToken = !showToken">
+                {{ showToken ? '隐藏' : '显示' }}
+              </button>
+            </div>
+          </label>
+          <p class="m-muted hint">🔒 token 仅加密存本机系统钥匙串,绝不上传、绝不落明文。</p>
+        </template>
+        <p v-else class="m-muted hint">AkShare 免费源无需 token。</p>
+        <div class="actions end">
+          <button
+            class="m-btn m-btn--primary"
+            :disabled="needsToken() && !token"
+            @click="saveCredentialAndContinue"
           >
+            保存并测试连接 →
+          </button>
         </div>
-        <p v-for="d in testResult.data.degraded" :key="d" class="status-warn">⚠ {{ d }}</p>
-      </template>
-      <div class="actions">
-        <button class="ghost" @click="go('credential')">返回</button>
-        <button class="ghost" @click="runTest">重测</button>
-        <button
-          class="primary"
-          :disabled="!testResult.data || testResult.data.status !== 'ok'"
-          @click="go('build_cache')"
-        >
-          下一步:建缓存 →
-        </button>
-      </div>
-    </section>
+      </section>
 
-    <!-- 建缓存 -->
-    <section v-else-if="step === 'build_cache'" class="card">
-      <h2>建立本地数据缓存(全程在你的电脑上)</h2>
-      <label class="quick"
-        ><input v-model="quickMode" type="checkbox" /> 快速模式(少量股票,先跑通)</label
-      >
-      <div v-if="!build.jobId">
-        <button class="primary" @click="startBuild">开始建缓存</button>
-      </div>
-      <div v-else>
-        <div class="bar">
-          <div class="fill" :style="{ width: (build.progress * 100).toFixed(0) + '%' }" />
-        </div>
-        <p class="muted">
-          {{ (build.progress * 100).toFixed(0) }}% · {{ build.stage }} · {{ build.message }}
+      <!-- 测试连接 -->
+      <section v-else-if="step === 'test'" class="pane">
+        <h2>测试连接</h2>
+        <p v-if="testResult.loading" class="m-muted">正在探测能力与限频…</p>
+        <p v-else-if="testResult.error" class="m-badge status-err">
+          连接失败:{{ testResult.error }}
         </p>
-        <p v-if="build.error" class="status-err">{{ build.error }}</p>
-      </div>
-    </section>
+        <template v-else-if="testResult.data">
+          <p class="m-badge" :class="testResult.data.status === 'ok' ? 'status-ok' : 'status-err'">
+            {{ testResult.data.status === 'ok' ? '连接成功' : '连接异常' }}
+            <span v-if="testResult.data.message">— {{ testResult.data.message }}</span>
+          </p>
+          <div class="caps">
+            <span
+              v-for="[name, ok] in capEntries(testResult.data.caps)"
+              :key="name"
+              class="m-chip"
+              :class="ok ? 'cap-on' : 'cap-off'"
+              >{{ ok ? '✓' : '✗' }} {{ name }}</span
+            >
+          </div>
+          <p v-for="d in testResult.data.degraded" :key="d" class="m-badge status-warn deg">
+            ⚠ {{ d }}
+          </p>
+        </template>
+        <div class="actions">
+          <button class="m-btn m-btn--ghost" @click="go('credential')">返回</button>
+          <button class="m-btn m-btn--ghost" @click="runTest">重测</button>
+          <span class="spacer" />
+          <button
+            class="m-btn m-btn--primary"
+            :disabled="!testResult.data || testResult.data.status !== 'ok'"
+            @click="go('build_cache')"
+          >
+            下一步:建缓存 →
+          </button>
+        </div>
+      </section>
 
-    <!-- 完成 -->
-    <section v-else-if="step === 'done'" class="card">
-      <h2>✓ 完成</h2>
-      <p>本地缓存已建立。你现在可以浏览总览,后续里程碑将解锁因子打分、信号与模拟盘。</p>
-      <button class="primary" @click="finish">进入司南 →</button>
-    </section>
+      <!-- 建缓存 -->
+      <section v-else-if="step === 'build_cache'" class="pane">
+        <h2>建立本地数据缓存(全程在你的电脑上)</h2>
+        <label class="quick">
+          <span class="m-switch">
+            <input v-model="quickMode" type="checkbox" />
+            <span></span>
+          </span>
+          <span class="quick-lbl">快速模式(少量股票,先跑通)</span>
+        </label>
+        <div v-if="!build.jobId" class="actions">
+          <button class="m-btn m-btn--primary" @click="startBuild">开始建缓存</button>
+        </div>
+        <div v-else class="progress">
+          <div class="bar">
+            <div class="fill" :style="{ width: (build.progress * 100).toFixed(0) + '%' }" />
+          </div>
+          <p class="m-muted progress-meta">
+            <span class="num">{{ (build.progress * 100).toFixed(0) }}%</span>
+            · {{ build.stage }} · {{ build.message }}
+          </p>
+          <p v-if="build.error" class="m-badge status-err">{{ build.error }}</p>
+        </div>
+      </section>
 
-    <p class="disclaimer">
-      司南仅供研究参考,不构成投资建议;模拟盘为纸面前向验证,不进行任何真实下单。
-    </p>
+      <!-- 完成 -->
+      <section v-else-if="step === 'done'" class="pane">
+        <div class="done-mark">✓</div>
+        <h2>完成</h2>
+        <p class="lead">
+          本地缓存已建立。你现在可以浏览总览,后续里程碑将解锁因子打分、信号与模拟盘。
+        </p>
+        <div class="actions end">
+          <button class="m-btn m-btn--primary" @click="finish">进入司南 →</button>
+        </div>
+      </section>
+
+      <hr class="m-divider" />
+
+      <p class="disclaimer">
+        司南仅供研究参考,不构成投资建议;模拟盘为纸面前向验证,不进行任何真实下单。
+      </p>
+    </div>
   </div>
 </template>
 
 <style scoped>
-.wizard {
-  max-width: 640px;
-  margin: 6vh auto;
-  padding: var(--sp-4);
+/* 整页居中铺底:柔和径向渐变,衬托浮起的面板 */
+.wizard-stage {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--sp-6) var(--sp-4);
+  background:
+    radial-gradient(120% 90% at 50% -10%, var(--accent-weak) 0%, transparent 55%), var(--c-bg);
 }
-.steps {
+.wizard {
+  width: 100%;
+  max-width: 560px;
+  padding: var(--sp-6);
+}
+
+/* ── 步骤进度条 ───────────────────────────────────────────── */
+.stepper {
+  display: flex;
+  align-items: center;
+  margin-bottom: var(--sp-6);
+}
+.step {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
   color: var(--c-text-3);
   font-size: var(--fs-cap);
-  margin-bottom: var(--sp-4);
+  font-weight: 500;
+  transition: color var(--dur) var(--ease);
 }
-.steps .on {
+.step .dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--c-border-strong);
+  flex: none;
+  transition:
+    background var(--dur) var(--ease),
+    box-shadow var(--dur) var(--ease),
+    transform var(--dur) var(--ease-spring);
+}
+.step.on {
   color: var(--accent);
+}
+.step.on .dot {
+  background: var(--accent);
+  box-shadow: 0 0 0 4px var(--accent-weak);
+  transform: scale(1.05);
+}
+.step .lbl {
+  white-space: nowrap;
+}
+.link {
+  flex: 1;
+  height: 1px;
+  min-width: 8px;
+  background: var(--c-hairline);
+  margin: 0 var(--sp-2);
+}
+
+/* ── 内容 pane ────────────────────────────────────────────── */
+.pane {
+  min-height: 200px;
+}
+.pane h1 {
+  font-size: var(--fs-h1);
   font-weight: 600;
+  letter-spacing: -0.02em;
+  margin: 0 0 var(--sp-3);
 }
-.card {
-  background: var(--c-surface);
-  border: 1px solid var(--c-border);
-  border-radius: var(--r-lg);
-  padding: var(--sp-5);
+.pane h2 {
+  font-size: var(--fs-h2);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  margin: 0 0 var(--sp-3);
 }
+.lead {
+  color: var(--c-text-2);
+  font-size: var(--fs-sub);
+  line-height: 1.5;
+  margin: 0 0 var(--sp-4);
+}
+
 .promises {
   display: flex;
-  gap: var(--sp-4);
-  margin: var(--sp-4) 0;
-  color: var(--c-text-2);
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+  margin: var(--sp-4) 0 var(--sp-5);
 }
+
+/* ── 数据源选择卡 ─────────────────────────────────────────── */
 .sources {
   display: flex;
   flex-direction: column;
   gap: var(--sp-3);
-  margin: var(--sp-4) 0;
+  margin: var(--sp-4) 0 var(--sp-5);
 }
 .source {
   display: flex;
-  flex-direction: column;
-  gap: var(--sp-1);
-  border: 1px solid var(--c-border);
-  border-radius: var(--r-md);
-  padding: var(--sp-3);
+  align-items: flex-start;
+  gap: var(--sp-3);
   cursor: pointer;
+  border: 1px solid var(--c-border);
+  transition:
+    border-color var(--dur-fast) var(--ease),
+    background var(--dur-fast) var(--ease),
+    box-shadow var(--dur-fast) var(--ease);
+}
+.source:hover {
+  border-color: var(--c-border-strong);
 }
 .source.sel {
   border-color: var(--accent);
   background: var(--accent-weak);
+  box-shadow: 0 0 0 1px var(--accent);
 }
+.src-radio {
+  margin-top: 2px;
+  accent-color: var(--accent);
+  flex: none;
+}
+.src-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+}
+.src-body strong {
+  font-size: var(--fs-sub);
+  font-weight: 600;
+}
+
+/* ── 凭据表单 ─────────────────────────────────────────────── */
 .field {
   display: block;
-  margin: var(--sp-3) 0;
+  margin: var(--sp-4) 0 var(--sp-3);
+}
+.field-lbl {
+  display: block;
+  font-size: var(--fs-cap);
+  font-weight: 500;
+  color: var(--c-text-2);
+  margin-bottom: var(--sp-2);
 }
 .token-row {
   display: flex;
   gap: var(--sp-2);
 }
-.token-row input {
+.token-input {
   flex: 1;
-  padding: var(--sp-2);
-  border: 1px solid var(--c-border);
-  border-radius: var(--r-md);
 }
+.hint {
+  font-size: var(--fs-cap);
+}
+
+/* ── 能力探测标签 ─────────────────────────────────────────── */
 .caps {
   display: flex;
   flex-wrap: wrap;
-  gap: var(--sp-3);
-  margin: var(--sp-3) 0;
-  font-size: var(--fs-cap);
-}
-.actions {
-  display: flex;
   gap: var(--sp-2);
+  margin: var(--sp-3) 0;
+}
+.cap-on {
+  color: var(--st-ok);
+}
+.cap-off {
+  color: var(--c-text-3);
+}
+.deg {
+  margin-top: var(--sp-2);
+}
+
+/* ── 建缓存 ───────────────────────────────────────────────── */
+.quick {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  margin: var(--sp-3) 0 var(--sp-5);
+  cursor: pointer;
+}
+.quick-lbl {
+  font-size: var(--fs-body);
+  color: var(--c-text);
+}
+.progress {
   margin-top: var(--sp-4);
 }
 .bar {
-  height: 10px;
+  height: 8px;
   background: var(--c-surface-2);
   border-radius: var(--r-pill);
   overflow: hidden;
-  margin: var(--sp-3) 0 var(--sp-1);
 }
 .fill {
   height: 100%;
+  border-radius: var(--r-pill);
   background: var(--accent);
   transition: width var(--dur) var(--ease);
 }
-.primary {
-  background: var(--accent);
-  color: #fff;
-  border: none;
-  border-radius: var(--r-md);
-  padding: var(--sp-2) var(--sp-4);
-  cursor: pointer;
+.progress-meta {
+  margin-top: var(--sp-3);
+  font-size: var(--fs-cap);
 }
-.primary:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
+
+/* ── 完成 ─────────────────────────────────────────────────── */
+.done-mark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  background: var(--accent-weak);
+  color: var(--accent);
+  font-size: 24px;
+  font-weight: 700;
+  margin-bottom: var(--sp-3);
 }
-.ghost {
-  background: none;
-  border: 1px solid var(--c-border);
-  border-radius: var(--r-md);
-  padding: var(--sp-2) var(--sp-3);
-  cursor: pointer;
+
+/* ── 操作区 ───────────────────────────────────────────────── */
+.actions {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  margin-top: var(--sp-5);
 }
-.muted {
-  color: var(--c-text-3);
+.actions.end {
+  justify-content: flex-end;
 }
-.quick {
-  display: block;
-  margin: var(--sp-2) 0 var(--sp-3);
+.spacer {
+  flex: 1;
 }
+
 .disclaimer {
-  margin-top: var(--sp-4);
   color: var(--c-text-3);
   font-size: var(--fs-cap);
+  line-height: 1.5;
+  margin: 0;
 }
 </style>

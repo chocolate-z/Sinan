@@ -1,0 +1,283 @@
+/* macOS 原生风控件类库(全局,经 main.ts 引入,在 tailwind preflight 之后)。
+   命名空间前缀 m-,避免与页面 scoped 类冲突。
+   红线:这些是「系统/中性」控件,绝不内置盈亏色;盈亏一律由调用处加 .pnl-* class。 */
+
+/* ── 卡片 / 面板 / 玻璃 ─────────────────────────────────────────────── */
+.m-card {
+  background: var(--c-surface);
+  border: 1px solid var(--c-hairline);
+  border-radius: var(--r-lg);
+  box-shadow: var(--shadow-1);
+  padding: var(--sp-4);
+}
+.m-card--lg {
+  padding: var(--sp-5);
+}
+.m-panel {
+  background: var(--c-surface);
+  border: 1px solid var(--c-hairline);
+  border-radius: var(--r-xl);
+  box-shadow: var(--shadow-2);
+  padding: var(--sp-5);
+}
+.m-vibrancy {
+  backdrop-filter: var(--blur-thin);
+  -webkit-backdrop-filter: var(--blur-thin);
+}
+.m-divider {
+  height: 1px;
+  background: var(--c-hairline);
+  border: none;
+  margin: var(--sp-3) 0;
+}
+.m-muted {
+  color: var(--c-text-3);
+}
+
+/* ── 按钮 ───────────────────────────────────────────────────────────── */
+.m-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--sp-1);
+  font: inherit;
+  font-size: var(--fs-body);
+  font-weight: 500;
+  line-height: 1;
+  padding: 7px 14px;
+  border-radius: var(--r-md);
+  border: 1px solid transparent;
+  cursor: pointer;
+  white-space: nowrap;
+  user-select: none;
+  transition:
+    background var(--dur-fast) var(--ease),
+    transform var(--dur-fast) var(--ease),
+    box-shadow var(--dur-fast) var(--ease),
+    border-color var(--dur-fast) var(--ease);
+}
+.m-btn:active:not(:disabled) {
+  transform: scale(0.97);
+}
+.m-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.m-btn:focus-visible {
+  outline: none;
+  box-shadow: var(--ring);
+}
+.m-btn--primary {
+  background: var(--accent);
+  color: var(--accent-contrast);
+  box-shadow: var(--shadow-1);
+}
+.m-btn--primary:hover:not(:disabled) {
+  background: var(--accent-hover);
+}
+.m-btn--secondary {
+  background: var(--c-surface-2);
+  color: var(--c-text);
+  border-color: var(--c-hairline);
+}
+.m-btn--secondary:hover:not(:disabled) {
+  background: var(--c-border);
+}
+.m-btn--ghost {
+  background: transparent;
+  color: var(--c-text);
+  border-color: var(--c-border-strong);
+}
+.m-btn--ghost:hover:not(:disabled) {
+  background: var(--c-surface-2);
+}
+.m-btn--sm {
+  padding: 4px 10px;
+  font-size: var(--fs-cap);
+}
+
+/* ── 输入框 ─────────────────────────────────────────────────────────── */
+.m-field {
+  font: inherit;
+  font-size: var(--fs-body);
+  color: var(--c-text);
+  background: var(--c-surface);
+  border: 1px solid var(--c-border-strong);
+  border-radius: var(--r-md);
+  padding: 7px 11px;
+  transition:
+    border-color var(--dur-fast) var(--ease),
+    box-shadow var(--dur-fast) var(--ease);
+}
+.m-field::placeholder {
+  color: var(--c-text-3);
+}
+.m-field:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: var(--ring);
+}
+[data-theme='dark'] .m-field {
+  background: var(--c-surface-2);
+}
+
+/* ── 分段控件(segmented) ───────────────────────────────────────────── */
+.m-segmented {
+  display: inline-flex;
+  background: var(--c-surface-2);
+  border-radius: var(--r-md);
+  padding: 2px;
+  gap: 2px;
+}
+.m-segmented button,
+.m-segmented a {
+  font: inherit;
+  font-size: var(--fs-cap);
+  font-weight: 500;
+  border: none;
+  background: transparent;
+  color: var(--c-text-2);
+  padding: 5px 13px;
+  border-radius: calc(var(--r-md) - 2px);
+  cursor: pointer;
+  text-decoration: none;
+  transition:
+    background var(--dur-fast) var(--ease),
+    color var(--dur-fast) var(--ease),
+    box-shadow var(--dur-fast) var(--ease);
+}
+.m-segmented button.on,
+.m-segmented a.on {
+  background: var(--c-surface);
+  color: var(--c-text);
+  box-shadow: var(--shadow-1);
+}
+[data-theme='dark'] .m-segmented button.on,
+[data-theme='dark'] .m-segmented a.on {
+  background: var(--c-border-strong);
+}
+
+/* ── 开关(switch)。on 用系统蓝(不用盈亏绿,守红线) ────────────────── */
+.m-switch {
+  position: relative;
+  display: inline-block;
+  width: 38px;
+  height: 22px;
+  flex: none;
+}
+.m-switch input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+.m-switch span {
+  position: absolute;
+  inset: 0;
+  border-radius: var(--r-pill);
+  background: var(--c-border-strong);
+  cursor: pointer;
+  transition: background var(--dur) var(--ease);
+}
+.m-switch span::before {
+  content: '';
+  position: absolute;
+  width: 18px;
+  height: 18px;
+  left: 2px;
+  top: 2px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: var(--shadow-1);
+  transition: transform var(--dur) var(--ease-spring);
+}
+.m-switch input:checked + span {
+  background: var(--accent);
+}
+.m-switch input:checked + span::before {
+  transform: translateX(16px);
+}
+
+/* ── 标签 / 徽章 / 键帽 ─────────────────────────────────────────────── */
+.m-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: var(--fs-cap);
+  color: var(--c-text-2);
+  background: var(--c-surface-2);
+  border-radius: var(--r-sm);
+  padding: 2px 8px;
+}
+/* 状态徽章:圆点取 currentColor → 由调用处的 .status-* 决定颜色(中性,非盈亏)。 */
+.m-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--fs-cap);
+  font-weight: 500;
+}
+.m-badge::before {
+  content: '';
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: currentColor;
+  flex: none;
+}
+
+/* ── 表格(macOS 列表观感) ─────────────────────────────────────────── */
+.m-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--fs-cap);
+}
+.m-table th {
+  text-align: left;
+  font-weight: 500;
+  color: var(--c-text-3);
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--c-hairline);
+}
+.m-table td {
+  padding: 9px 12px;
+  border-bottom: 1px solid var(--c-hairline);
+}
+.m-table tbody tr {
+  transition: background var(--dur-fast) var(--ease);
+}
+.m-table tbody tr:hover {
+  background: var(--c-surface-2);
+}
+.m-table th.r,
+.m-table td.r {
+  text-align: right;
+}
+.m-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+/* ── 工具条 ─────────────────────────────────────────────────────────── */
+.m-toolbar {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  flex-wrap: wrap;
+}
+
+/* ── 滚动条(macOS overlay 风) ─────────────────────────────────────── */
+::-webkit-scrollbar {
+  width: 11px;
+  height: 11px;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--c-border-strong);
+  border-radius: var(--r-pill);
+  border: 3px solid transparent;
+  background-clip: content-box;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--c-text-3);
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}

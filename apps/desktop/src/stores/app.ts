@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia';
 import { api } from '../api/client';
 import { pnlClass } from '../lib/pnl';
+import { resolveTheme, type Theme, type ThemePref } from '../lib/theme';
 
 interface ProviderInfo {
   id: string;
@@ -13,7 +14,8 @@ interface ProviderInfo {
 interface AppState {
   onboardingDone: boolean;
   step: string;
-  theme: 'light' | 'dark';
+  themePref: ThemePref;
+  systemDark: boolean;
   pnlInvert: boolean;
   apiHealth: boolean;
   engineHealth: boolean;
@@ -26,7 +28,8 @@ export const useAppStore = defineStore('app', {
   state: (): AppState => ({
     onboardingDone: false,
     step: 'welcome',
-    theme: 'light',
+    themePref: 'system',
+    systemDark: false,
     pnlInvert: false,
     apiHealth: false,
     engineHealth: false,
@@ -37,11 +40,22 @@ export const useAppStore = defineStore('app', {
   getters: {
     // 盈亏着色统一出口(全局唯一)。
     pnlClass: () => (v: number) => pnlClass(v),
+    // 偏好(可为 system)解析为实际应用的浅/深色。
+    theme: (s): Theme => resolveTheme(s.themePref, s.systemDark),
   },
   actions: {
-    setTheme(t: 'light' | 'dark') {
-      this.theme = t;
-      document.documentElement.dataset.theme = t;
+    /** 应用当前解析后的主题到 <html data-theme>。 */
+    applyTheme() {
+      document.documentElement.dataset.theme = this.theme;
+    },
+    setThemePref(p: ThemePref) {
+      this.themePref = p;
+      this.applyTheme();
+    },
+    /** 系统浅/深色变化(main.ts 经 matchMedia 监听)。 */
+    setSystemDark(v: boolean) {
+      this.systemDark = v;
+      this.applyTheme();
     },
     setPnlInvert(v: boolean) {
       this.pnlInvert = v;
