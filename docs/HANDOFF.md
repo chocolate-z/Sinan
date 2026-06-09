@@ -13,8 +13,9 @@
 技术形态:**Tauri 2(Rust 外壳)+ Vue3 前端 + 两个 sidecar:api(NestJS+Fastify,:59914)/ engine(FastAPI,:59915)**。
 存储:SQLite(事务元数据,**仅 api 写**)+ DuckDB/parquet(分析大矩阵,**仅 engine 写**)。
 
-**进度:M0 完成、M1 功能闭环完成、行情页 /market 完成、全局 macOS 原生风 UI 重构(主题三态 + 自定义 Win11 标题栏)完成、M2 回测引擎完成(四刀闭环 + 红线审计收口)。** 仓库 **公开**:https://github.com/chocolate-z/Sinan
-**CI 三 job 全绿**(node / python / rust),每次 push 自动验证。**约 214 个自动化测试**。
+**进度:M0 完成、M1 功能闭环完成、行情页 /market 完成、M2 回测引擎完成(四刀闭环 + 红线审计 + 可回溯明细)、回测可回溯(买卖点/持仓/资产/盈亏)完成。当前正在按设计交接稿做「前端整体重写」(见 §9)。** 仓库 **公开**:https://github.com/chocolate-z/Sinan
+**CI 三 job 全绿**(node / python / rust),每次 push 自动验证。**约 214 个自动化测试**(前端 46)。
+**数据/撮合一律日频,不支持分时(有意设计,契合 A 股 T+1)。**
 
 已实现(可运行、带测试):
 
@@ -181,3 +182,55 @@ pnpm --filter @sinan/desktop dev    # 或 (cd apps/desktop && node node_modules/
 | 前端纯逻辑        | `apps/desktop/src/lib/{pnl,signals,guard}.ts`                               |
 | 外壳逻辑          | `apps/desktop/shell-core/src/*.rs` + `src-tauri/src/lib.rs`                 |
 | 契约              | `packages/shared-contracts/spec/*.json`                                     |
+
+---
+
+## 9. 前端「设计稿整体重写」进行中(接手必读)
+
+用户提供了一份**高保真设计交接稿**,要求把整个前端 1:1 复刻成「**深色专业量化终端**」风(紫色品牌 + 玻璃磨砂 + 极光背景;参考 TradingView 深色 / Linear / Trae / Apple HIG)。**这是当前主线任务。**
+
+### 9.1 设计稿位置(唯一真相源)
+
+`docs/design_handoff_sinan/`(已入库):
+
+- `README.md` —— **先读**:配色铁律、token、布局、9 屏、组件状态表。
+- `design_source/assets/{tokens.css,components.css}` —— 设计令牌 + 组件(已迁入,见下)。
+- `design_source/src/{ui,charts,shell,app,data}.jsx` + `src/pages/*.jsx` —— React 高保真原型(mock 数据,**仅视觉参考**)。
+- `司南 Sinan (预览·离线单文件).html` —— 双击即可在浏览器看全部交互。
+- 该目录已加入 `.prettierignore` 与 eslint ignores(参考稿不参与本仓库格式化)。
+
+### 9.2 配色铁律(三通道,不可交叉)
+
+- **PnL 盈亏**(仅金额/涨跌/收益):`.pnl-up`(红涨)/`.pnl-down`(绿跌),经 `app.pnlClass(v)`;反转走 `<html data-pnl-invert>`(`tokens.css` 用 `--pnl-pos/--pnl-neg` 基准交换,无循环)。**A 股红涨绿跌**。
+- **Status 系统状态/买卖方向**:`.badge-ok/.badge-warn/.badge-err/.badge-idle` 或 `--status-*`(买=ok 蓝 / 卖=warn 橙)。
+- **Accent 品牌**:`--accent` 紫色渐变,仅交互/选中/主按钮/模型净值线。
+- 三者**绝不交叉**;IC/ICIR/综合分用中性。数字一律 `.mono` 等宽 tabular。
+
+### 9.3 已迁入的设计系统(里程碑1 + 2a,已 commit、CI 绿)
+
+- `src/design/tokens.css` —— **整套设计令牌**(深/浅双主题、玻璃 `--glass-*`、极光 `--aurora`、`--bg-*/--text-*/--status-*/--accent*/--pnl-*`、`--fs-*/--sp-*/--r-*`)+ **底部"兼容别名"块**把旧 `--c-*/--st-*/--font-ui/--shadow-*/--r-pill` 等映射到新令牌(让未迁移页面继续构建)。
+  - ⚠️ **CSS 注释陷阱**:注释里别出现 `*/`(如写 `--c-*/--st-*` 会提前闭合注释 → lightningcss `Delim('*')` 构建失败)。已踩过。
+- `src/design/components.css` —— 设计组件类:`.card`(玻璃卡)/`.card-head`/`.card-pad`/`.glist`/`.grow`/`.btn .btn-primary/-secondary/-ghost/-sm`/`.input`/`.field-label`/`.badge*`/`.chip`/`.segmented`/`.switch`/`.dt`(金融表,选中 `.sel` 左 2px accent)/`.empty`/`.live-dot`/`.nav-item`(选中紫胶囊)/`.src-card`/`.main-aurora`。
+- `src/shell/`:`TitleBar.vue`(玻璃 + **Logo.vue** 花朵品牌 + 版本 + Win11 控制)、`Sidebar.vue`(玻璃 + `nav-chip` 线性图标 + 紫胶囊选中 + 数据源卡 + 主题切换;未配置数据源项 `.nav-item.disabled`)、`StatusBar.vue`(玻璃状态点)、`AppShell.vue`(极光背景,无 body 内边距 → 页面自带)、`Icon.vue`+`icons.ts`(单色线性图标)、`Logo.vue`(多色花朵 logo)。
+- `src/ui/`:`PageHero.vue`(页内大标题,padding 34 28 0)、`charts/{EquityChart,Candles,Heatmap,Sparkline,RiskBar}.vue`(纯 SVG,`composables/useMeasure.ts` 响应式宽度,回调式 `:ref="setEl"`)。
+- `src/lib/format.ts`(`fmt/fmtInt/fmtPct/fmtSigned`)。
+- 默认深色(`stores/app.ts` `themePref:'dark'`;`index.html` `data-theme="dark"`)。`sidebar.test` 已改为断言 `.nav-item.disabled`。
+
+### 9.4 已重写的页面(里程碑2a/2b,已 commit、CI 待确认)
+
+- ✅ **总览 Dashboard**(范例,我亲手写):PageHero + PnL 双卡(真实当日收益/持仓市值/超额)+ 净值/今日信号**诚实空状态**(后端无序列,不造假)。
+- ✅ **行情/信号/持仓/回测/引导/日志/锁定** 7 页(多智能体工作流并行重写):保留各页真实 api/store 逻辑,模板换设计组件。回测页用 `EquityChart`+`Heatmap`+买卖点;行情用 `Candles`。
+  - ⚠️ 该工作流 **StructuredOutput 回收失败但文件已落盘**;我已 `vue-tsc + vite build + eslint` 验证通过、commit(`3cc15f1`)。**接手请刷新 dev 逐页核对视觉是否贴稿**(工作流产物未经像素级人工核对)。
+
+### 9.5 接手要做的(剩余,按优先级)
+
+1. **设置页 Settings.vue 未重写**(那轮 agent 没落盘),仍旧 `.m-*` 样式(经兼容别名渲染)。按 `design_source/src/pages/settings.jsx` 重写:数据源 provider 卡 + token `.input` + 能力探测网格 + 外观 `.glist`(主题三态 `.segmented` + 涨跌反转 `.switch` 带预览)。
+2. **逐页核对/精修**已重写的 7 页对照离线预览,修视觉偏差;`OnboardingWizard.vue` 的罗盘 logo 也换成 `<Logo>`。
+3. **新增两页**(设计稿有,需配 M3/M4 后端,可先做视觉壳 + 诚实空状态):**指标/因子库 `/indicators`**(`indicators.jsx`)、**策略/模型 `/models`(=strategy)**(`strategy.jsx`);解锁路由(`router/index.ts` 现指向 `Locked.vue`)。
+4. **收尾清理**:全部页面迁完后,删除 `tokens.css` 兼容别名块 + `src/design/materials.css`(旧 `.m-*`)+ `pnl.css` 与 `components.css` 的重复,统一到设计令牌/类。
+5. **验证节奏**:每迁一两页 → `cd apps/desktop && vue-tsc --noEmit -p tsconfig.app.json && vitest run && vite build`,再 `eslint apps/desktop/src` + 全库 `prettier --check .` → commit + push + 轮询 CI(REST,见 §5.6)。
+
+### 9.6 重写方法论(沿用)
+
+- 单页:**保留 `<script setup>` 逻辑/store/api 不动,只重写 `<template>` + `<style scoped>`**;后端缺的数据用**诚实空状态**(`.empty`),**绝不造假数字**(红线#3)。根结构用 `<PageHero>` + `<div class="page-body">`(padding 28、卡片间距 20),不要旧 `.page` 根。
+- ultracode 会话:可用 Workflow 并行 fan-out 多页 + 对抗式审查(注意 schema agent 偶发不调 StructuredOutput → 工作流报失败但文件可能已落盘,需 `git status` 核对 + 自行验证)。
