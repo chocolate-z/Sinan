@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { onBeforeUnmount, onMounted, ref } from 'vue';
 import { getAppWindow, isTauri } from '../lib/tauri';
-import Icon from './Icon.vue';
+import Logo from './Logo.vue';
 
 const inTauri = isTauri();
 const maximized = ref(false);
@@ -40,7 +40,7 @@ onBeforeUnmount(() => unlisten?.());
   <!-- 自定义标题栏(玻璃)。Win11 窗口控制置于右上;浏览器开发环境隐藏控制按钮。 -->
   <header class="titlebar" data-tauri-drag-region>
     <div class="tb-brand" data-tauri-drag-region>
-      <span class="tb-logo"><Icon name="compass" :size="15" /></span>
+      <span class="tb-logo"><Logo :size="16" /></span>
       <span class="tb-name">司南</span>
       <span class="tb-sub">Sinan</span>
       <span class="tb-ver mono">v2.4.0</span>

@@ -1,11 +1,17 @@
 <script setup lang="ts">
 import { ref } from 'vue';
 import { useTradingStore } from '../../stores/trading';
-import { actionClass, actionLabel, factorEntries, reasonLabel } from '../../lib/signals';
+import { actionLabel, factorEntries, reasonLabel } from '../../lib/signals';
+import { useAppStore } from '../../stores/app';
+import { fmtSigned } from '../../lib/format';
+import PageHero from '../../ui/PageHero.vue';
+import Icon from '../../shell/Icon.vue';
 
 const trading = useTradingStore();
+const app = useAppStore();
 const today = ref('');
 const effective = ref('');
+const tab = ref<'pass' | 'blocked'>('pass');
 
 async function run() {
   if (!today.value || !effective.value) return;
@@ -15,109 +21,180 @@ async function run() {
 function load() {
   if (today.value) trading.fetchSignals(today.value);
 }
+
+// 方向 → 徽章通道(系统色,Status 通道):买=ok 卖=warn 持有=idle。
+// 与 actionClass(状态语义 class)解耦,仅供 .badge 着色;不占用盈亏色。
+const DIR_BADGE: Record<string, string> = {
+  buy: 'badge-ok',
+  sell: 'badge-warn',
+  hold: 'badge-idle',
+};
+function dirBadge(a: string): string {
+  return DIR_BADGE[a] ?? 'badge-idle';
+}
 </script>
 
 <template>
-  <div class="page">
-    <header class="page-head">
-      <h1>信号</h1>
-      <p class="sub">盘后打分出信号 · 模拟撮合;纪律高于模型</p>
-    </header>
+  <PageHero
+    title="信号"
+    :sub="`基于多因子模型 · 盘后打分出信号 + 模拟撮合 · 纪律高于模型${trading.date ? ' · ' + trading.date : ''}`"
+  >
+    <template #right>
+      <button
+        class="btn btn-primary btn-sm"
+        :disabled="!today || !effective || trading.loading"
+        @click="run"
+      >
+        <Icon name="refresh" :size="14" /> {{ trading.loading ? '运行中…' : '盘后跑一轮' }}
+      </button>
+    </template>
+  </PageHero>
 
-    <!-- 运行工具条 -->
-    <div class="m-card runner">
-      <div class="m-toolbar">
-        <label class="field-group">
-          <span class="field-label">信号日 T</span>
-          <input v-model="today" class="m-field" type="date" />
+  <div class="page-body">
+    <!-- 运行工具条(卡内) -->
+    <div class="card card-pad">
+      <div class="runner">
+        <label class="field">
+          <span class="field-cap cap">信号日 T</span>
+          <input v-model="today" class="input mono" type="date" />
         </label>
-        <label class="field-group">
-          <span class="field-label">生效日 T+1</span>
-          <input v-model="effective" class="m-field" type="date" />
+        <label class="field">
+          <span class="field-cap cap">生效日 T+1</span>
+          <input v-model="effective" class="input mono" type="date" />
         </label>
         <span class="spacer" />
         <button
-          class="m-btn m-btn--primary"
+          class="btn btn-primary"
           :disabled="!today || !effective || trading.loading"
           @click="run"
         >
+          <Icon name="refresh" :size="14" />
           {{ trading.loading ? '运行中…' : '盘后跑一轮(出信号 + 模拟撮合)' }}
         </button>
-        <button class="m-btn m-btn--ghost" :disabled="!today" @click="load">查看该日信号</button>
+        <button class="btn btn-secondary" :disabled="!today || trading.loading" @click="load">
+          查看该日信号
+        </button>
       </div>
-      <p v-if="trading.error" class="status-err run-err">{{ trading.error }}</p>
+      <p v-if="trading.error" class="run-err status-err">{{ trading.error }}</p>
     </div>
 
-    <!-- 生效信号 -->
-    <div class="m-card sec">
-      <div class="sec-head">
-        <h3>生效信号</h3>
-        <span class="m-chip">{{ trading.activeSignals.length }}</span>
+    <!-- 分段切换 + 通道图例 -->
+    <div class="bar">
+      <div class="segmented" role="tablist">
+        <button role="tab" :aria-selected="tab === 'pass'" @click="tab = 'pass'">
+          入选信号 · {{ trading.activeSignals.length }}
+        </button>
+        <button role="tab" :aria-selected="tab === 'blocked'" @click="tab = 'blocked'">
+          被风控拦截 · {{ trading.blockedSignals.length }}
+        </button>
       </div>
-      <table v-if="trading.activeSignals.length" class="m-table">
+      <div class="legend">
+        <span class="ch-tag"><i style="background: var(--status-ok)" />方向=Status</span>
+        <span class="ch-tag"><i style="background: var(--text-2)" />综合分=中性</span>
+        <span class="ch-tag"><i style="background: var(--pnl-up)" />因子贡献=PnL</span>
+      </div>
+    </div>
+
+    <!-- 入选信号 -->
+    <div v-if="tab === 'pass'" class="card">
+      <table v-if="trading.activeSignals.length" class="dt">
         <thead>
           <tr>
-            <th>代码</th>
-            <th>方向</th>
-            <th class="r">综合分</th>
+            <th style="width: 150px">标的</th>
+            <th style="width: 88px">方向</th>
+            <th class="num" style="width: 96px">综合分</th>
             <th>因子贡献</th>
-            <th>原因</th>
+            <th>入选原因</th>
           </tr>
         </thead>
         <tbody>
           <tr v-for="s in trading.activeSignals" :key="s.stock_code">
-            <td class="num">{{ s.stock_code }}</td>
             <td>
-              <span class="m-badge" :class="actionClass(s.action)">{{
-                actionLabel(s.action)
-              }}</span>
+              <div class="sym">
+                <span v-if="s.stock_name" class="sym-name">{{ s.stock_name }}</span>
+                <span class="col-code">{{ s.stock_code }}</span>
+              </div>
             </td>
-            <td class="num r">{{ s.score?.toFixed(3) ?? '—' }}</td>
             <td>
-              <span
-                v-for="[f, v] in factorEntries(s.factor_breakdown).slice(0, 4)"
-                :key="f"
-                class="m-chip factor"
-              >
-                {{ f }} <span class="num">{{ v >= 0 ? '+' : '' }}{{ v.toFixed(2) }}</span>
+              <span class="badge" :class="dirBadge(s.action)">
+                <span class="dot" />{{ actionLabel(s.action) }}
               </span>
             </td>
-            <td class="m-muted">{{ reasonLabel(s.reason) }}</td>
+            <td class="num score">{{ s.score?.toFixed(3) ?? '—' }}</td>
+            <td>
+              <div class="factors">
+                <span
+                  v-for="[f, v] in factorEntries(s.factor_breakdown).slice(0, 4)"
+                  :key="f"
+                  class="chip"
+                >
+                  {{ f }}
+                  <span class="chip-val" :class="app.pnlClass(v)">{{ fmtSigned(v, 2) }}</span>
+                </span>
+                <span v-if="!factorEntries(s.factor_breakdown).length" class="cap dim">—</span>
+              </div>
+            </td>
+            <td class="reason">{{ reasonLabel(s.reason) }}</td>
           </tr>
         </tbody>
       </table>
-      <p v-else class="m-muted empty">暂无生效信号。选信号日并「盘后跑一轮」生成。</p>
+      <div v-else class="empty">
+        <div class="empty-icon"><Icon name="signals" :size="20" /></div>
+        <div class="empty-title">暂无生效信号</div>
+        <div class="empty-desc">选信号日并「盘后跑一轮」,产出当日买卖信号与被风控拦截组。</div>
+      </div>
     </div>
 
     <!-- 被风控拦截组 -->
-    <div v-if="trading.blockedSignals.length" class="m-card sec">
-      <div class="sec-head">
-        <h3 class="status-warn">已生成但被拦截</h3>
-        <span class="m-chip">{{ trading.blockedSignals.length }}</span>
+    <div v-else class="card">
+      <template v-if="trading.blockedSignals.length">
+        <div class="block-note">
+          <span class="block-ico status-warn"><Icon name="shield" :size="15" /></span>
+          <span class="block-txt"
+            >以下标的初选入围,但被风控闸拦截,不进入交易候选 —— 纪律高于模型。风控规则可在<b
+              >设置 · 风控</b
+            >中调整。</span
+          >
+        </div>
+        <table class="dt">
+          <thead>
+            <tr>
+              <th style="width: 150px">标的</th>
+              <th style="width: 88px">初选方向</th>
+              <th class="num" style="width: 96px">综合分</th>
+              <th style="width: 230px">拦截规则</th>
+              <th>说明</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="s in trading.blockedSignals" :key="s.stock_code" class="blocked-row">
+              <td>
+                <div class="sym">
+                  <span v-if="s.stock_name" class="sym-name struck">{{ s.stock_name }}</span>
+                  <span class="col-code">{{ s.stock_code }}</span>
+                </div>
+              </td>
+              <td>
+                <span class="badge" :class="dirBadge(s.action)">
+                  <span class="dot" />{{ actionLabel(s.action) }}
+                </span>
+              </td>
+              <td class="num score">{{ s.score?.toFixed(3) ?? '—' }}</td>
+              <td>
+                <span class="badge badge-warn"
+                  ><span class="dot" />{{ reasonLabel(s.reason) }}</span
+                >
+              </td>
+              <td class="reason">{{ reasonLabel(s.reason) }}</td>
+            </tr>
+          </tbody>
+        </table>
+      </template>
+      <div v-else class="empty">
+        <div class="empty-icon"><Icon name="shield" :size="20" /></div>
+        <div class="empty-title">暂无被拦截的标的</div>
+        <div class="empty-desc">初选入围但被风控闸拦下的标的会单独列在此处 —— 纪律高于模型。</div>
       </div>
-      <p class="m-muted note">这些标的打分入选,但被风控闸拦下 —— 纪律高于模型。</p>
-      <table class="m-table">
-        <thead>
-          <tr>
-            <th>代码</th>
-            <th>方向</th>
-            <th class="r">综合分</th>
-            <th>拦截原因</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr v-for="s in trading.blockedSignals" :key="s.stock_code">
-            <td class="num">{{ s.stock_code }}</td>
-            <td>
-              <span class="m-badge" :class="actionClass(s.action)">{{
-                actionLabel(s.action)
-              }}</span>
-            </td>
-            <td class="num r">{{ s.score?.toFixed(3) ?? '—' }}</td>
-            <td class="status-warn">{{ reasonLabel(s.reason) }}</td>
-          </tr>
-        </tbody>
-      </table>
     </div>
 
     <p class="disclaimer">
@@ -127,67 +204,134 @@ function load() {
 </template>
 
 <style scoped>
-.page-head {
-  margin-bottom: var(--sp-5);
-}
-.page-head .sub {
-  color: var(--c-text-3);
-  font-size: var(--fs-cap);
-  margin-top: 2px;
-}
-
-/* 卡片间距 */
-.runner,
-.sec {
-  margin-bottom: var(--sp-3);
+.page-body {
+  padding: 28px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
 }
 
 /* 运行工具条 */
-.field-group {
+.runner {
   display: flex;
-  align-items: center;
-  gap: var(--sp-2);
+  align-items: flex-end;
+  gap: 14px;
+  flex-wrap: wrap;
 }
-.field-label {
-  font-size: var(--fs-cap);
-  color: var(--c-text-2);
-  white-space: nowrap;
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.field-cap {
+  color: var(--text-2);
+}
+.field .input {
+  width: 170px;
 }
 .spacer {
   flex: 1;
 }
 .run-err {
-  margin: var(--sp-3) 0 0;
-  font-size: var(--fs-cap);
+  margin: 14px 0 0;
+  font-size: var(--fs-sub);
 }
 
-/* 分区标题 */
-.sec-head {
+/* 分段切换 + 图例 */
+.bar {
   display: flex;
   align-items: center;
-  gap: var(--sp-2);
-  margin-bottom: var(--sp-3);
+  justify-content: space-between;
+  gap: 16px;
 }
-.sec-head h3 {
-  margin: 0;
-  font-size: var(--fs-h3);
+.legend {
+  display: flex;
+  gap: 14px;
 }
-.note {
-  margin: 0 0 var(--sp-3);
+.ch-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--text-3);
+  font-family: var(--font-mono);
+}
+.ch-tag i {
+  width: 7px;
+  height: 7px;
+  border-radius: 2px;
+  flex: none;
+}
+
+/* 标的列:名称 + 代码 */
+.sym {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.sym-name {
+  font-weight: 500;
+  color: var(--text-1);
+}
+.sym-name.struck {
+  text-decoration: line-through;
+  text-decoration-color: var(--text-3);
+}
+.col-code {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--text-3);
+}
+
+/* 综合分:中性灰阶,不占任何颜色通道 */
+.score {
+  color: var(--text-1);
+  font-weight: 600;
+}
+
+/* 因子贡献 chips */
+.factors {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.reason {
+  color: var(--text-2);
+  font-size: 12px;
+  white-space: normal;
+  max-width: 320px;
+}
+.dim {
+  color: var(--text-3);
+}
+
+/* 拦截组 */
+.block-note {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 16px;
+  border-bottom: 0.5px solid var(--border);
+}
+.block-ico {
+  display: inline-flex;
+  flex: none;
+}
+.block-txt {
+  font-size: 12.5px;
+  color: var(--text-2);
+}
+.block-txt b {
+  color: var(--text-1);
+  font-weight: 500;
+}
+.blocked-row {
+  opacity: 0.92;
+}
+
+.disclaimer {
+  margin: 4px 0 0;
+  color: var(--text-3);
   font-size: var(--fs-cap);
-}
-.empty {
-  margin: 0;
-  font-size: var(--fs-body);
-}
-
-/* 因子贡献 chip */
-.factor {
-  margin-right: var(--sp-1);
-}
-
-/* 方向徽章随 actionClass 的系统色着色;持有(无 class)走中性 */
-.m-badge {
-  color: var(--c-text-2);
 }
 </style>

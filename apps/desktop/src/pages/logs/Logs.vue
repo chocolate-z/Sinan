@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue';
 import { api } from '../../api/client';
+import PageHero from '../../ui/PageHero.vue';
+import Icon from '../../shell/Icon.vue';
 
 interface LogRow {
   id: string;
@@ -23,105 +25,127 @@ async function load() {
 }
 
 onMounted(load);
+
+// 日志级别 → 系统状态徽章(红线#1:级别属系统状态通道,绝不用盈亏色)。
+function levelBadge(level: string): string {
+  if (level === 'error') return 'badge-err';
+  if (level === 'warn') return 'badge-warn';
+  return 'badge-ok';
+}
 </script>
 
 <template>
-  <div class="page">
-    <header class="page-head">
-      <h1>日志</h1>
-      <p class="sub">运行记录 · 任务/调度/连接的系统事件</p>
-    </header>
+  <PageHero title="日志" sub="运行记录 · 任务/调度/连接的系统事件">
+    <template #right>
+      <button class="btn btn-secondary btn-sm" @click="load">
+        <Icon name="refresh" :size="14" /> 刷新
+      </button>
+    </template>
+  </PageHero>
 
-    <div class="m-toolbar bar">
-      <span class="spacer" />
-      <button class="m-btn m-btn--secondary m-btn--sm" @click="load">刷新</button>
+  <div class="page-body">
+    <!-- 加载/请求失败:诚实错误态 -->
+    <div v-if="error" class="card">
+      <div class="empty">
+        <div class="empty-icon"><Icon name="alert" :size="20" /></div>
+        <div class="empty-title">无法加载日志</div>
+        <div class="empty-desc mono">{{ error }}</div>
+        <button class="btn btn-secondary btn-sm" @click="load">
+          <Icon name="refresh" :size="14" /> 重试
+        </button>
+      </div>
     </div>
 
-    <p v-if="error" class="m-card err-card status-err">{{ error }}</p>
-
-    <div v-if="logs.length" class="m-card logs-card">
-      <table class="m-table">
-        <thead>
-          <tr>
-            <th class="col-ts">时间</th>
-            <th class="col-level">级别</th>
-            <th class="col-source">来源</th>
-            <th>消息</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr v-for="l in logs" :key="l.id">
-            <td class="col-ts num ts">{{ l.ts }}</td>
-            <td class="col-level">
-              <span
-                class="m-badge"
-                :class="
-                  l.level === 'error'
-                    ? 'status-err'
-                    : l.level === 'warn'
-                      ? 'status-warn'
-                      : 'status-info'
-                "
-              >
-                {{ l.level }}
-              </span>
-            </td>
-            <td class="col-source num src">{{ l.source }}</td>
-            <td class="msg">{{ l.message }}</td>
-          </tr>
-        </tbody>
-      </table>
+    <!-- 日志表 -->
+    <div v-else-if="logs.length" class="card">
+      <div class="card-head">
+        <div>
+          <h3 class="card-title">系统事件</h3>
+          <span class="card-sub">最近 {{ logs.length }} 条 · 时间倒序</span>
+        </div>
+      </div>
+      <div class="dt-wrap">
+        <table class="dt dt-compact">
+          <thead>
+            <tr>
+              <th class="col-ts">时间</th>
+              <th class="col-level">级别</th>
+              <th class="col-source">来源</th>
+              <th>消息</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="l in logs" :key="l.id">
+              <td class="col-ts ts mono">{{ l.ts }}</td>
+              <td class="col-level">
+                <span class="badge" :class="levelBadge(l.level)">
+                  <span class="dot" />{{ l.level }}
+                </span>
+              </td>
+              <td class="col-source src mono">{{ l.source || '—' }}</td>
+              <td class="msg">{{ l.message }}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
     </div>
 
-    <div v-else-if="!error" class="m-card empty">
-      <p class="m-muted">暂无日志。</p>
+    <!-- 空态:诚实占位 -->
+    <div v-else class="card">
+      <div class="empty">
+        <div class="empty-icon"><Icon name="logs" :size="20" /></div>
+        <div class="empty-title">暂无日志</div>
+        <div class="empty-desc">
+          运行任务、调度或连接数据源后,系统事件会逐条记录在此。
+        </div>
+        <button class="btn btn-secondary btn-sm" @click="load">
+          <Icon name="refresh" :size="14" /> 刷新
+        </button>
+      </div>
     </div>
   </div>
 </template>
 
 <style scoped>
-.page-head {
-  margin-bottom: var(--sp-4);
+.page-body {
+  padding: 28px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
 }
-.page-head .sub {
-  color: var(--c-text-3);
-  font-size: var(--fs-cap);
-  margin-top: 2px;
-}
-.bar {
-  margin-bottom: var(--sp-4);
-}
-.spacer {
-  flex: 1;
-}
-.err-card {
-  margin-bottom: var(--sp-4);
-  font-size: var(--fs-cap);
-}
-.logs-card {
-  padding: var(--sp-2) 0;
+.dt-wrap {
+  overflow: auto;
 }
 .col-ts {
   width: 168px;
   white-space: nowrap;
 }
 .col-level {
-  width: 92px;
+  width: 96px;
 }
 .col-source {
-  width: 132px;
+  width: 136px;
   white-space: nowrap;
 }
 .ts,
 .src {
-  color: var(--c-text-3);
+  color: var(--text-3);
   font-size: var(--fs-cap);
 }
 .msg {
-  color: var(--c-text);
+  color: var(--text-1);
+  white-space: normal;
 }
-.empty {
-  text-align: center;
-  padding: var(--sp-6) var(--sp-4);
+.empty-title {
+  font-size: var(--fs-h3);
+  font-weight: 600;
+  color: var(--text-1);
+}
+.empty-desc {
+  font-size: var(--fs-sub);
+  color: var(--text-2);
+  max-width: 360px;
+  line-height: 1.5;
+  word-break: break-word;
 }
 </style>

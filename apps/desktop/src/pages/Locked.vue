@@ -1,18 +1,19 @@
 <script setup lang="ts">
 import { useRouter } from 'vue-router';
+import Icon from '../shell/Icon.vue';
 const router = useRouter();
 </script>
 
 <template>
-  <div class="page locked">
-    <div class="m-panel empty">
-      <div class="icon" aria-hidden="true">🔒</div>
-      <h2>需要先配置数据源并建立本地缓存</h2>
-      <p class="lead">
-        司南随包零数据。请先在「设置 → 数据源」配置你自己的数据源(Tushare/AkShare)并建立本地缓存。
-      </p>
-      <p class="muted">你的数据与 token 全程留在本机,司南不收集、不上传。</p>
-      <button class="m-btn m-btn--primary cta" @click="router.push('/settings/datasource')">
+  <div class="locked">
+    <div class="empty">
+      <div class="empty-icon"><Icon name="lock" :size="20" /></div>
+      <div class="empty-title">需要先配置数据源并建立本地缓存</div>
+      <div class="empty-desc">
+        司南随包零数据。请先在「设置 → 数据源」配置你自己的数据源(Tushare / AkShare)并建立本地缓存。
+      </div>
+      <div class="empty-note">你的数据与 token 全程留在本机,司南不收集、不上传。</div>
+      <button class="btn btn-primary" @click="router.push('/settings/datasource')">
         去配置数据源 →
       </button>
     </div>
@@ -25,35 +26,27 @@ const router = useRouter();
   align-items: center;
   justify-content: center;
   min-height: 70vh;
+  padding: 28px;
 }
 .empty {
-  max-width: 460px;
-  width: 100%;
-  text-align: center;
-  padding: var(--sp-7) var(--sp-6);
+  max-width: 440px;
 }
-.icon {
-  font-size: 34px;
-  line-height: 1;
-  opacity: 0.85;
-  margin-bottom: var(--sp-4);
-}
-.empty h2 {
-  margin: 0 0 var(--sp-3);
-  font-size: var(--fs-h2);
+.empty-title {
+  font-size: var(--fs-h3);
   font-weight: 600;
-  letter-spacing: -0.01em;
+  color: var(--text-1);
 }
-.lead {
-  color: var(--c-text-2);
-  margin: 0 0 var(--sp-3);
+.empty-desc {
+  font-size: var(--fs-sub);
+  color: var(--text-2);
+  max-width: 360px;
+  line-height: 1.5;
 }
-.muted {
-  color: var(--c-text-3);
+.empty-note {
   font-size: var(--fs-cap);
-  margin: 0;
+  color: var(--text-3);
 }
-.cta {
-  margin-top: var(--sp-5);
+.empty .btn-primary {
+  margin-top: 6px;
 }
 </style>

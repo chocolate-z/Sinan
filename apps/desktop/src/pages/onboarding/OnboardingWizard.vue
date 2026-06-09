@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import { reactive, ref } from 'vue';
+import { computed, reactive, ref } from 'vue';
 import { useRouter } from 'vue-router';
 import { ONBOARDING_STEPS } from '@sinan/shared-contracts';
 import { api, subscribeJob } from '../../api/client';
 import { useAppStore } from '../../stores/app';
+import Icon from '../../shell/Icon.vue';
 
 // 步骤类型来自契约单一真相源,避免与后端漂移。
 type Step = (typeof ONBOARDING_STEPS)[number];
@@ -118,188 +119,260 @@ async function finish() {
 function capEntries(caps: Record<string, boolean>) {
   return Object.entries(caps);
 }
+
+// 步骤进度条展示用:把状态机映射为有序步骤(纯派生,不改流程)。
+const STEPPER: { key: Step; label: string }[] = [
+  { key: 'welcome', label: '欢迎' },
+  { key: 'select_source', label: '选数据源' },
+  { key: 'credential', label: '填凭据' },
+  { key: 'test', label: '测试连接' },
+  { key: 'build_cache', label: '建缓存' },
+  { key: 'done', label: '完成' },
+];
+const stepIndex = computed(() => STEPPER.findIndex((s) => s.key === step.value));
+const buildPct = computed(() => Math.round(build.progress * 100));
 </script>
 
 <template>
-  <div class="wizard-stage">
-    <div class="m-panel wizard">
-      <!-- 步骤进度条:圆点 + 连接线,当前/已过步用系统蓝 -->
+  <div class="wizard-stage main-aurora">
+    <div class="wizard">
+      <!-- 品牌:紫渐变罗盘 logo + 标题 -->
+      <header class="brand">
+        <div class="brand-logo"><Icon name="compass" :size="28" /></div>
+        <h1 class="brand-title">欢迎使用 司南 Sinan</h1>
+        <p class="brand-sub">诚实、纪律化、可解释的本机量化研究工具</p>
+      </header>
+
+      <!-- 步骤进度条:编号圆点 + 连接线,当前步 accent,已过步打勾 -->
       <nav class="stepper">
-        <span class="step" :class="{ on: step === 'welcome' }">
-          <span class="dot" /><span class="lbl">欢迎</span>
-        </span>
-        <span class="link" />
-        <span class="step" :class="{ on: step === 'select_source' }">
-          <span class="dot" /><span class="lbl">选数据源</span>
-        </span>
-        <span class="link" />
-        <span class="step" :class="{ on: step === 'credential' }">
-          <span class="dot" /><span class="lbl">填凭据</span>
-        </span>
-        <span class="link" />
-        <span class="step" :class="{ on: step === 'test' }">
-          <span class="dot" /><span class="lbl">测试连接</span>
-        </span>
-        <span class="link" />
-        <span class="step" :class="{ on: step === 'build_cache' }">
-          <span class="dot" /><span class="lbl">建缓存</span>
-        </span>
-        <span class="link" />
-        <span class="step" :class="{ on: step === 'done' }">
-          <span class="dot" /><span class="lbl">完成</span>
-        </span>
+        <template v-for="(s, i) in STEPPER" :key="s.key">
+          <span
+            class="step"
+            :class="{ done: i < stepIndex, on: i === stepIndex }"
+            :aria-current="i === stepIndex ? 'step' : undefined"
+          >
+            <span class="node">
+              <Icon v-if="i < stepIndex" name="check" :size="13" />
+              <span v-else>{{ i + 1 }}</span>
+            </span>
+            <span class="lbl">{{ s.label }}</span>
+          </span>
+          <span v-if="i < STEPPER.length - 1" class="link" :class="{ past: i < stepIndex }" />
+        </template>
       </nav>
 
-      <!-- 欢迎 -->
-      <section v-if="step === 'welcome'" class="pane">
-        <h1>司南 Sinan</h1>
-        <p class="lead">全本机量化助手 —— 你的数据、你的 token、你的电脑;我们不碰任何数据。</p>
-        <div class="promises">
-          <span class="m-chip">🖥 全本机运行</span>
-          <span class="m-chip">🔑 BYO 自带数据源</span>
-          <span class="m-chip">🔒 凭据加密</span>
-        </div>
-        <div class="actions end">
-          <button class="m-btn m-btn--primary" @click="go('select_source')">开始 →</button>
-        </div>
-      </section>
+      <!-- 内容面板 -->
+      <div class="card card-pad pane">
+        <!-- 欢迎 -->
+        <section v-if="step === 'welcome'" class="step-pane welcome">
+          <h2 class="pane-title">你的数据 · 你的 token · 你的电脑</h2>
+          <p class="pane-lead">
+            司南是全本机量化助手 —— 不提供数据、不碰你的任何数据。一切计算都在你的电脑上完成。
+          </p>
+          <div class="promises">
+            <span class="chip"><Icon name="monitor" :size="13" /> 全本机运行</span>
+            <span class="chip"><Icon name="db" :size="13" /> BYO 自带数据源</span>
+            <span class="chip"><Icon name="lock" :size="13" /> 凭据加密</span>
+          </div>
+        </section>
 
-      <!-- 选数据源 -->
-      <section v-else-if="step === 'select_source'" class="pane">
-        <h2>选择你自己的数据来源</h2>
-        <p class="m-muted lead">
-          司南不提供数据。Tushare Pro 能力最全(需自备 token);AkShare 免费但字段受限。
-        </p>
-        <div class="sources">
-          <label class="m-card source" :class="{ sel: provider === 'tushare' }">
-            <input v-model="provider" type="radio" value="tushare" class="src-radio" />
-            <span class="src-body">
-              <strong>Tushare Pro</strong>
-              <span class="m-muted">财务/北向/估值/复权/指数 全能力,需 token</span>
-            </span>
-          </label>
-          <label class="m-card source" :class="{ sel: provider === 'akshare' }">
-            <input v-model="provider" type="radio" value="akshare" class="src-radio" />
-            <span class="src-body">
-              <strong>AkShare(免费)</strong>
-              <span class="m-muted">价量/指数,无北向/财务 —— 样本外预期更低</span>
-            </span>
-          </label>
-        </div>
-        <div class="actions end">
-          <button class="m-btn m-btn--primary" @click="go('credential')">下一步 →</button>
-        </div>
-      </section>
+        <!-- 选数据源 -->
+        <section v-else-if="step === 'select_source'" class="step-pane">
+          <h2 class="pane-title">选择你自己的数据来源</h2>
+          <p class="pane-lead">
+            司南不提供数据。Tushare Pro 能力最全(需自备 token);AkShare 免费但字段受限。
+          </p>
+          <div class="sources">
+            <label class="source" :class="{ sel: provider === 'tushare' }">
+              <input v-model="provider" type="radio" value="tushare" class="src-radio" />
+              <span class="src-icon"><Icon name="db" :size="17" /></span>
+              <span class="src-body">
+                <strong>Tushare Pro</strong>
+                <span class="src-desc">财务 / 北向 / 估值 / 复权 / 指数 全能力,需 token</span>
+              </span>
+              <span class="src-mark"><span class="src-dot" /></span>
+            </label>
+            <label class="source" :class="{ sel: provider === 'akshare' }">
+              <input v-model="provider" type="radio" value="akshare" class="src-radio" />
+              <span class="src-icon"><Icon name="db" :size="17" /></span>
+              <span class="src-body">
+                <strong>AkShare(免费)</strong>
+                <span class="src-desc">价量 / 指数,无北向 / 财务 —— 样本外预期更低</span>
+              </span>
+              <span class="src-mark"><span class="src-dot" /></span>
+            </label>
+          </div>
+        </section>
 
-      <!-- 填凭据 -->
-      <section v-else-if="step === 'credential'" class="pane">
-        <h2>填入凭据</h2>
-        <template v-if="needsToken()">
-          <label class="field">
-            <span class="field-lbl">Tushare Token</span>
+        <!-- 填凭据 -->
+        <section v-else-if="step === 'credential'" class="step-pane">
+          <h2 class="pane-title">填入凭据</h2>
+          <template v-if="needsToken()">
+            <label class="field-label" for="ob-token">Tushare Token</label>
             <div class="token-row">
               <input
+                id="ob-token"
                 v-model="token"
-                class="m-field token-input"
+                class="input mono token-input"
                 :type="showToken ? 'text' : 'password'"
-                placeholder="粘贴你的 Tushare token"
+                placeholder="粘贴你的 Tushare token…"
               />
-              <button class="m-btn m-btn--ghost" @click="showToken = !showToken">
+              <button class="btn btn-secondary" @click="showToken = !showToken">
                 {{ showToken ? '隐藏' : '显示' }}
               </button>
             </div>
+            <p class="note">
+              <Icon name="lock" :size="13" />
+              <span>token 仅加密存本机系统钥匙串,司南<b>绝不</b>上传、<b>绝不</b>落明文。</span>
+            </p>
+          </template>
+          <div v-else class="note">
+            <Icon name="check" :size="13" />
+            <span>AkShare 免费源无需 token,直接继续即可。</span>
+          </div>
+        </section>
+
+        <!-- 测试连接 -->
+        <section v-else-if="step === 'test'" class="step-pane test-pane">
+          <h2 class="pane-title">测试连接</h2>
+          <!-- 转圈中 -->
+          <div v-if="testResult.loading" class="test-state">
+            <span class="spinner" />
+            <p class="test-msg">正在连接 · 探测能力与限频…</p>
+          </div>
+          <!-- 失败 -->
+          <div v-else-if="testResult.error" class="test-state">
+            <span class="test-icon err"><Icon name="alert" :size="20" /></span>
+            <span class="badge badge-err"><span class="dot" /> 连接失败</span>
+            <p class="test-msg">{{ testResult.error }}</p>
+          </div>
+          <!-- 有结果 -->
+          <template v-else-if="testResult.data">
+            <div class="test-state">
+              <span class="test-icon" :class="testResult.data.status === 'ok' ? 'ok' : 'err'">
+                <Icon :name="testResult.data.status === 'ok' ? 'check' : 'alert'" :size="20" />
+              </span>
+              <span
+                class="badge"
+                :class="testResult.data.status === 'ok' ? 'badge-ok' : 'badge-err'"
+              >
+                <span class="dot" />
+                {{ testResult.data.status === 'ok' ? '连接成功' : '连接异常' }}
+              </span>
+              <p v-if="testResult.data.message" class="test-msg">{{ testResult.data.message }}</p>
+            </div>
+            <div v-if="testResult.data.caps" class="caps">
+              <span
+                v-for="[name, ok] in capEntries(testResult.data.caps)"
+                :key="name"
+                class="chip cap"
+                :class="ok ? 'cap-on' : 'cap-off'"
+              >
+                <Icon :name="ok ? 'check' : 'alert'" :size="11" /> {{ name }}
+              </span>
+            </div>
+            <div v-if="testResult.data.degraded?.length" class="degraded">
+              <span v-for="d in testResult.data.degraded" :key="d" class="badge badge-warn">
+                <span class="dot" /> {{ d }}
+              </span>
+            </div>
+          </template>
+          <!-- 未开始(状态机正常会自动跑,这里作兜底诚实占位) -->
+          <div v-else class="test-state">
+            <span class="test-icon idle"><Icon name="compass" :size="22" /></span>
+            <p class="test-msg">点击下方按钮验证数据源连通性</p>
+            <button class="btn btn-primary btn-sm" @click="runTest">开始测试</button>
+          </div>
+        </section>
+
+        <!-- 建缓存 -->
+        <section v-else-if="step === 'build_cache'" class="step-pane">
+          <h2 class="pane-title">建立本地数据缓存</h2>
+          <p class="pane-lead">全程在你的电脑上完成 —— 数据不出本机。</p>
+          <label class="quick">
+            <input v-model="quickMode" type="checkbox" class="switch" />
+            <span class="quick-lbl">快速模式(少量股票,先跑通)</span>
           </label>
-          <p class="m-muted hint">🔒 token 仅加密存本机系统钥匙串,绝不上传、绝不落明文。</p>
-        </template>
-        <p v-else class="m-muted hint">AkShare 免费源无需 token。</p>
-        <div class="actions end">
+          <div v-if="!build.jobId" class="build-start">
+            <button class="btn btn-primary" @click="startBuild">开始建缓存</button>
+          </div>
+          <div v-else class="progress">
+            <div class="progress-head">
+              <span class="progress-stage">{{ build.stage || '正在建立本地缓存…' }}</span>
+              <span class="num mono">{{ buildPct }}%</span>
+            </div>
+            <div class="bar">
+              <div class="fill" :style="{ width: buildPct + '%' }" />
+            </div>
+            <p v-if="build.message" class="progress-meta mono">{{ build.message }}</p>
+            <p v-if="build.error" class="badge badge-err err-row">
+              <span class="dot" /> {{ build.error }}
+            </p>
+          </div>
+        </section>
+
+        <!-- 完成 -->
+        <section v-else-if="step === 'done'" class="step-pane done">
+          <span class="done-mark"><Icon name="check" :size="26" /></span>
+          <h2 class="pane-title">缓存建立完成</h2>
+          <p class="pane-lead">
+            本地缓存已建立。你现在可以浏览总览,后续里程碑将解锁因子打分、信号与模拟盘。
+          </p>
+        </section>
+      </div>
+
+      <!-- 底部操作区 -->
+      <footer class="footer">
+        <button v-if="step === 'welcome'" class="btn btn-ghost" @click="finish">跳过</button>
+        <button v-else-if="step === 'select_source'" class="btn btn-ghost" @click="go('welcome')">
+          上一步
+        </button>
+        <button
+          v-else-if="step === 'credential'"
+          class="btn btn-ghost"
+          @click="go('select_source')"
+        >
+          上一步
+        </button>
+        <button v-else-if="step === 'test'" class="btn btn-ghost" @click="go('credential')">
+          上一步
+        </button>
+        <span v-else />
+
+        <div class="footer-right">
+          <button v-if="step === 'test'" class="btn btn-secondary" @click="runTest">重测</button>
+
+          <button v-if="step === 'welcome'" class="btn btn-primary" @click="go('select_source')">
+            开始 <Icon name="chevR" :size="14" />
+          </button>
           <button
-            class="m-btn m-btn--primary"
+            v-else-if="step === 'select_source'"
+            class="btn btn-primary"
+            @click="go('credential')"
+          >
+            下一步 <Icon name="chevR" :size="14" />
+          </button>
+          <button
+            v-else-if="step === 'credential'"
+            class="btn btn-primary"
             :disabled="needsToken() && !token"
             @click="saveCredentialAndContinue"
           >
-            保存并测试连接 →
+            保存并测试 <Icon name="chevR" :size="14" />
           </button>
-        </div>
-      </section>
-
-      <!-- 测试连接 -->
-      <section v-else-if="step === 'test'" class="pane">
-        <h2>测试连接</h2>
-        <p v-if="testResult.loading" class="m-muted">正在探测能力与限频…</p>
-        <p v-else-if="testResult.error" class="m-badge status-err">
-          连接失败:{{ testResult.error }}
-        </p>
-        <template v-else-if="testResult.data">
-          <p class="m-badge" :class="testResult.data.status === 'ok' ? 'status-ok' : 'status-err'">
-            {{ testResult.data.status === 'ok' ? '连接成功' : '连接异常' }}
-            <span v-if="testResult.data.message">— {{ testResult.data.message }}</span>
-          </p>
-          <div class="caps">
-            <span
-              v-for="[name, ok] in capEntries(testResult.data.caps)"
-              :key="name"
-              class="m-chip"
-              :class="ok ? 'cap-on' : 'cap-off'"
-              >{{ ok ? '✓' : '✗' }} {{ name }}</span
-            >
-          </div>
-          <p v-for="d in testResult.data.degraded" :key="d" class="m-badge status-warn deg">
-            ⚠ {{ d }}
-          </p>
-        </template>
-        <div class="actions">
-          <button class="m-btn m-btn--ghost" @click="go('credential')">返回</button>
-          <button class="m-btn m-btn--ghost" @click="runTest">重测</button>
-          <span class="spacer" />
           <button
-            class="m-btn m-btn--primary"
+            v-else-if="step === 'test'"
+            class="btn btn-primary"
             :disabled="!testResult.data || testResult.data.status !== 'ok'"
             @click="go('build_cache')"
           >
-            下一步:建缓存 →
+            建缓存 <Icon name="chevR" :size="14" />
+          </button>
+          <button v-else-if="step === 'done'" class="btn btn-primary" @click="finish">
+            进入司南 <Icon name="chevR" :size="14" />
           </button>
         </div>
-      </section>
-
-      <!-- 建缓存 -->
-      <section v-else-if="step === 'build_cache'" class="pane">
-        <h2>建立本地数据缓存(全程在你的电脑上)</h2>
-        <label class="quick">
-          <span class="m-switch">
-            <input v-model="quickMode" type="checkbox" />
-            <span></span>
-          </span>
-          <span class="quick-lbl">快速模式(少量股票,先跑通)</span>
-        </label>
-        <div v-if="!build.jobId" class="actions">
-          <button class="m-btn m-btn--primary" @click="startBuild">开始建缓存</button>
-        </div>
-        <div v-else class="progress">
-          <div class="bar">
-            <div class="fill" :style="{ width: (build.progress * 100).toFixed(0) + '%' }" />
-          </div>
-          <p class="m-muted progress-meta">
-            <span class="num">{{ (build.progress * 100).toFixed(0) }}%</span>
-            · {{ build.stage }} · {{ build.message }}
-          </p>
-          <p v-if="build.error" class="m-badge status-err">{{ build.error }}</p>
-        </div>
-      </section>
-
-      <!-- 完成 -->
-      <section v-else-if="step === 'done'" class="pane">
-        <div class="done-mark">✓</div>
-        <h2>完成</h2>
-        <p class="lead">
-          本地缓存已建立。你现在可以浏览总览,后续里程碑将解锁因子打分、信号与模拟盘。
-        </p>
-        <div class="actions end">
-          <button class="m-btn m-btn--primary" @click="finish">进入司南 →</button>
-        </div>
-      </section>
-
-      <hr class="m-divider" />
+      </footer>
 
       <p class="disclaimer">
         司南仅供研究参考,不构成投资建议;模拟盘为纸面前向验证,不进行任何真实下单。

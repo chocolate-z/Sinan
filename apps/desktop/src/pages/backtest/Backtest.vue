@@ -2,15 +2,13 @@
 import { computed, onMounted, reactive, ref } from 'vue';
 import { api } from '../../api/client';
 import { pnlClass } from '../../lib/pnl';
-import { actionClass, actionLabel, reasonLabel } from '../../lib/signals';
-import {
-  buildNavCharts,
-  honestyBadges,
-  monthlyGrid,
-  monthlyReturns,
-  tradeMarkers,
-  type ChartBox,
-} from '../../lib/backtest';
+import { actionLabel, reasonLabel } from '../../lib/signals';
+import { drawdownSeries, honestyBadges, monthlyGrid, monthlyReturns } from '../../lib/backtest';
+import { fmt, fmtInt } from '../../lib/format';
+import PageHero from '../../ui/PageHero.vue';
+import EquityChart from '../../ui/charts/EquityChart.vue';
+import Heatmap from '../../ui/charts/Heatmap.vue';
+import Icon from '../../shell/Icon.vue';
 
 const form = reactive({
   train_end: '',
@@ -59,35 +57,49 @@ async function loadOne(id: string) {
 
 onMounted(loadHistory);
 
-// ── 图表几何 ───────────────────────────────────────────────────────────────
-const NAV_W = 760;
-const NAV_BOX: ChartBox = {
-  width: NAV_W,
-  height: 220,
-  padTop: 10,
-  padBottom: 16,
-  padLeft: 8,
-  padRight: 8,
-};
-const DD_BOX: ChartBox = {
-  width: NAV_W,
-  height: 84,
-  padTop: 6,
-  padBottom: 14,
-  padLeft: 8,
-  padRight: 8,
-};
-const navPoints = computed(() => result.value?.nav_curve ?? []);
-const charts = computed(() => buildNavCharts(navPoints.value, NAV_BOX, DD_BOX));
+// ── 净值曲线 → EquityChart 需要的数组(组合/基准各自归一化到首值=1;回撤为百分数)──────
+const navPoints = computed<any[]>(() => result.value?.nav_curve ?? []);
+const model = computed(() => {
+  const navs = navPoints.value.map((p) => p.nav ?? 0);
+  const base = navs[0] || 1;
+  return navs.map((v) => v / base);
+});
+const bench = computed(() => {
+  const raw = navPoints.value.map((p) => (p.benchmark ?? null) as number | null);
+  const b0 = raw.find((v) => v != null) ?? null;
+  if (b0 == null) return [];
+  return raw.map((v) => (v != null ? v / b0 : 0)) as number[];
+});
+const ddSeries = computed(() => {
+  const navs = navPoints.value.map((p) => p.nav ?? 0);
+  return drawdownSeries(navs).map((v) => v * 100); // 百分数(≤0)
+});
+const maxDD = computed(() => (ddSeries.value.length ? Math.min(0, ...ddSeries.value) : 0));
+
+// 买卖点 → {i:在 nav_curve 中的索引, t:'buy'|'sell'}(方向用系统色,不用盈亏色)。
+const trades = computed<any[]>(() => result.value?.trades ?? []);
+const chartMarkers = computed(() => {
+  const idxByDate = new Map<string, number>();
+  navPoints.value.forEach((p, i) => idxByDate.set(p.date, i));
+  const out: Array<{ i: number; t: 'buy' | 'sell' }> = [];
+  for (const t of trades.value) {
+    const i = idxByDate.get(t.trade_date);
+    if (i == null) continue;
+    out.push({ i, t: t.side === 'buy' ? 'buy' : 'sell' });
+  }
+  return out;
+});
+
+// ── 月度热力图 → Heatmap 需要的 years + data[][](百分数)─────────────────────────
 const grid = computed(() => monthlyGrid(monthlyReturns(navPoints.value)));
+const heatYears = computed(() => grid.value.map((r) => r.year));
+const heatData = computed(() =>
+  grid.value.map((r) => r.cells.map((c) => (c == null ? null : c * 100))),
+);
+
+// ── 诚实口径 ──────────────────────────────────────────────────────────────────
 const isHonest = computed(() => (result.value ? !!result.value.cost_included : true));
 const badges = computed(() => honestyBadges(result.value?.purge ?? form.purge, isHonest.value));
-
-// 买卖点(标在净值曲线上;方向用系统色,不用盈亏色)。
-const trades = computed<any[]>(() => result.value?.trades ?? []);
-const markers = computed(() =>
-  tradeMarkers(trades.value, navPoints.value, NAV_BOX, charts.value.yMin, charts.value.yMax),
-);
 
 // 选中某天 → 展开当日持仓快照(可回溯)。
 const selectedDay = ref<any | null>(null);
@@ -105,285 +117,347 @@ function signed(v: number | null | undefined): string {
 function fixed(v: number | null | undefined): string {
   return v == null ? '—' : v.toFixed(2);
 }
-const MONTHS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12'];
 </script>
 
 <template>
-  <div class="page">
-    <header class="page-head">
-      <h1>回测</h1>
-      <p class="sub">事件驱动逐日撮合 · T+1 开盘成交 · 含交易成本 · 仅测训练截止后(诚实样本外)</p>
-    </header>
+  <PageHero
+    title="回测"
+    sub="事件驱动逐日撮合 · T+1 开盘成交 · 含交易成本 · 仅测训练截止后(诚实样本外)"
+  >
+    <template #right>
+      <button
+        class="btn btn-primary btn-sm"
+        :disabled="running || !form.train_end || !form.backtest_start || !form.backtest_end"
+        @click="runBacktest"
+      >
+        <Icon name="refresh" :size="14" /> {{ running ? '回测中…' : '跑回测' }}
+      </button>
+    </template>
+  </PageHero>
 
-    <!-- 防未来函数 / 诚实口径提示条(顶部恒显) -->
+  <div class="page-body">
+    <!-- 诚实口径提示条(顶部恒显;非诚实标 badge-warn) -->
     <div class="honesty" :class="{ warn: !isHonest }">
-      <span class="h-icon">{{ isHonest ? '🛡' : '⚠' }}</span>
-      <span v-for="b in badges" :key="b" class="m-chip">{{ b }}</span>
-      <span v-if="!isHonest" class="status-warn nonhonest">非诚实口径</span>
+      <span class="h-icon"><Icon :name="isHonest ? 'shield' : 'alert'" :size="15" /></span>
+      <span class="h-lead">{{ isHonest ? '诚实口径' : '非诚实口径' }}</span>
+      <span class="badge" :class="isHonest ? 'badge-ok' : 'badge-warn'"
+        ><span class="dot" />样本外验证</span
+      >
+      <span v-for="b in badges" :key="b" class="chip">{{ b }}</span>
+      <span class="h-tail">本回测不代表未来收益,仅供策略纪律性验证。</span>
     </div>
+
+    <p v-if="error" class="msg-err"><Icon name="alert" :size="14" /> {{ error }}</p>
 
     <!-- 参数表单 -->
-    <div class="m-card">
-      <div class="m-toolbar form">
-        <label class="fld"
-          >训练截止 <input v-model="form.train_end" class="m-field" type="date"
-        /></label>
-        <label class="fld"
-          >回测起 <input v-model="form.backtest_start" class="m-field" type="date"
-        /></label>
-        <label class="fld"
-          >回测止 <input v-model="form.backtest_end" class="m-field" type="date"
-        /></label>
-        <label class="fld"
-          >purge <input v-model.number="form.purge" class="m-field narrow" type="number" min="1"
-        /></label>
-        <label class="fld">基准 <input v-model="form.benchmark" class="m-field narrow" /></label>
-        <button
-          class="m-btn m-btn--primary"
-          :disabled="running || !form.train_end || !form.backtest_start || !form.backtest_end"
-          @click="runBacktest"
-        >
-          {{ running ? '回测中…' : '跑回测' }}
-        </button>
+    <div class="card">
+      <div class="card-head">
+        <div>
+          <h3 class="card-title">回测参数</h3>
+          <span class="card-sub"
+            >硬校验:回测起必须晚于「训练截止 + purge 个交易日」,否则拒跑(防虚假回测)</span
+          >
+        </div>
       </div>
-      <p class="m-muted hint">
-        硬校验:回测起必须晚于「训练截止 + purge 个交易日」,否则拒跑(防虚假回测)。
-      </p>
+      <div class="card-pad">
+        <div class="form-grid">
+          <div class="field">
+            <label class="field-label">训练截止</label>
+            <input v-model="form.train_end" class="input mono" type="date" />
+          </div>
+          <div class="field">
+            <label class="field-label">回测起</label>
+            <input v-model="form.backtest_start" class="input mono" type="date" />
+          </div>
+          <div class="field">
+            <label class="field-label">回测止</label>
+            <input v-model="form.backtest_end" class="input mono" type="date" />
+          </div>
+          <div class="field narrow">
+            <label class="field-label">Purge(交易日)</label>
+            <input v-model.number="form.purge" class="input mono" type="number" min="1" />
+          </div>
+          <div class="field narrow">
+            <label class="field-label">基准</label>
+            <input v-model="form.benchmark" class="input mono" />
+          </div>
+          <div class="field btn-cell">
+            <button
+              class="btn btn-primary"
+              :disabled="running || !form.train_end || !form.backtest_start || !form.backtest_end"
+              @click="runBacktest"
+            >
+              {{ running ? '回测中…' : '跑回测' }}
+            </button>
+          </div>
+        </div>
+      </div>
     </div>
 
-    <p v-if="error" class="status-err msg">{{ error }}</p>
-
     <template v-if="result">
-      <!-- 绩效指标 -->
+      <!-- 绩效指标(6 卡:年化/超额走盈亏色;MaxDD/夏普/IR/跟踪误差 中性)-->
       <div class="kpis">
-        <div class="m-card kpi">
-          <div class="kpi-label">年化收益</div>
-          <div class="kpi-val num" :class="pnlClass(m.annual_return ?? 0)">
+        <div class="card card-pad kpi">
+          <div class="kpi-top"><span class="kpi-k">年化收益</span><span class="cap">ANN</span></div>
+          <div class="kpi-v mono" :class="pnlClass(m.annual_return ?? 0)">
             {{ signed(m.annual_return) }}
           </div>
         </div>
-        <div class="m-card kpi">
-          <div class="kpi-label">年化超额(vs 基准)</div>
-          <div class="kpi-val num" :class="pnlClass(m.excess_return ?? 0)">
+        <div class="card card-pad kpi">
+          <div class="kpi-top">
+            <span class="kpi-k">超额收益(vs 基准)</span><span class="cap">ALPHA</span>
+          </div>
+          <div class="kpi-v mono" :class="pnlClass(m.excess_return ?? 0)">
             {{ signed(m.excess_return) }}
           </div>
         </div>
-        <div class="m-card kpi">
-          <div class="kpi-label">最大回撤</div>
-          <div class="kpi-val num">
-            −{{ pct(m.max_drawdown) === '—' ? '' : pct(m.max_drawdown) }}
+        <div class="card card-pad kpi">
+          <div class="kpi-top">
+            <span class="kpi-k">最大回撤</span><span class="cap">MAX DD</span>
+          </div>
+          <div class="kpi-v mono neutral">
+            {{ m.max_drawdown == null ? '—' : '−' + pct(m.max_drawdown) }}
           </div>
         </div>
-        <div class="m-card kpi">
-          <div class="kpi-label">信息比率 IR <span class="hint-inline">(目标 0.5–1.0)</span></div>
-          <div class="kpi-val num">{{ fixed(m.information_ratio) }}</div>
+        <div class="card card-pad kpi">
+          <div class="kpi-top">
+            <span class="kpi-k">夏普比率</span><span class="cap">SHARPE</span>
+          </div>
+          <div class="kpi-v mono neutral">{{ fixed(m.sharpe) }}</div>
         </div>
-        <div class="m-card kpi">
-          <div class="kpi-label">夏普</div>
-          <div class="kpi-val num">{{ fixed(m.sharpe) }}</div>
+        <div class="card card-pad kpi">
+          <div class="kpi-top">
+            <span class="kpi-k">信息比率 <span class="kpi-hint">目标 0.5–1.0</span></span
+            ><span class="cap">IR</span>
+          </div>
+          <div class="kpi-v mono neutral">{{ fixed(m.information_ratio) }}</div>
         </div>
-        <div class="m-card kpi">
-          <div class="kpi-label">跟踪误差</div>
-          <div class="kpi-val num">{{ pct(m.tracking_error) }}</div>
+        <div class="card card-pad kpi">
+          <div class="kpi-top"><span class="kpi-k">跟踪误差</span><span class="cap">TE</span></div>
+          <div class="kpi-v mono neutral">{{ pct(m.tracking_error) }}</div>
         </div>
       </div>
 
-      <!-- 净值 vs 基准 + 回撤阴影 -->
-      <div class="m-card">
-        <div class="chart-head">
-          <h3>净值曲线</h3>
-          <div class="legend">
-            <span class="lg port">组合</span>
-            <span v-if="charts.hasBenchmark" class="lg bench">{{ form.benchmark }}</span>
-            <span class="lg buy">▲ 买</span>
-            <span class="lg sell">▼ 卖</span>
+      <!-- 净值 vs 基准 + 回撤阴影 + 买卖点 -->
+      <div class="card">
+        <div class="card-head">
+          <div>
+            <h3 class="card-title">净值 vs 基准 · 含买卖点</h3>
+            <span class="card-sub"
+              >样本外 · 训练截止 {{ result.train_end }} 之后 · 起点归一化为 1</span
+            >
           </div>
-          <span class="m-muted oos"
-            >样本外 · 训练截止 {{ result.train_end }} 之后 · 起点归一化为 1</span
-          >
+          <div class="legend">
+            <span class="lg"><i class="ln port" />模型</span>
+            <span v-if="bench.length" class="lg"><i class="ln bench" />{{ form.benchmark }}</span>
+            <span class="lg"><i class="mk buy" />买</span>
+            <span class="lg"><i class="mk sell" />卖</span>
+          </div>
         </div>
-        <div class="chart-wrap" :style="{ aspectRatio: `${NAV_W} / ${NAV_BOX.height}` }">
-          <svg class="chart" :viewBox="`0 0 ${NAV_W} ${NAV_BOX.height}`" preserveAspectRatio="none">
-            <polyline v-if="charts.benchmark" class="line bench" :points="charts.benchmark" />
-            <polyline v-if="charts.portfolio" class="line port" :points="charts.portfolio" />
-          </svg>
-          <!-- 买卖点(系统色:买蓝 / 卖橙;非盈亏色) -->
-          <span
-            v-for="(mk, i) in markers"
-            :key="i"
-            class="marker"
-            :class="mk.side === 'buy' ? 'buy' : 'sell'"
-            :style="{ left: `${(mk.x / NAV_W) * 100}%`, top: `${(mk.y / NAV_BOX.height) * 100}%` }"
-            :title="`${mk.date} ${mk.side === 'buy' ? '买' : '卖'} ${mk.code} ${mk.shares}股 @${mk.price}`"
-            >{{ mk.side === 'buy' ? '▲' : '▼' }}</span
-          >
+        <div class="card-pad">
+          <EquityChart
+            :model="model"
+            :bench="bench"
+            :dd="ddSeries"
+            :markers="chartMarkers"
+            :height="280"
+          />
         </div>
-        <div class="dd-label m-muted">回撤(最深 {{ pct(Math.abs(charts.ddMin)) }})</div>
-        <svg class="chart" :viewBox="`0 0 ${NAV_W} ${DD_BOX.height}`" preserveAspectRatio="none">
-          <path v-if="charts.drawdown" class="dd-area" :d="charts.drawdown" />
-        </svg>
       </div>
 
       <!-- 月度收益热力图 -->
-      <div v-if="grid.length" class="m-card">
-        <h3>月度收益(%)</h3>
-        <div class="heat">
-          <div class="heat-row head">
-            <span class="heat-year"></span>
-            <span v-for="mo in MONTHS" :key="mo" class="heat-cell m-muted">{{ mo }}月</span>
-          </div>
-          <div v-for="row in grid" :key="row.year" class="heat-row">
-            <span class="heat-year">{{ row.year }}</span>
-            <span
-              v-for="(c, mi) in row.cells"
-              :key="mi"
-              class="heat-cell num"
-              :class="c == null ? 'empty' : pnlClass(c)"
+      <div v-if="heatYears.length" class="card">
+        <div class="card-head">
+          <div>
+            <h3 class="card-title">月度收益热力图</h3>
+            <span class="card-sub"
+              >单月策略收益率(%) · 红涨绿跌(A股惯例)· 最深回撤
+              {{ pct(Math.abs(maxDD / 100)) }}</span
             >
-              {{ c == null ? '·' : (c * 100).toFixed(1) }}
-            </span>
           </div>
+          <span class="ch-tag"><i style="background: var(--pnl-up)" />PnL 通道</span>
+        </div>
+        <div class="card-pad">
+          <Heatmap :years="heatYears" :data="heatData" />
         </div>
       </div>
 
-      <!-- 逐笔成交(买卖点明细) -->
-      <div v-if="trades.length" class="m-card">
-        <h3>
-          逐笔成交 <span class="m-muted">({{ trades.length }})</span>
-        </h3>
-        <table class="m-table num">
-          <thead>
-            <tr>
-              <th>日期</th>
-              <th>方向</th>
-              <th>代码</th>
-              <th class="r">股数</th>
-              <th class="r">成交价</th>
-              <th class="r">金额</th>
-              <th class="r">成本</th>
-              <th>原因</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-for="(t, i) in trades" :key="i">
-              <td>{{ t.trade_date }}</td>
-              <td>
-                <span class="m-badge" :class="actionClass(t.side)">{{ actionLabel(t.side) }}</span>
-              </td>
-              <td>{{ t.code }}</td>
-              <td class="r">{{ t.shares }}</td>
-              <td class="r">{{ t.price?.toFixed(2) }}</td>
-              <td class="r">{{ t.amount?.toFixed(0) }}</td>
-              <td class="r m-muted">{{ t.fee_total?.toFixed(2) }}</td>
-              <td class="m-muted">{{ reasonLabel(t.reason) }}</td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-
-      <!-- 逐日明细(资产/盈亏/持仓变化;点某天展开当日持仓)-->
-      <div class="m-card">
-        <h3>逐日明细 <span class="m-muted">点某天看当日持仓</span></h3>
-        <table class="m-table num">
-          <thead>
-            <tr>
-              <th>日期</th>
-              <th class="r">总资产</th>
-              <th class="r">现金</th>
-              <th class="r">持仓市值</th>
-              <th class="r">当日盈亏</th>
-              <th class="r">回撤</th>
-              <th class="r">持仓数</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr
-              v-for="r in navPoints"
-              :key="r.date"
-              class="row"
-              :class="{ sel: selectedDay?.date === r.date }"
-              @click="selectDay(r)"
-            >
-              <td>{{ r.date }}</td>
-              <td class="r">{{ r.nav?.toFixed(0) }}</td>
-              <td class="r m-muted">{{ r.cash?.toFixed(0) }}</td>
-              <td class="r">{{ r.holding_value?.toFixed(0) }}</td>
-              <td class="r" :class="pnlClass(r.day_return ?? 0)">{{ signed(r.day_return) }}</td>
-              <td class="r m-muted">{{ r.drawdown ? pct(r.drawdown) : '—' }}</td>
-              <td class="r">{{ r.positions?.length ?? 0 }}</td>
-            </tr>
-          </tbody>
-        </table>
-
-        <div v-if="selectedDay" class="snapshot">
-          <div class="snap-head">
-            {{ selectedDay.date }} 持仓
-            <span class="m-muted"
-              >(现金 {{ selectedDay.cash?.toFixed(0) }} · 持仓市值
-              {{ selectedDay.holding_value?.toFixed(0) }})</span
-            >
+      <!-- 逐笔成交 + 逐日明细 -->
+      <div class="detail-grid">
+        <!-- 逐笔成交(方向 = Status 通道:买=ok蓝 / 卖=warn橙)-->
+        <div v-if="trades.length" class="card">
+          <div class="card-head">
+            <div>
+              <h3 class="card-title">逐笔成交</h3>
+              <span class="card-sub">{{ trades.length }} 笔 · 方向 = Status 通道</span>
+            </div>
           </div>
-          <p v-if="!selectedDay.positions?.length" class="m-muted">该日空仓。</p>
-          <table v-else class="m-table num">
-            <thead>
-              <tr>
-                <th>代码</th>
-                <th class="r">股数</th>
-                <th class="r">成本</th>
-                <th class="r">市值</th>
-                <th class="r">占比</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-for="p in selectedDay.positions" :key="p.code">
-                <td>{{ p.code }}</td>
-                <td class="r">{{ p.shares }}</td>
-                <td class="r m-muted">{{ p.avg_cost?.toFixed(2) }}</td>
-                <td class="r">{{ p.value?.toFixed(0) }}</td>
-                <td class="r m-muted">{{ ((p.value / selectedDay.nav) * 100).toFixed(1) }}%</td>
-              </tr>
-            </tbody>
-          </table>
+          <div class="tbl-wrap">
+            <table class="dt dt-compact">
+              <thead>
+                <tr>
+                  <th>日期</th>
+                  <th>方向</th>
+                  <th>代码</th>
+                  <th class="num">股数</th>
+                  <th class="num">成交价</th>
+                  <th class="num">金额</th>
+                  <th class="num">成本</th>
+                  <th>原因</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="(t, i) in trades" :key="i">
+                  <td class="col-code">{{ t.trade_date }}</td>
+                  <td>
+                    <span class="badge" :class="t.side === 'buy' ? 'badge-ok' : 'badge-warn'"
+                      ><span class="dot" />{{ actionLabel(t.side) }}</span
+                    >
+                  </td>
+                  <td class="col-code">{{ t.code }}</td>
+                  <td class="num">{{ fmtInt(t.shares) }}</td>
+                  <td class="num">{{ fmt(t.price) }}</td>
+                  <td class="num">{{ fmtInt(Math.round(t.amount ?? 0)) }}</td>
+                  <td class="num dim">{{ fmt(t.fee_total) }}</td>
+                  <td class="dim">{{ reasonLabel(t.reason) }}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- 逐日明细(点某天展开当日持仓;盈亏走 pnl 色)-->
+        <div class="card">
+          <div class="card-head">
+            <div>
+              <h3 class="card-title">逐日明细</h3>
+              <span class="card-sub">点击某日展开当日持仓</span>
+            </div>
+          </div>
+          <div class="tbl-wrap">
+            <table class="dt dt-compact">
+              <thead>
+                <tr>
+                  <th class="w-chev"></th>
+                  <th>日期</th>
+                  <th class="num">总资产</th>
+                  <th class="num">现金</th>
+                  <th class="num">持仓市值</th>
+                  <th class="num">当日盈亏</th>
+                  <th class="num">回撤</th>
+                </tr>
+              </thead>
+              <tbody>
+                <template v-for="r in navPoints" :key="r.date">
+                  <tr
+                    class="row"
+                    :class="{ sel: selectedDay?.date === r.date }"
+                    @click="selectDay(r)"
+                  >
+                    <td class="chev">
+                      <span :class="{ open: selectedDay?.date === r.date }"
+                        ><Icon name="chevR" :size="13"
+                      /></span>
+                    </td>
+                    <td class="col-code">{{ r.date }}</td>
+                    <td class="num">{{ fmtInt(Math.round(r.nav ?? 0)) }}</td>
+                    <td class="num dim">{{ fmtInt(Math.round(r.cash ?? 0)) }}</td>
+                    <td class="num dim">{{ fmtInt(Math.round(r.holding_value ?? 0)) }}</td>
+                    <td class="num" :class="pnlClass(r.day_return ?? 0)">
+                      {{ signed(r.day_return) }}
+                    </td>
+                    <td class="num dim">{{ r.drawdown ? pct(r.drawdown) : '—' }}</td>
+                  </tr>
+                  <tr v-if="selectedDay?.date === r.date" class="snap-row">
+                    <td colspan="7">
+                      <div class="snap">
+                        <div class="snap-head cap">
+                          当日持仓 · {{ r.date }}
+                          <span class="snap-meta mono"
+                            >现金 {{ fmtInt(Math.round(r.cash ?? 0)) }} · 持仓市值
+                            {{ fmtInt(Math.round(r.holding_value ?? 0)) }}</span
+                          >
+                        </div>
+                        <p v-if="!r.positions?.length" class="snap-empty dim">该日空仓。</p>
+                        <div v-else class="snap-list">
+                          <div v-for="p in r.positions" :key="p.code" class="snap-item">
+                            <span class="snap-code col-code">{{ p.code }}</span>
+                            <span class="snap-val mono"
+                              >{{ fmtInt(p.shares) }} 股 · {{ fmtInt(Math.round(p.value ?? 0)) }} ·
+                              {{ ((p.value / r.nav) * 100).toFixed(1) }}%</span
+                            >
+                          </div>
+                        </div>
+                      </div>
+                    </td>
+                  </tr>
+                </template>
+              </tbody>
+            </table>
+          </div>
         </div>
       </div>
     </template>
 
     <!-- 历史回测 -->
-    <div v-if="history.length" class="m-card">
-      <h3>
-        历史回测 <span class="m-muted">({{ history.length }})</span>
-      </h3>
-      <table class="m-table num">
-        <thead>
-          <tr>
-            <th>区间</th>
-            <th class="r">年化</th>
-            <th class="r">超额</th>
-            <th class="r">最大回撤</th>
-            <th class="r">IR</th>
-            <th class="r">天数</th>
-            <th>时间</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr v-for="h in history" :key="h.id" class="row" @click="loadOne(h.id)">
-            <td>{{ h.backtest_start }} ~ {{ h.backtest_end }}</td>
-            <td class="r" :class="pnlClass(h.metrics?.annual_return ?? 0)">
-              {{ signed(h.metrics?.annual_return) }}
-            </td>
-            <td class="r" :class="pnlClass(h.metrics?.excess_return ?? 0)">
-              {{ signed(h.metrics?.excess_return) }}
-            </td>
-            <td class="r">{{ pct(h.metrics?.max_drawdown) }}</td>
-            <td class="r">{{ fixed(h.metrics?.information_ratio) }}</td>
-            <td class="r">{{ h.n_days }}</td>
-            <td class="m-muted">{{ h.created_at?.slice(0, 10) }}</td>
-          </tr>
-        </tbody>
-      </table>
+    <div v-if="history.length" class="card">
+      <div class="card-head">
+        <div>
+          <h3 class="card-title">历史回测</h3>
+          <span class="card-sub">点击某行载入该次回测</span>
+        </div>
+        <span class="badge badge-idle"><span class="dot" />{{ history.length }} 次</span>
+      </div>
+      <div class="tbl-wrap">
+        <table class="dt dt-compact">
+          <thead>
+            <tr>
+              <th>区间</th>
+              <th class="num">年化</th>
+              <th class="num">超额</th>
+              <th class="num">最大回撤</th>
+              <th class="num">IR</th>
+              <th class="num">天数</th>
+              <th>时间</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr
+              v-for="h in history"
+              :key="h.id"
+              class="row"
+              :class="{ sel: result?.id === h.id }"
+              @click="loadOne(h.id)"
+            >
+              <td class="col-code">{{ h.backtest_start }} ~ {{ h.backtest_end }}</td>
+              <td class="num" :class="pnlClass(h.metrics?.annual_return ?? 0)">
+                {{ signed(h.metrics?.annual_return) }}
+              </td>
+              <td class="num" :class="pnlClass(h.metrics?.excess_return ?? 0)">
+                {{ signed(h.metrics?.excess_return) }}
+              </td>
+              <td class="num">{{ pct(h.metrics?.max_drawdown) }}</td>
+              <td class="num">{{ fixed(h.metrics?.information_ratio) }}</td>
+              <td class="num dim">{{ h.n_days }}</td>
+              <td class="dim">{{ h.created_at?.slice(0, 10) }}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
     </div>
 
-    <!-- 免责声明常驻(不依赖是否已有回测结果) -->
+    <!-- 结果为空时的诚实空状态 -->
+    <div v-if="!result && !history.length" class="card">
+      <div class="empty">
+        <div class="empty-icon"><Icon name="backtest" :size="20" /></div>
+        <div class="empty-title">尚无回测结果</div>
+        <div class="empty-desc">
+          填入训练截止与样本外回测区间,「跑回测」生成一次诚实样本外净值曲线与逐笔/逐日明细。
+        </div>
+      </div>
+    </div>
+
+    <!-- 免责声明常驻 -->
     <p class="disclaimer">
       历史回测不代表未来收益。现实预期是长期略微跑赢沪深300 + 回撤更小(目标 IR
       0.5–1.0),不是暴富。所有结果仅供研究参考,非投资建议;请用模拟盘前向验证数月后再谨慎考虑。
@@ -392,207 +466,252 @@ const MONTHS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12'];
 </template>
 
 <style scoped>
-.page-head {
-  margin-bottom: var(--sp-4);
+.page-body {
+  padding: 28px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
 }
-.page-head .sub {
-  color: var(--c-text-3);
-  font-size: var(--fs-cap);
-  margin-top: 2px;
-}
+
+/* ── 诚实口径提示条(系统色 status-ok 蓝;非诚实 warn 橙)──────────────────────── */
 .honesty {
   display: flex;
   align-items: center;
-  gap: var(--sp-2);
+  gap: 10px;
   flex-wrap: wrap;
-  padding: var(--sp-2) var(--sp-3);
+  padding: 11px 14px;
   border-radius: var(--r-md);
-  background: var(--accent-weak);
-  margin-bottom: var(--sp-3);
+  background: var(--status-ok-bg);
+  border: 0.5px solid color-mix(in srgb, var(--status-ok) 30%, transparent);
 }
 .honesty.warn {
-  background: color-mix(in srgb, var(--st-warn) 16%, transparent);
+  background: var(--status-warn-bg);
+  border-color: color-mix(in srgb, var(--status-warn) 30%, transparent);
 }
 .h-icon {
-  font-size: 14px;
+  display: inline-flex;
+  flex: none;
+  color: var(--status-ok);
 }
-.nonhonest {
+.honesty.warn .h-icon {
+  color: var(--status-warn);
+}
+.h-lead {
+  font-size: 12.5px;
   font-weight: 600;
+  color: var(--text-1);
 }
-.form {
-  align-items: flex-end;
+.h-tail {
+  font-size: var(--fs-sub);
+  color: var(--text-2);
 }
-.fld {
+
+/* ── 错误条 ──────────────────────────────────────────────────────────────────── */
+.msg-err {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  padding: 9px 13px;
+  border-radius: var(--r-md);
+  font-size: var(--fs-sub);
+  color: var(--status-err);
+  background: var(--status-err-bg);
+  border: 0.5px solid color-mix(in srgb, var(--status-err) 30%, transparent);
+}
+
+/* ── 参数表单 ────────────────────────────────────────────────────────────────── */
+.form-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px 16px;
+  align-items: end;
+}
+.field {
   display: flex;
   flex-direction: column;
-  gap: 3px;
-  font-size: var(--fs-cap);
-  color: var(--c-text-2);
 }
-.m-field.narrow {
-  width: 110px;
+.field-label {
+  margin-bottom: 6px;
 }
-.hint {
-  margin-top: var(--sp-2);
-  font-size: var(--fs-cap);
+.field.btn-cell {
+  justify-content: flex-end;
 }
-.hint-inline {
-  color: var(--c-text-3);
-  font-weight: 400;
+.field.btn-cell .btn {
+  height: 30px;
 }
-.msg {
-  margin: 0 0 var(--sp-3);
-}
+
+/* ── 绩效卡 ──────────────────────────────────────────────────────────────────── */
 .kpis {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
-  gap: var(--sp-3);
-  margin-bottom: var(--sp-3);
+  gap: 16px;
 }
 .kpi {
-  padding: var(--sp-4);
+  padding: 16px;
 }
-.kpi-label {
-  color: var(--c-text-3);
+.kpi-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.kpi-k {
+  font-size: 11.5px;
+  color: var(--text-2);
+}
+.kpi-hint {
+  color: var(--text-3);
   font-size: var(--fs-cap);
-  font-weight: 500;
 }
-.kpi-val {
+.kpi-v {
   font-size: 22px;
   font-weight: 600;
-  margin-top: 4px;
   letter-spacing: -0.01em;
+  line-height: 1;
 }
-.chart-head {
-  display: flex;
-  align-items: baseline;
-  gap: var(--sp-4);
-  flex-wrap: wrap;
-  margin-bottom: var(--sp-2);
+.kpi-v.neutral {
+  color: var(--text-1);
 }
-.chart-head h3 {
-  margin: 0;
-}
+
+/* ── 图例 ────────────────────────────────────────────────────────────────────── */
 .legend {
   display: flex;
-  gap: var(--sp-3);
-  font-size: var(--fs-cap);
-}
-.legend .port {
-  color: var(--accent);
-}
-.legend .bench {
-  color: var(--c-text-3);
-}
-.legend .buy {
-  color: var(--st-info);
-}
-.legend .sell {
-  color: var(--st-warn);
-}
-.oos {
-  margin-left: auto;
-  font-size: var(--fs-cap);
-}
-.chart-wrap {
-  position: relative;
-  width: 100%;
-}
-.chart {
-  width: 100%;
-  height: 100%;
-  display: block;
-}
-/* 买卖点:绝对定位覆盖在曲线上,不随 svg 非等比缩放变形。方向用系统色(非盈亏色)。 */
-.marker {
-  position: absolute;
-  transform: translate(-50%, -50%);
-  font-size: 9px;
-  line-height: 1;
-  pointer-events: auto;
-  cursor: default;
-}
-.marker.buy {
-  color: var(--st-info);
-}
-.marker.sell {
-  color: var(--st-warn);
-}
-.line {
-  fill: none;
-  stroke-width: 1.5;
-  vector-effect: non-scaling-stroke;
-}
-.line.port {
-  stroke: var(--accent);
-}
-.line.bench {
-  stroke: var(--c-text-3);
-  stroke-dasharray: 4 3;
-}
-.dd-label {
-  font-size: var(--fs-cap);
-  margin: var(--sp-2) 0 0;
-}
-.dd-area {
-  fill: var(--pnl-down);
-  opacity: 0.22;
-  stroke: var(--pnl-down);
-  stroke-width: 1;
-  vector-effect: non-scaling-stroke;
-}
-.heat {
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-  margin-top: var(--sp-2);
-  overflow-x: auto;
-}
-.heat-row {
-  display: grid;
-  grid-template-columns: 52px repeat(12, 1fr);
-  gap: 3px;
   align-items: center;
+  gap: 14px;
+  font-size: var(--fs-sub);
+  color: var(--text-2);
 }
-.heat-year {
+.lg {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.ln {
+  width: 14px;
+  height: 0;
+  border-top: 2px solid var(--accent);
+}
+.ln.bench {
+  border-top-style: dashed;
+  border-top-color: var(--benchmark);
+}
+.mk {
+  width: 0;
+  height: 0;
+  border-left: 4px solid transparent;
+  border-right: 4px solid transparent;
+}
+.mk.buy {
+  border-bottom: 7px solid var(--status-ok);
+}
+.mk.sell {
+  border-top: 7px solid var(--status-warn);
+}
+.ch-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
   font-size: var(--fs-cap);
-  color: var(--c-text-2);
-  font-family: var(--font-num);
+  color: var(--text-3);
+  font-family: var(--font-mono);
 }
-.heat-cell {
-  text-align: center;
-  font-size: 11px;
-  padding: 4px 2px;
-  border-radius: var(--r-sm);
-  background: var(--c-surface-2);
-  min-width: 34px;
+.ch-tag i {
+  width: 7px;
+  height: 7px;
+  border-radius: 2px;
 }
-.heat-row.head .heat-cell {
-  background: transparent;
+
+/* ── 逐笔 + 逐日 双栏 ────────────────────────────────────────────────────────── */
+.detail-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 0.92fr) minmax(0, 1.08fr);
+  gap: 20px;
+  align-items: start;
 }
-.heat-cell.empty {
-  color: var(--c-text-3);
-  opacity: 0.5;
+.tbl-wrap {
+  max-height: 460px;
+  overflow: auto;
 }
-.row {
-  cursor: pointer;
+.dim {
+  color: var(--text-2);
 }
-.row.sel {
-  background: var(--accent-weak);
+.w-chev {
+  width: 24px;
 }
-.snapshot {
-  margin-top: var(--sp-3);
-  padding-top: var(--sp-3);
-  border-top: 1px solid var(--c-hairline);
+.chev {
+  color: var(--text-3);
+  width: 24px;
+}
+.chev span {
+  display: inline-flex;
+  transition: transform 0.15s var(--ease);
+}
+.chev span.open {
+  transform: rotate(90deg);
+}
+
+/* 当日持仓展开行 */
+.snap-row td {
+  padding: 0;
+  height: auto;
+  background: var(--bg-base);
+}
+.snap {
+  padding: 10px 16px 14px 46px;
 }
 .snap-head {
-  font-size: var(--fs-cap);
-  font-weight: 600;
-  margin-bottom: var(--sp-2);
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin-bottom: 8px;
+  flex-wrap: wrap;
 }
-.disclaimer {
-  margin: var(--sp-5) 0 var(--sp-3);
-  color: var(--c-text-3);
+.snap-meta {
   font-size: var(--fs-cap);
+  color: var(--text-3);
+  letter-spacing: 0;
+  text-transform: none;
+  font-weight: 400;
+}
+.snap-empty {
+  margin: 0;
+  font-size: var(--fs-sub);
+}
+.snap-list {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 0 32px;
+}
+.snap-item {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: var(--fs-sub);
+  padding: 4px 0;
+  border-bottom: 0.5px solid var(--border-faint);
+}
+.snap-code {
+  color: var(--text-2);
+}
+.snap-val {
+  color: var(--text-1);
+  font-size: var(--fs-sub);
+}
+
+.disclaimer {
+  margin: 4px 0 0;
+  color: var(--text-3);
+  font-size: var(--fs-cap);
+  line-height: 1.6;
+}
+
+/* 窄屏退化 */
+@media (max-width: 1080px) {
+  .detail-grid {
+    grid-template-columns: 1fr;
+  }
 }
 </style>
