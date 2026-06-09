@@ -2,7 +2,6 @@
    司南 Sinan — 设计令牌(忠实迁移自 docs/design_handoff_sinan)
    三套互不混用的色彩通道:PnL(盈亏)/ Status(状态)/ Accent(品牌)
    深色默认 + 浅色变体。A 股惯例:红涨绿跌(可在设置反转,经 data-pnl-invert)。
-   兼容层:旧 --c-、--st- 等别名映射到新令牌,未迁移页面仍可构建(见底部)。
    ============================================================ */
 :root,
 [data-theme='dark'] {
@@ -204,38 +203,6 @@
   --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
   --t-fast: 110ms;
   --t-med: 180ms;
-
-  /* ── 兼容别名:旧令牌名 → 新令牌(未迁移页面继续可用,过渡期保留)── */
-  --c-bg: var(--bg-base);
-  --c-surface: var(--bg-panel);
-  --c-surface-2: var(--bg-panel-2);
-  --c-elevated: var(--bg-elevated);
-  --c-sidebar: var(--bg-window);
-  --c-titlebar: var(--bg-window);
-  --c-border: var(--border);
-  --c-border-strong: var(--border-strong);
-  --c-hairline: var(--border-faint);
-  --c-text: var(--text-1);
-  --c-text-2: var(--text-2);
-  --c-text-3: var(--text-3);
-  --accent-weak: var(--accent-bg);
-  --accent-contrast: var(--text-on-accent);
-  --st-ok: var(--status-ok);
-  --st-warn: var(--status-warn);
-  --st-err: var(--status-err);
-  --st-info: var(--status-ok);
-  --shadow-1: var(--shadow-card);
-  --shadow-2: var(--shadow-card);
-  --shadow-3: var(--shadow-pop);
-  --ring: 0 0 0 3px var(--accent-ring);
-  --font-ui: var(--font-sans);
-  --font-num: var(--font-mono);
-  --fs-h1: var(--fs-display);
-  --dur: var(--t-med);
-  --dur-fast: var(--t-fast);
-  --ease-spring: var(--ease-out);
-  --blur-thin: var(--glass-blur);
-  --blur-thick: var(--glass-blur);
 }
 
 /* ============================================================

@@ -6,19 +6,19 @@
 /* 把设计令牌(CSS 变量)映射为 Tailwind 语义色,使 bg-surface/text-ink/border-border 等
    工具类与主题、盈亏反转协同;盈亏色与系统色仍由 pnl.css 的专用 class 承担(红线解耦)。 */
 @theme {
-  --color-surface: var(--c-surface);
-  --color-surface-2: var(--c-surface-2);
-  --color-border: var(--c-border);
-  --color-ink: var(--c-text);
-  --color-ink-2: var(--c-text-2);
-  --color-ink-3: var(--c-text-3);
+  --color-surface: var(--bg-panel);
+  --color-surface-2: var(--bg-panel-2);
+  --color-border: var(--border);
+  --color-ink: var(--text-1);
+  --color-ink-2: var(--text-2);
+  --color-ink-3: var(--text-3);
   --color-accent: var(--accent);
 }
 
 /* preflight 会清零标题样式,这里按设计令牌恢复标题层级。 */
 @layer base {
   h1 {
-    font-size: var(--fs-h1);
+    font-size: var(--fs-display);
     font-weight: 600;
   }
   h2 {

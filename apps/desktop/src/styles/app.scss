@@ -5,8 +5,8 @@ $radius-card: var(--r-lg);
 $gap: var(--sp-3);
 
 @mixin surface-card {
-  background: var(--c-surface);
-  border: 1px solid var(--c-border);
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
   border-radius: $radius-card;
 }
 
