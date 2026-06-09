@@ -1,6 +1,20 @@
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted, ref } from 'vue';
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 import { getAppWindow, isTauri } from '../lib/tauri';
+import { useAppStore } from '../stores/app';
+import { themePrefIcon, themePrefLabel, THEME_PREFS, type ThemePref } from '../lib/theme';
+
+const app = useAppStore();
+
+const providerLabel = computed(() => {
+  const active = app.providers.find((p) => p.id === app.activeProvider);
+  return active ? active.display_name : (app.activeProvider ?? '未配置');
+});
+
+function cycleTheme() {
+  const i = THEME_PREFS.indexOf(app.themePref);
+  app.setThemePref(THEME_PREFS[(i + 1) % THEME_PREFS.length] as ThemePref);
+}
 
 const inTauri = isTauri();
 const maximized = ref(false);
@@ -45,6 +59,20 @@ onBeforeUnmount(() => unlisten?.());
       <span class="tb-sub">Sinan</span>
     </div>
     <div class="tb-drag" data-tauri-drag-region></div>
+
+    <!-- 状态 + 主题切换(原顶栏功能并入标题栏右侧) -->
+    <div class="tb-right">
+      <span class="m-badge tb-prov" :class="app.activeProvider ? 'status-ok' : 'status-err'">
+        {{ providerLabel }}
+      </span>
+      <button
+        class="tb-theme"
+        :title="`主题:${themePrefLabel(app.themePref)}(点按切换)`"
+        @click="cycleTheme"
+      >
+        {{ themePrefIcon(app.themePref) }}
+      </button>
+    </div>
 
     <div v-if="inTauri" class="win-controls">
       <button class="win-btn" title="最小化" aria-label="最小化" @click="minimize">
@@ -123,6 +151,31 @@ onBeforeUnmount(() => unlisten?.());
 }
 .tb-drag {
   flex: 1;
+}
+.tb-right {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: 0 var(--sp-3);
+  flex: none;
+}
+.tb-prov {
+  font-size: 11px;
+}
+.tb-theme {
+  border: none;
+  background: transparent;
+  color: var(--c-text-2);
+  font-size: 13px;
+  line-height: 1;
+  padding: 3px 6px;
+  border-radius: var(--r-sm);
+  cursor: pointer;
+  transition: background var(--dur-fast) var(--ease);
+}
+.tb-theme:hover {
+  background: var(--c-surface-2);
+  color: var(--c-text);
 }
 .win-controls {
   display: flex;

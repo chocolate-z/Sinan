@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import Sidebar from './Sidebar.vue';
-import TopBar from './TopBar.vue';
 import StatusBar from './StatusBar.vue';
 </script>
 
@@ -8,7 +7,6 @@ import StatusBar from './StatusBar.vue';
   <div class="shell">
     <Sidebar />
     <main class="main">
-      <TopBar />
       <section class="body">
         <div class="body-inner">
           <slot />
