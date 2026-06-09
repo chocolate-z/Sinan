@@ -121,7 +121,7 @@ const MONTHS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12'];
           >回测止 <input v-model="form.backtest_end" class="m-field" type="date"
         /></label>
         <label class="fld"
-          >purge <input v-model.number="form.purge" class="m-field narrow" type="number" min="0"
+          >purge <input v-model.number="form.purge" class="m-field narrow" type="number" min="1"
         /></label>
         <label class="fld">基准 <input v-model="form.benchmark" class="m-field narrow" /></label>
         <button
@@ -217,11 +217,6 @@ const MONTHS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12'];
           </div>
         </div>
       </div>
-
-      <p class="disclaimer">
-        历史回测不代表未来收益。现实预期是长期略微跑赢沪深300 + 回撤更小(目标 IR
-        0.5–1.0),不是暴富。请用模拟盘前向验证数月后再谨慎考虑。
-      </p>
     </template>
 
     <!-- 历史回测 -->
@@ -258,6 +253,12 @@ const MONTHS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12'];
         </tbody>
       </table>
     </div>
+
+    <!-- 免责声明常驻(不依赖是否已有回测结果) -->
+    <p class="disclaimer">
+      历史回测不代表未来收益。现实预期是长期略微跑赢沪深300 + 回撤更小(目标 IR
+      0.5–1.0),不是暴富。所有结果仅供研究参考,非投资建议;请用模拟盘前向验证数月后再谨慎考虑。
+    </p>
   </div>
 </template>
 
