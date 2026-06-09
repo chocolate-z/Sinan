@@ -146,4 +146,10 @@ export const api = {
   createBacktest: (body: unknown) => request<any>(API_ENDPOINTS.backtests_create, { body }),
   backtests: () => request<any[]>(API_ENDPOINTS.backtests_list),
   backtest: (id: string) => request<any>(API_ENDPOINTS.backtests_get, { params: { id } }),
+
+  // ── 模型域(M3)────────────────────────────────────────────────────────────
+  trainModel: (body: unknown) => request<any>(API_ENDPOINTS.models_train, { body }),
+  models: () => request<any[]>(API_ENDPOINTS.models_list),
+  model: (id: string) => request<any>(API_ENDPOINTS.models_get, { params: { id } }),
+  activateModel: (id: string) => request<any>(API_ENDPOINTS.models_activate, { params: { id } }),
 };
