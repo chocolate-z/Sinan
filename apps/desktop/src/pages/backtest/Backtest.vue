@@ -245,6 +245,28 @@ function fixed(v: number | null | undefined): string {
           </div>
         </div>
 
+        <!-- 成交统计(中性通道:胜率/盈亏比/换手率,非盈亏色)-->
+        <div class="card card-pad tstats">
+          <div class="ts-item">
+            <span class="ts-k">胜率<span class="ts-hint">已平仓</span></span>
+            <span class="ts-v mono">{{ m.win_rate == null ? '—' : pct(m.win_rate) }}</span>
+          </div>
+          <div class="ts-item">
+            <span class="ts-k">盈亏比</span>
+            <span class="ts-v mono">{{
+              m.profit_factor == null ? (m.win_rate ? '全胜' : '—') : fixed(m.profit_factor)
+            }}</span>
+          </div>
+          <div class="ts-item">
+            <span class="ts-k">区间换手<span class="ts-hint">单边</span></span>
+            <span class="ts-v mono">{{ m.turnover == null ? '—' : pct(m.turnover) }}</span>
+          </div>
+          <div class="ts-item">
+            <span class="ts-k">成交笔数</span>
+            <span class="ts-v mono">{{ trades.length }}</span>
+          </div>
+        </div>
+
         <!-- 净值 vs 基准 + 回撤阴影 + 买卖点 -->
         <div class="card">
           <div class="card-head">
@@ -625,6 +647,38 @@ function fixed(v: number | null | undefined): string {
 }
 .kpi-v.neutral {
   color: var(--text-1);
+}
+
+/* 成交统计(中性)*/
+.tstats {
+  display: flex;
+  gap: 32px;
+  flex-wrap: wrap;
+}
+.ts-item {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.ts-k {
+  font-size: 11.5px;
+  color: var(--text-2);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.ts-hint {
+  font-size: 9px;
+  color: var(--text-3);
+  border: 0.5px solid var(--border);
+  border-radius: 3px;
+  padding: 0 3px;
+}
+.ts-v {
+  font-size: 17px;
+  font-weight: 600;
+  color: var(--text-1);
+  line-height: 1;
 }
 
 /* ── 图例 ────────────────────────────────────────────────────────────────────── */

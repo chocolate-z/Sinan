@@ -57,6 +57,27 @@ def _next_day(trading_dates: Sequence[str], t: str) -> str | None:
     return None
 
 
+def _realized_trade_pnls(trades) -> list[float]:
+    """按移动加权成本重放流水,每笔卖出 = 一次已实现盈亏(含买入费摊入成本、卖出费扣减)。
+
+    与 SimAccount 的 avg_cost 记账口径一致(account.py:75-83/99-105);期末未平仓不计入(未实现)。
+    供 win_rate / profit_factor 统计(红线#3:如实,亏损也计)。
+    """
+    pnls: list[float] = []
+    cost: dict[str, tuple[int, float]] = {}  # code -> (shares, avg_cost 含买入费)
+    for t in trades:
+        sh, ac = cost.get(t.code, (0, 0.0))
+        if t.side == "buy":
+            nsh = sh + t.shares
+            basis = sh * ac + t.amount + t.fee_total
+            cost[t.code] = (nsh, basis / nsh if nsh else 0.0)
+        else:
+            pnls.append((t.price - ac) * t.shares - t.fee_total)
+            rem = sh - t.shares
+            cost[t.code] = (rem, ac) if rem > 0 else (0, 0.0)
+    return pnls
+
+
 def _bench_nav(bench_raw: Sequence[float | None], base_nav: float) -> list[float] | None:
     """把基准收盘序列归一化为与组合同起点的净值;None 前向填充。整段无效 → None。"""
     filled: list[float | None] = []
@@ -167,7 +188,15 @@ def run_backtest(
     navs = [r["nav"] for r in nav_curve]
     base = navs[0] if navs else initial_cash
     bench_nav = _bench_nav([r["benchmark"] for r in nav_curve], base)
-    perf = metrics.performance(navs, bench_nav, periods=periods)
+    # 胜率/盈亏比(已平仓)+ 区间单边换手率(Σ成交额 / 2 / 平均净值)。
+    trade_pnls = _realized_trade_pnls(account.trades)
+    avg_nav = (sum(navs) / len(navs)) if navs else initial_cash
+    turnover = sum(tr.amount for tr in account.trades) / (2 * avg_nav) if avg_nav else 0.0
+    perf = metrics.performance(navs, bench_nav, trade_pnls=trade_pnls or None, periods=periods)
+    perf["turnover"] = round(turnover, 4)
+    # 全胜无亏损 → profit_factor=inf,JSON 不安全(api JSON.parse 会崩)→ 置 None(前端显示「全胜」)。
+    if perf.get("profit_factor") == float("inf"):
+        perf["profit_factor"] = None
     for i, r in enumerate(nav_curve):
         r["benchmark"] = bench_nav[i] if bench_nav else None
 

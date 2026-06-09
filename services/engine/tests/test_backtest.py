@@ -183,6 +183,32 @@ def test_backtest_detail_trades_positions_assets(tmp_path):
     # 持仓快照估值与净值估值同源(prices_today),已由 test_backtest_valuation_asof_* 守护无未来函数。
 
 
+def test_backtest_trade_stats_and_json_safe(tmp_path):
+    """成交统计:区间单边换手率 + 已平仓胜率/盈亏比;且结果 JSON 安全(无 inf/NaN,api 可 parse)。"""
+    import json
+
+    cache = tmp_path / "cache"
+    dates = _dates(40)
+    _setup(cache, dates)
+    res = run_backtest(
+        DataLayer(cache),
+        codes=CODES,
+        trading_dates=dates,
+        backtest_start=dates[26],
+        backtest_end=dates[38],
+        train_end=dates[19],
+        purge=5,
+        params={"buy_threshold": 0.0, "max_holdings": 5, "take_profit": 0.0},  # 强制平仓制造已平仓交易
+    )
+    assert res.metrics["turnover"] > 0  # 有买入 → 单边换手 > 0
+    pf = res.metrics.get("profit_factor")
+    assert pf is None or pf != float("inf")  # 全胜无亏损时 inf 已被置 None(JSON 安全)
+    if "win_rate" in res.metrics:  # 有已平仓交易时
+        assert 0.0 <= res.metrics["win_rate"] <= 1.0
+    # 红线#6 落库前提:整份结果严格 JSON 安全(allow_nan=False 捕获任何 inf/NaN)。
+    json.dumps(res.to_dict(), allow_nan=False)
+
+
 def test_backtest_rejects_short_window(tmp_path):
     cache = tmp_path / "cache"
     dates = _dates(40)
