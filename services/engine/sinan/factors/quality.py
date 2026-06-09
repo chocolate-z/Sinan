@@ -17,6 +17,7 @@ from ..backtest import metrics
 from ..data import DataLayer
 from ..training.features import build_feature_panel
 from ..training.labels import build_forward_return_labels
+from .custom import custom_factor
 from .library import DEFAULT_FACTORS, Factor
 
 
@@ -37,17 +38,26 @@ def factor_quality(
     dates: Sequence[str],
     *,
     factors: list[Factor] = DEFAULT_FACTORS,
+    custom: Sequence[dict] | None = None,
     label_horizon: int = 5,
     n_deciles: int = 10,
 ) -> tuple[list[FactorQuality], list[str]]:
-    """逐因子质量报告。dates 为评估区间交易日(升序)。"""
-    fp = build_feature_panel(data, codes, dates, factors)
+    """逐因子质量报告。dates 为评估区间交易日(升序)。custom = 自定义 DSL 因子 [{name,expr,group?}]。"""
+    all_factors = list(factors)
+    custom_degraded: list[str] = []
+    for c in custom or []:
+        try:
+            all_factors.append(custom_factor(c["name"], c["expr"], c.get("group", "custom")))
+        except Exception as e:  # noqa: BLE001 表达式无效 → 跳过并如实记录(不静默)
+            custom_degraded.append(f"{c.get('name', '?')}:表达式无效({e})")
+
+    fp = build_feature_panel(data, codes, dates, all_factors)
     labels = build_forward_return_labels(data, codes, label_horizon)
     samples = fp.panel.join(labels, on=["date", "stock_code"], how="left")
     uniq = sorted(set(dates))
 
     results: list[FactorQuality] = []
-    for f, col in zip(factors, fp.feature_cols):
+    for f, col in zip(all_factors, fp.feature_cols):
         ic_series: list[float] = []
         decile_acc: list[list[float]] = [[] for _ in range(n_deciles)]
         for d in uniq:
@@ -86,4 +96,5 @@ def factor_quality(
     degraded = [
         f"{name}:{n}/{fp.n_dates} 天降级(数据缺失)" for name, n in sorted(fp.degraded_days.items())
     ]
+    degraded.extend(custom_degraded)
     return results, degraded

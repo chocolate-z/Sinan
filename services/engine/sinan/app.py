@@ -340,6 +340,7 @@ class FactorQualityReq(BaseModel):
     label_horizon: int = 5
     n_deciles: int = 10
     codes: Optional[list[str]] = None
+    custom: Optional[list[dict]] = None  # 自定义 DSL 因子 [{name, expr, group?}]
 
 
 @app.post("/engine/factors/quality", dependencies=[Depends(require_internal)])
@@ -358,7 +359,7 @@ def factors_quality(req: FactorQualityReq) -> dict:
         raise HTTPException(status_code=400, detail="评估区间交易日不足(需 >= n_deciles)")
     codes = req.codes or sorted(set(pdf["stock_code"].to_list()))
     results, degraded = factor_quality(
-        dl, codes, dates, label_horizon=req.label_horizon, n_deciles=req.n_deciles
+        dl, codes, dates, custom=req.custom, label_horizon=req.label_horizon, n_deciles=req.n_deciles
     )
     return {
         "start": req.start,
