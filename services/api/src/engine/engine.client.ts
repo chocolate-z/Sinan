@@ -95,6 +95,14 @@ export interface TrainRequest {
   device?: string;
 }
 
+export interface FactorQualityRequest {
+  start: string;
+  end: string;
+  label_horizon?: number;
+  n_deciles?: number;
+  codes?: string[];
+}
+
 /** engine 返回非 2xx 时抛出,携带状态码与 detail,供 api 决定转发何种 HTTP 错误。 */
 export class EngineError extends Error {
   constructor(
@@ -119,6 +127,8 @@ export interface EngineClient {
   backtest(req: BacktestRequest): Promise<any>;
   /** 训练(walk-forward + 样本内外 IC)。purge<label_horizon 抛 EngineError(422)。 */
   train(req: TrainRequest): Promise<any>;
+  /** 因子质检(真实 IC/ICIR/覆盖度 + IC 时序 + 十分位分层)。无缓存/区间过短抛 EngineError(400)。 */
+  factorQuality(req: FactorQualityRequest): Promise<any>;
 }
 
 export const ENGINE_CLIENT = Symbol('ENGINE_CLIENT');
@@ -216,6 +226,24 @@ export class HttpEngineClient implements EngineClient {
 
   async train(req: TrainRequest): Promise<any> {
     const res = await fetch(`${config.engineBaseUrl()}/engine/train`, {
+      method: 'POST',
+      headers: this.headers(),
+      body: JSON.stringify(req),
+    });
+    if (!res.ok) {
+      let detail: unknown;
+      try {
+        detail = ((await res.json()) as { detail?: unknown }).detail;
+      } catch {
+        detail = await res.text();
+      }
+      throw new EngineError(res.status, detail);
+    }
+    return res.json();
+  }
+
+  async factorQuality(req: FactorQualityRequest): Promise<any> {
+    const res = await fetch(`${config.engineBaseUrl()}/engine/factors/quality`, {
       method: 'POST',
       headers: this.headers(),
       body: JSON.stringify(req),

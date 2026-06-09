@@ -3,6 +3,7 @@ import {
   type BacktestRequest,
   type CacheBuildRequest,
   type EngineClient,
+  type FactorQualityRequest,
   type PaperRunRequest,
   type PricesRequest,
   type PricesResult,
@@ -21,7 +22,35 @@ export class FakeEngineClient implements EngineClient {
     private readonly pricesResult: Record<string, PricesResult> = {},
     private readonly backtestResult: any = null,
     private readonly trainResult: any = null,
+    private readonly qualityResult: any = null,
   ) {}
+
+  async factorQuality(req: FactorQualityRequest): Promise<any> {
+    if (this.qualityResult && this.qualityResult.__error) {
+      throw new EngineError(this.qualityResult.__error.status, this.qualityResult.__error.detail);
+    }
+    return (
+      this.qualityResult ?? {
+        start: req.start,
+        end: req.end,
+        label_horizon: req.label_horizon ?? 5,
+        n_dates: 100,
+        n_codes: 6,
+        factors: [
+          {
+            name: 'mom20',
+            group: 'momentum',
+            ic_mean: 0.061,
+            icir: 0.52,
+            coverage: 0.92,
+            ic_series: [0.05, 0.07, 0.06],
+            deciles: [-0.012, 0.001, 0.014],
+          },
+        ],
+        degraded: ['north_chg5:100/100 天降级(数据缺失)'],
+      }
+    );
+  }
 
   async train(req: TrainRequest): Promise<any> {
     // 测试守卫转发:trainResult 形如 {__error:{status,detail}} → 抛 EngineError。
