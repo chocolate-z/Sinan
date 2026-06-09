@@ -12,6 +12,7 @@ import { ProvidersController } from './modules/providers.js';
 import { PaperService, PortfolioController, TradingController } from './modules/trading.js';
 import { MarketController } from './modules/market.js';
 import { BacktestController } from './modules/backtest.js';
+import { ModelsController } from './modules/models.js';
 import { SchedulerService } from './modules/scheduler.js';
 import {
   CoverageController,
@@ -45,6 +46,7 @@ export class AppModule {
         PortfolioController,
         MarketController,
         BacktestController,
+        ModelsController,
       ],
       providers: [
         {

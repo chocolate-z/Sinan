@@ -32,6 +32,7 @@ def _check_value_sets() -> list[frozenset[str]]:
 _CONTRACT_ENUMS_IN_SQL = [
     "ProviderStatus", "JobType", "JobStatus", "JobTrigger", "Dataset", "LogLevel",
     "Portfolio", "SignalAction", "TradeSide", "TradeReason",
+    "ModelType", "ModelStatus",  # M3:model_versions 表的 CHECK 与契约同步
 ]
 
 

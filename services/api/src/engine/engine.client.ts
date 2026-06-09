@@ -77,6 +77,23 @@ export interface BacktestRequest {
   initial_cash?: number;
 }
 
+export interface TrainRequest {
+  train_start: string;
+  train_end: string;
+  label_horizon?: number;
+  purge?: number;
+  embargo?: number;
+  train_span?: number;
+  test_span?: number;
+  codes?: string[];
+  model_type?: string;
+  alpha?: number;
+  l1_ratio?: number;
+  top_quantile?: number;
+  train_threads?: string;
+  device?: string;
+}
+
 /** engine 返回非 2xx 时抛出,携带状态码与 detail,供 api 决定转发何种 HTTP 错误。 */
 export class EngineError extends Error {
   constructor(
@@ -99,6 +116,8 @@ export interface EngineClient {
   prices(req: PricesRequest): Promise<PricesResult>;
   /** 回测(逐日撮合 + 硬守卫 + 含成本)。守卫违反抛 EngineError(422)。 */
   backtest(req: BacktestRequest): Promise<any>;
+  /** 训练(walk-forward + 样本内外 IC)。purge<label_horizon 抛 EngineError(422)。 */
+  train(req: TrainRequest): Promise<any>;
 }
 
 export const ENGINE_CLIENT = Symbol('ENGINE_CLIENT');
@@ -178,6 +197,24 @@ export class HttpEngineClient implements EngineClient {
 
   async backtest(req: BacktestRequest): Promise<any> {
     const res = await fetch(`${config.engineBaseUrl()}/engine/backtest`, {
+      method: 'POST',
+      headers: this.headers(),
+      body: JSON.stringify(req),
+    });
+    if (!res.ok) {
+      let detail: unknown;
+      try {
+        detail = ((await res.json()) as { detail?: unknown }).detail;
+      } catch {
+        detail = await res.text();
+      }
+      throw new EngineError(res.status, detail);
+    }
+    return res.json();
+  }
+
+  async train(req: TrainRequest): Promise<any> {
+    const res = await fetch(`${config.engineBaseUrl()}/engine/train`, {
       method: 'POST',
       headers: this.headers(),
       body: JSON.stringify(req),

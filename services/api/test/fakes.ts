@@ -8,6 +8,7 @@ import {
   type PricesResult,
   type ProviderTestResult,
   type Quote,
+  type TrainRequest,
 } from '../src/engine/engine.client.js';
 
 /** 离线假 engine 客户端:连通测试返回固定结果,建缓存按预设事件回放。 */
@@ -19,7 +20,41 @@ export class FakeEngineClient implements EngineClient {
     private readonly quotesResult: Record<string, Quote> = {},
     private readonly pricesResult: Record<string, PricesResult> = {},
     private readonly backtestResult: any = null,
+    private readonly trainResult: any = null,
   ) {}
+
+  async train(req: TrainRequest): Promise<any> {
+    // 测试守卫转发:trainResult 形如 {__error:{status,detail}} → 抛 EngineError。
+    if (this.trainResult && this.trainResult.__error) {
+      throw new EngineError(this.trainResult.__error.status, this.trainResult.__error.detail);
+    }
+    return (
+      this.trainResult ?? {
+        model_type: req.model_type ?? 'elasticnet',
+        train_start: req.train_start,
+        train_end: req.train_end,
+        label_horizon: req.label_horizon ?? 5,
+        purge: req.purge ?? req.label_horizon ?? 5,
+        embargo: req.embargo ?? 0,
+        n_folds: 3,
+        n_samples: 360,
+        feature_cols: ['f_ep', 'f_bp', 'f_roe', 'f_mom20'],
+        ic_is: 0.12,
+        ic_oos: 0.08,
+        icir_is: 0.9,
+        icir_oos: 0.6,
+        layered_sharpe_oos: 0.7,
+        layered_annual_return_oos: 0.05,
+        top_quantile: 0.2,
+        feature_importance: [{ feature: 'f_mom20', weight: 0.6 }],
+        fold_metrics: [{ index: 0, n_train: 120, n_test: 60, ic_oos: 0.08 }],
+        model: { type: 'elasticnet', feature_cols: ['f_mom20'], coef: [0.1], intercept: 0.0 },
+        degraded: [],
+        oos_clean: true,
+        metrics_note: '分层口径,非完整回测',
+      }
+    );
+  }
 
   async backtest(req: BacktestRequest): Promise<any> {
     // 测试守卫转发:backtestResult 形如 {__error:{status,detail}} → 抛 EngineError。

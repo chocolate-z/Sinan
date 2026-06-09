@@ -698,4 +698,112 @@ export class Repository {
       degraded_json: undefined,
     };
   }
+
+  // ── 模型版本库(engine 训练,api 落库;红线#6:engine 不写 SQLite)─────────────
+  insertModelVersion(
+    input: { strategy_id?: string | null; name?: string | null },
+    result: {
+      model_type: string;
+      train_start: string;
+      train_end: string;
+      label_horizon: number;
+      purge: number;
+      embargo: number;
+      n_folds: number;
+      n_samples: number;
+      ic_is: number;
+      ic_oos: number;
+      icir_is: number;
+      icir_oos: number;
+      layered_sharpe_oos: number;
+      layered_annual_return_oos: number;
+      oos_clean: boolean;
+      metrics_note?: string;
+      feature_cols?: unknown;
+      feature_importance?: unknown;
+      fold_metrics?: unknown;
+      model?: unknown;
+      degraded?: unknown;
+    },
+  ): string {
+    const id = randomUUID();
+    this.db.run(
+      `INSERT INTO model_versions(id,strategy_id,name,model_type,status,train_start,train_end,
+         label_horizon,purge,embargo,n_folds,n_samples,ic_is,ic_oos,icir_is,icir_oos,
+         layered_sharpe_oos,layered_annual_return_oos,oos_clean,metrics_note,feature_cols_json,
+         feature_importance_json,fold_metrics_json,model_json,degraded_json,created_at)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+      id,
+      input.strategy_id ?? null,
+      input.name ?? null,
+      result.model_type,
+      'draft',
+      result.train_start,
+      result.train_end,
+      result.label_horizon,
+      result.purge,
+      result.embargo,
+      result.n_folds,
+      result.n_samples,
+      result.ic_is,
+      result.ic_oos,
+      result.icir_is,
+      result.icir_oos,
+      result.layered_sharpe_oos,
+      result.layered_annual_return_oos,
+      result.oos_clean ? 1 : 0,
+      result.metrics_note ?? null,
+      JSON.stringify(result.feature_cols ?? []),
+      JSON.stringify(result.feature_importance ?? []),
+      JSON.stringify(result.fold_metrics ?? []),
+      JSON.stringify(result.model ?? null),
+      JSON.stringify(result.degraded ?? []),
+      now(),
+    );
+    return id;
+  }
+
+  modelVersionsList(): any[] {
+    return this.db
+      .all<any>(
+        `SELECT id,strategy_id,name,model_type,status,train_start,train_end,label_horizon,
+           purge,embargo,n_folds,n_samples,ic_is,ic_oos,icir_is,icir_oos,
+           layered_sharpe_oos,layered_annual_return_oos,oos_clean,created_at
+         FROM model_versions ORDER BY created_at DESC`,
+      )
+      .map((r) => ({ ...r, oos_clean: !!r.oos_clean }));
+  }
+
+  modelVersionGet(id: string): any | null {
+    const r = this.db.get<any>('SELECT * FROM model_versions WHERE id=?', id);
+    if (!r) return null;
+    return {
+      ...r,
+      oos_clean: !!r.oos_clean,
+      feature_cols: r.feature_cols_json ? JSON.parse(r.feature_cols_json) : [],
+      feature_importance: r.feature_importance_json ? JSON.parse(r.feature_importance_json) : [],
+      fold_metrics: r.fold_metrics_json ? JSON.parse(r.fold_metrics_json) : [],
+      model: r.model_json ? JSON.parse(r.model_json) : null,
+      degraded: r.degraded_json ? JSON.parse(r.degraded_json) : [],
+      feature_cols_json: undefined,
+      feature_importance_json: undefined,
+      fold_metrics_json: undefined,
+      model_json: undefined,
+      degraded_json: undefined,
+    };
+  }
+
+  /** 激活某模型版本:置为 running,其余 running 降级 archived;若挂策略则回写 active_model_id。 */
+  modelVersionActivate(id: string): any | null {
+    const target = this.db.get<any>('SELECT id, strategy_id FROM model_versions WHERE id=?', id);
+    if (!target) return null;
+    this.db.tx(() => {
+      this.db.run("UPDATE model_versions SET status='archived' WHERE status='running'");
+      this.db.run("UPDATE model_versions SET status='running' WHERE id=?", id);
+      if (target.strategy_id) {
+        this.db.run('UPDATE strategies SET active_model_id=? WHERE id=?', id, target.strategy_id);
+      }
+    });
+    return this.modelVersionGet(id);
+  }
 }

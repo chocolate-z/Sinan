@@ -1,0 +1,146 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { createApp } from '../src/bootstrap.js';
+import { MemorySecretStore } from '../src/secrets/secret-store.js';
+import { FakeEngineClient } from './fakes.js';
+
+const TRAIN = {
+  model_type: 'elasticnet',
+  train_start: '2023-01-01',
+  train_end: '2024-06-30',
+  label_horizon: 5,
+  purge: 5,
+  embargo: 0,
+  n_folds: 4,
+  n_samples: 480,
+  feature_cols: ['f_ep', 'f_bp', 'f_roe', 'f_mom20'],
+  ic_is: 0.11,
+  ic_oos: 0.064,
+  icir_is: 0.85,
+  icir_oos: 0.42,
+  layered_sharpe_oos: 0.73,
+  layered_annual_return_oos: 0.058,
+  top_quantile: 0.2,
+  feature_importance: [
+    { feature: 'f_mom20', weight: 0.55 },
+    { feature: 'f_roe', weight: 0.25 },
+  ],
+  fold_metrics: [{ index: 0, n_train: 120, n_test: 60, ic_oos: 0.07 }],
+  model: {
+    type: 'elasticnet',
+    feature_cols: ['f_ep', 'f_bp', 'f_roe', 'f_mom20'],
+    coef: [0.01, 0.0, 0.02, 0.05],
+    intercept: 0.001,
+  },
+  degraded: ['north_chg5:380/380 天降级(数据缺失)'],
+  oos_clean: true,
+  metrics_note: '样本外 IC/ICIR 为逐日 RankIC;夏普/年化为分层口径,非完整回测。',
+};
+
+async function build(trainResult: any) {
+  const app = await createApp({
+    dbPath: ':memory:',
+    secretStore: new MemorySecretStore(),
+    engineClient: new FakeEngineClient(null, [], null, {}, {}, null, trainResult),
+  });
+  await app.init();
+  const fastify = app.getHttpAdapter().getInstance();
+  await fastify.ready();
+  return { app, fastify };
+}
+
+test('POST /models/train 落库,GET 列表/详情含样本内外 IC + 系数模型 + 诚实标注', async () => {
+  const { app, fastify } = await build(TRAIN);
+  try {
+    let r = await fastify.inject({
+      method: 'POST',
+      url: '/api/v1/models/train',
+      payload: { train_start: '2023-01-01', train_end: '2024-06-30', label_horizon: 5, purge: 5 },
+    });
+    assert.equal(r.statusCode, 201);
+    const created = r.json();
+    assert.ok(created.id);
+    assert.equal(created.ic_oos, 0.064);
+    assert.equal(created.model.type, 'elasticnet');
+
+    // 列表(轻量:样本内外 IC 摘要 + 状态)
+    r = await fastify.inject({ method: 'GET', url: '/api/v1/models' });
+    const list = r.json();
+    assert.equal(list.length, 1);
+    assert.equal(list[0].status, 'draft');
+    assert.equal(list[0].ic_is, 0.11);
+    assert.equal(list[0].ic_oos, 0.064);
+    assert.equal(list[0].oos_clean, true);
+
+    // 详情(含系数模型 + 因子重要度 + 诚实口径标注 + 降级)
+    r = await fastify.inject({ method: 'GET', url: `/api/v1/models/${created.id}` });
+    const got = r.json();
+    assert.equal(got.feature_importance[0].feature, 'f_mom20');
+    assert.equal(got.model.coef.length, 4);
+    assert.match(got.metrics_note, /分层口径/);
+    assert.equal(got.degraded.length, 1);
+    assert.equal(got.icir_oos, 0.42);
+  } finally {
+    await app.close();
+  }
+});
+
+test('POST /models/:id/activate 置为 running', async () => {
+  const { app, fastify } = await build(TRAIN);
+  try {
+    const created = (
+      await fastify.inject({
+        method: 'POST',
+        url: '/api/v1/models/train',
+        payload: { train_start: '2023-01-01', train_end: '2024-06-30' },
+      })
+    ).json();
+    const r = await fastify.inject({
+      method: 'POST',
+      url: `/api/v1/models/${created.id}/activate`,
+    });
+    assert.equal(r.statusCode, 201);
+    assert.equal(r.json().status, 'running');
+    // 列表里该版本为 running
+    const list = (await fastify.inject({ method: 'GET', url: '/api/v1/models' })).json();
+    assert.equal(list[0].status, 'running');
+  } finally {
+    await app.close();
+  }
+});
+
+test('POST /models/train 必填校验 400', async () => {
+  const { app, fastify } = await build(TRAIN);
+  try {
+    const r = await fastify.inject({ method: 'POST', url: '/api/v1/models/train', payload: {} });
+    assert.equal(r.statusCode, 400);
+  } finally {
+    await app.close();
+  }
+});
+
+test('engine 守卫违反(purge<label_horizon) → api 转发 422', async () => {
+  const { app, fastify } = await build({
+    __error: { status: 422, detail: 'purge=1 必须 >= label_horizon=5' },
+  });
+  try {
+    const r = await fastify.inject({
+      method: 'POST',
+      url: '/api/v1/models/train',
+      payload: { train_start: '2023-01-01', train_end: '2024-06-30', label_horizon: 5, purge: 1 },
+    });
+    assert.equal(r.statusCode, 422);
+  } finally {
+    await app.close();
+  }
+});
+
+test('GET /models/:id 不存在 → 404', async () => {
+  const { app, fastify } = await build(TRAIN);
+  try {
+    const r = await fastify.inject({ method: 'GET', url: '/api/v1/models/nope' });
+    assert.equal(r.statusCode, 404);
+  } finally {
+    await app.close();
+  }
+});
