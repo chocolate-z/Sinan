@@ -149,122 +149,134 @@ function fixed(v: number | null | undefined): string {
 
     <p v-if="error" class="msg-err"><Icon name="alert" :size="14" /> {{ error }}</p>
 
-    <!-- 参数表单 -->
-    <div class="card">
-      <div class="card-head">
-        <div>
-          <h3 class="card-title">回测参数</h3>
-          <span class="card-sub"
-            >硬校验:回测起必须晚于「训练截止 + purge 个交易日」,否则拒跑(防虚假回测)</span
-          >
-        </div>
-      </div>
-      <div class="card-pad">
-        <div class="form-grid">
-          <div class="field">
-            <label class="field-label">训练截止</label>
-            <input v-model="form.train_end" class="input mono" type="date" />
-          </div>
-          <div class="field">
-            <label class="field-label">回测起</label>
-            <input v-model="form.backtest_start" class="input mono" type="date" />
-          </div>
-          <div class="field">
-            <label class="field-label">回测止</label>
-            <input v-model="form.backtest_end" class="input mono" type="date" />
-          </div>
-          <div class="field narrow">
-            <label class="field-label">Purge(交易日)</label>
-            <input v-model.number="form.purge" class="input mono" type="number" min="1" />
-          </div>
-          <div class="field narrow">
-            <label class="field-label">基准</label>
-            <input v-model="form.benchmark" class="input mono" />
-          </div>
-          <div class="field btn-cell">
-            <button
-              class="btn btn-primary"
-              :disabled="running || !form.train_end || !form.backtest_start || !form.backtest_end"
-              @click="runBacktest"
-            >
-              {{ running ? '回测中…' : '跑回测' }}
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <template v-if="result">
-      <!-- 绩效指标(6 卡:年化/超额走盈亏色;MaxDD/夏普/IR/跟踪误差 中性)-->
-      <div class="kpis">
-        <div class="card card-pad kpi">
-          <div class="kpi-top"><span class="kpi-k">年化收益</span><span class="cap">ANN</span></div>
-          <div class="kpi-v mono" :class="pnlClass(m.annual_return ?? 0)">
-            {{ signed(m.annual_return) }}
-          </div>
-        </div>
-        <div class="card card-pad kpi">
-          <div class="kpi-top">
-            <span class="kpi-k">超额收益(vs 基准)</span><span class="cap">ALPHA</span>
-          </div>
-          <div class="kpi-v mono" :class="pnlClass(m.excess_return ?? 0)">
-            {{ signed(m.excess_return) }}
-          </div>
-        </div>
-        <div class="card card-pad kpi">
-          <div class="kpi-top">
-            <span class="kpi-k">最大回撤</span><span class="cap">MAX DD</span>
-          </div>
-          <div class="kpi-v mono neutral">
-            {{ m.max_drawdown == null ? '—' : '−' + pct(m.max_drawdown) }}
-          </div>
-        </div>
-        <div class="card card-pad kpi">
-          <div class="kpi-top">
-            <span class="kpi-k">夏普比率</span><span class="cap">SHARPE</span>
-          </div>
-          <div class="kpi-v mono neutral">{{ fixed(m.sharpe) }}</div>
-        </div>
-        <div class="card card-pad kpi">
-          <div class="kpi-top">
-            <span class="kpi-k">信息比率 <span class="kpi-hint">目标 0.5–1.0</span></span
-            ><span class="cap">IR</span>
-          </div>
-          <div class="kpi-v mono neutral">{{ fixed(m.information_ratio) }}</div>
-        </div>
-        <div class="card card-pad kpi">
-          <div class="kpi-top"><span class="kpi-k">跟踪误差</span><span class="cap">TE</span></div>
-          <div class="kpi-v mono neutral">{{ pct(m.tracking_error) }}</div>
-        </div>
-      </div>
-
-      <!-- 净值 vs 基准 + 回撤阴影 + 买卖点 -->
-      <div class="card">
+    <!-- 参数(左列)+ 绩效与净值(右列):有结果时左右双栏,无结果时参数卡全宽 -->
+    <div :class="result ? 'bt-cols' : ''">
+      <!-- 参数表单 -->
+      <div class="card param-card">
         <div class="card-head">
           <div>
-            <h3 class="card-title">净值 vs 基准 · 含买卖点</h3>
+            <h3 class="card-title">回测参数</h3>
             <span class="card-sub"
-              >样本外 · 训练截止 {{ result.train_end }} 之后 · 起点归一化为 1</span
+              >硬校验:回测起必须晚于「训练截止 + purge 个交易日」,否则拒跑(防虚假回测)</span
             >
-          </div>
-          <div class="legend">
-            <span class="lg"><i class="ln port" />模型</span>
-            <span v-if="bench.length" class="lg"><i class="ln bench" />{{ form.benchmark }}</span>
-            <span class="lg"><i class="mk buy" />买</span>
-            <span class="lg"><i class="mk sell" />卖</span>
           </div>
         </div>
         <div class="card-pad">
-          <EquityChart
-            :model="model"
-            :bench="bench"
-            :dd="ddSeries"
-            :markers="chartMarkers"
-            :height="280"
-          />
+          <div class="form-grid">
+            <div class="field">
+              <label class="field-label">训练截止</label>
+              <input v-model="form.train_end" class="input mono" type="date" />
+            </div>
+            <div class="field">
+              <label class="field-label">回测起</label>
+              <input v-model="form.backtest_start" class="input mono" type="date" />
+            </div>
+            <div class="field">
+              <label class="field-label">回测止</label>
+              <input v-model="form.backtest_end" class="input mono" type="date" />
+            </div>
+            <div class="field narrow">
+              <label class="field-label">Purge(交易日)</label>
+              <input v-model.number="form.purge" class="input mono" type="number" min="1" />
+            </div>
+            <div class="field narrow">
+              <label class="field-label">基准</label>
+              <input v-model="form.benchmark" class="input mono" />
+            </div>
+            <div class="field btn-cell">
+              <button
+                class="btn btn-primary"
+                :disabled="running || !form.train_end || !form.backtest_start || !form.backtest_end"
+                @click="runBacktest"
+              >
+                {{ running ? '回测中…' : '跑回测' }}
+              </button>
+            </div>
+          </div>
         </div>
       </div>
 
+      <!-- 右列:KPI 网格 + 净值卡(竖排) -->
+      <div v-if="result" class="bt-right">
+        <!-- 绩效指标(6 卡:年化/超额走盈亏色;MaxDD/夏普/IR/跟踪误差 中性)-->
+        <div class="kpis">
+          <div class="card card-pad kpi">
+            <div class="kpi-top">
+              <span class="kpi-k">年化收益</span><span class="cap">ANN</span>
+            </div>
+            <div class="kpi-v mono" :class="pnlClass(m.annual_return ?? 0)">
+              {{ signed(m.annual_return) }}
+            </div>
+          </div>
+          <div class="card card-pad kpi">
+            <div class="kpi-top">
+              <span class="kpi-k">超额收益(vs 基准)</span><span class="cap">ALPHA</span>
+            </div>
+            <div class="kpi-v mono" :class="pnlClass(m.excess_return ?? 0)">
+              {{ signed(m.excess_return) }}
+            </div>
+          </div>
+          <div class="card card-pad kpi">
+            <div class="kpi-top">
+              <span class="kpi-k">最大回撤</span><span class="cap">MAX DD</span>
+            </div>
+            <div class="kpi-v mono pnl-down">
+              {{ m.max_drawdown == null ? '—' : '−' + pct(m.max_drawdown) }}
+            </div>
+          </div>
+          <div class="card card-pad kpi">
+            <div class="kpi-top">
+              <span class="kpi-k">夏普比率</span><span class="cap">SHARPE</span>
+            </div>
+            <div class="kpi-v mono neutral">{{ fixed(m.sharpe) }}</div>
+          </div>
+          <div class="card card-pad kpi">
+            <div class="kpi-top">
+              <span class="kpi-k">信息比率 <span class="kpi-hint">目标 0.5–1.0</span></span
+              ><span class="cap">IR</span>
+            </div>
+            <div class="kpi-v mono neutral">{{ fixed(m.information_ratio) }}</div>
+          </div>
+          <div class="card card-pad kpi">
+            <div class="kpi-top">
+              <span class="kpi-k">跟踪误差</span><span class="cap">TE</span>
+            </div>
+            <div class="kpi-v mono neutral">{{ pct(m.tracking_error) }}</div>
+          </div>
+        </div>
+
+        <!-- 净值 vs 基准 + 回撤阴影 + 买卖点 -->
+        <div class="card">
+          <div class="card-head">
+            <div>
+              <h3 class="card-title">净值 vs 基准 · 含买卖点</h3>
+              <span class="card-sub"
+                >样本外 · 训练截止 {{ result.train_end }} 之后 · 起点归一化为 1</span
+              >
+            </div>
+            <div class="legend">
+              <span class="lg"><i class="ln port" />模型</span>
+              <span v-if="bench.length" class="lg"><i class="ln bench" />{{ form.benchmark }}</span>
+              <span class="lg"><i class="mk buy" />买</span>
+              <span class="lg"><i class="mk sell" />卖</span>
+            </div>
+          </div>
+          <div class="card-pad">
+            <EquityChart
+              :model="model"
+              :bench="bench"
+              :dd="ddSeries"
+              :markers="chartMarkers"
+              :height="244"
+            />
+          </div>
+        </div>
+      </div>
+      <!-- /bt-right -->
+    </div>
+    <!-- /bt-cols -->
+
+    <template v-if="result">
       <!-- 月度收益热力图 -->
       <div v-if="heatYears.length" class="card">
         <div class="card-head">
@@ -366,7 +378,9 @@ function fixed(v: number | null | undefined): string {
                     <td class="num" :class="pnlClass(r.day_return ?? 0)">
                       {{ signed(r.day_return) }}
                     </td>
-                    <td class="num dim">{{ r.drawdown ? pct(r.drawdown) : '—' }}</td>
+                    <td class="num mono" :class="r.drawdown ? 'pnl-down' : 'dim'">
+                      {{ r.drawdown ? '−' + pct(r.drawdown) : '—' }}
+                    </td>
                   </tr>
                   <tr v-if="selectedDay?.date === r.date" class="snap-row">
                     <td colspan="7">
@@ -384,7 +398,9 @@ function fixed(v: number | null | undefined): string {
                             <span class="snap-code col-code">{{ p.code }}</span>
                             <span class="snap-val mono"
                               >{{ fmtInt(p.shares) }} 股 · {{ fmtInt(Math.round(p.value ?? 0)) }} ·
-                              {{ ((p.value / r.nav) * 100).toFixed(1) }}%</span
+                              {{
+                                r.nav ? (((p.value ?? 0) / r.nav) * 100).toFixed(1) + '%' : '—'
+                              }}</span
                             >
                           </div>
                         </div>
@@ -520,12 +536,31 @@ function fixed(v: number | null | undefined): string {
   border: 0.5px solid color-mix(in srgb, var(--status-err) 30%, transparent);
 }
 
-/* ── 参数表单 ────────────────────────────────────────────────────────────────── */
+/* ── 参数 + 绩效双栏:左 300px 参数竖列,右 1fr(KPI 网格 + 净值)──────────────── */
+.bt-cols {
+  display: grid;
+  grid-template-columns: 300px minmax(0, 1fr);
+  gap: 20px;
+  align-items: start;
+}
+.bt-right {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  min-width: 0;
+}
+
+/* ── 参数表单(全宽时 3 列横排;窄左列时单列竖排,按钮占满)────────────────────── */
 .form-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 14px 16px;
   align-items: end;
+}
+.bt-cols .form-grid {
+  grid-template-columns: 1fr;
+  gap: 13px;
+  align-items: stretch;
 }
 .field {
   display: flex;
@@ -540,12 +575,29 @@ function fixed(v: number | null | undefined): string {
 .field.btn-cell .btn {
   height: 30px;
 }
+.bt-cols .field.btn-cell .btn {
+  width: 100%;
+}
+
+/* 窄屏:双栏退化为单列 */
+@media (max-width: 1080px) {
+  .bt-cols {
+    grid-template-columns: 1fr;
+  }
+  .bt-cols .form-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    align-items: end;
+  }
+  .bt-cols .field.btn-cell .btn {
+    width: auto;
+  }
+}
 
 /* ── 绩效卡 ──────────────────────────────────────────────────────────────────── */
 .kpis {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
-  gap: 16px;
+  gap: 12px;
 }
 .kpi {
   padding: 16px;

@@ -27,10 +27,12 @@ async function load() {
 onMounted(load);
 
 // 日志级别 → 系统状态徽章(红线#1:级别属系统状态通道,绝不用盈亏色)。
+// badge-ok(发光蓝)只留给真正「成功/正常」事件,普通 info/debug 用 badge-idle(中性灰、无发光)避免噪音。
 function levelBadge(level: string): string {
   if (level === 'error') return 'badge-err';
   if (level === 'warn') return 'badge-warn';
-  return 'badge-ok';
+  if (level === 'success' || level === 'ok') return 'badge-ok';
+  return 'badge-idle';
 }
 </script>
 

@@ -32,6 +32,17 @@ const DIR_BADGE: Record<string, string> = {
 function dirBadge(a: string): string {
   return DIR_BADGE[a] ?? 'badge-idle';
 }
+
+// 方向字形:买=▲ 卖=▼ 持有=—,颜色仍由 .badge-* 决定(Status 通道,不占盈亏色)。
+const DIR_GLYPH: Record<string, string> = { buy: '▲', sell: '▼', hold: '—' };
+function dirGlyph(a: string): string {
+  return DIR_GLYPH[a] ?? '—';
+}
+
+// 综合分进度条宽度:score 为 0~1(与 .toFixed(3) 显示口径一致),换算成百分比并夹取 0~100。
+function scorePct(score: number): string {
+  return `${Math.max(0, Math.min(1, score)) * 100}%`;
+}
 </script>
 
 <template>
@@ -101,8 +112,8 @@ function dirBadge(a: string): string {
         <thead>
           <tr>
             <th style="width: 150px">标的</th>
-            <th style="width: 88px">方向</th>
-            <th class="num" style="width: 96px">综合分</th>
+            <th style="width: 78px">方向</th>
+            <th style="width: 120px">综合分</th>
             <th>因子贡献</th>
             <th>入选原因</th>
           </tr>
@@ -117,10 +128,23 @@ function dirBadge(a: string): string {
             </td>
             <td>
               <span class="badge" :class="dirBadge(s.action)">
-                <span class="dot" />{{ actionLabel(s.action) }}
+                <span class="dir-glyph">{{ dirGlyph(s.action) }}</span
+                >{{ actionLabel(s.action) }}
               </span>
             </td>
-            <td class="num score">{{ s.score?.toFixed(3) ?? '—' }}</td>
+            <td>
+              <div v-if="s.score != null" class="score">
+                <span class="mono score-num">{{ s.score.toFixed(3) }}</span>
+                <span class="score-track">
+                  <span
+                    class="score-fill"
+                    :class="{ hi: s.score >= 0.7 }"
+                    :style="{ width: scorePct(s.score) }"
+                  />
+                </span>
+              </div>
+              <span v-else class="cap dim">—</span>
+            </td>
             <td>
               <div class="factors">
                 <span
@@ -160,8 +184,8 @@ function dirBadge(a: string): string {
           <thead>
             <tr>
               <th style="width: 150px">标的</th>
-              <th style="width: 88px">初选方向</th>
-              <th class="num" style="width: 96px">综合分</th>
+              <th style="width: 78px">初选方向</th>
+              <th style="width: 120px">综合分</th>
               <th style="width: 230px">拦截规则</th>
               <th>说明</th>
             </tr>
@@ -176,10 +200,23 @@ function dirBadge(a: string): string {
               </td>
               <td>
                 <span class="badge" :class="dirBadge(s.action)">
-                  <span class="dot" />{{ actionLabel(s.action) }}
+                  <span class="dir-glyph">{{ dirGlyph(s.action) }}</span
+                  >{{ actionLabel(s.action) }}
                 </span>
               </td>
-              <td class="num score">{{ s.score?.toFixed(3) ?? '—' }}</td>
+              <td>
+                <div v-if="s.score != null" class="score">
+                  <span class="mono score-num">{{ s.score.toFixed(3) }}</span>
+                  <span class="score-track">
+                    <span
+                      class="score-fill"
+                      :class="{ hi: s.score >= 0.7 }"
+                      :style="{ width: scorePct(s.score) }"
+                    />
+                  </span>
+                </div>
+                <span v-else class="cap dim">—</span>
+              </td>
               <td>
                 <span class="badge badge-warn"
                   ><span class="dot" />{{ reasonLabel(s.reason) }}</span
@@ -283,10 +320,39 @@ function dirBadge(a: string): string {
   color: var(--text-3);
 }
 
-/* 综合分:中性灰阶,不占任何颜色通道 */
+/* 方向字形:▲▼—,颜色继承 .badge-* */
+.dir-glyph {
+  font-size: 9px;
+  line-height: 1;
+}
+
+/* 综合分:中性灰阶进度条 + mono 数值,不占任何颜色通道 */
 .score {
-  color: var(--text-1);
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+.score-num {
+  font-size: 13px;
   font-weight: 600;
+  color: var(--text-1);
+}
+.score-track {
+  width: 56px;
+  height: 5px;
+  border-radius: 3px;
+  background: var(--bg-input);
+  overflow: hidden;
+  flex: none;
+}
+.score-fill {
+  display: block;
+  height: 100%;
+  border-radius: 3px;
+  background: var(--text-3);
+}
+.score-fill.hi {
+  background: var(--text-1);
 }
 
 /* 因子贡献 chips */

@@ -18,6 +18,10 @@ const selected = ref<string | null>(null);
 const bars = ref<KBar[]>([]);
 const pricesDegraded = ref(false);
 const adjust = ref<'qfq' | 'none'>('qfq');
+// 周期:本地 ref。后端暂无周/月聚合,非「日K」时诚实标注「待接入」,不伪造数据。
+type Timeframe = 'day' | 'week' | 'month';
+const timeframe = ref<Timeframe>('day');
+const tfLabel: Record<Timeframe, string> = { day: '日K', week: '周K', month: '月K' };
 const loadingQuotes = ref(false);
 const loadingPrices = ref(false);
 const error = ref<string | null>(null);
@@ -77,6 +81,11 @@ function changeAdjust(a: 'qfq' | 'none') {
   if (selected.value) loadPrices(selected.value);
 }
 
+function changeTimeframe(t: Timeframe) {
+  // 仅切换本地标注;周/月聚合后端未接入,不重取/不伪造数据。
+  timeframe.value = t;
+}
+
 // ── 涨跌展示(盈亏色)──────────────────────────────────────────────────────
 function chgClass(q: QuoteRow): string {
   const c = quoteChange(q.price, q.prev_close);
@@ -120,6 +129,18 @@ const candleData = computed(() =>
   bars.value.map((b) => ({ o: b.open, h: b.high, l: b.low, c: b.close, v: b.volume ?? 0 })),
 );
 const lastBar = computed<KBar | null>(() => bars.value[bars.value.length - 1] ?? null);
+
+// MA 现值:取末根所在窗口的简单均价(数据足够才有值,否则 null → 图例不显示数字)。
+function lastMA(period: number): number | null {
+  const closes = bars.value.map((b) => b.close);
+  if (closes.length < period) return null;
+  let s = 0;
+  for (let i = closes.length - period; i < closes.length; i++) s += closes[i];
+  return s / period;
+}
+const ma5 = computed(() => lastMA(5));
+const ma10 = computed(() => lastMA(10));
+const ma20 = computed(() => lastMA(20));
 
 const northboundOn = computed(() => capEnabled(app.providers, app.activeProvider, 'NORTHBOUND'));
 const fundamentalOn = computed(() => capEnabled(app.providers, app.activeProvider, 'FUNDAMENTAL'));
@@ -216,11 +237,27 @@ onMounted(() => {
                 </span>
               </div>
             </div>
-            <div class="segmented adjust-seg">
-              <button :class="{ on: adjust === 'qfq' }" @click="changeAdjust('qfq')">前复权</button>
-              <button :class="{ on: adjust === 'none' }" @click="changeAdjust('none')">
-                不复权
-              </button>
+            <div class="dh-controls">
+              <div class="segmented tf-seg">
+                <button :class="{ on: timeframe === 'day' }" @click="changeTimeframe('day')">
+                  日K
+                </button>
+                <button :class="{ on: timeframe === 'week' }" @click="changeTimeframe('week')">
+                  周K
+                </button>
+                <button :class="{ on: timeframe === 'month' }" @click="changeTimeframe('month')">
+                  月K
+                </button>
+              </div>
+              <div class="segmented adjust-seg">
+                <button :class="{ on: adjust === 'qfq' }" @click="changeAdjust('qfq')">
+                  前复权
+                </button>
+                <button class="disabled" disabled title="当前数据源不支持后复权">后复权</button>
+                <button :class="{ on: adjust === 'none' }" @click="changeAdjust('none')">
+                  不复权
+                </button>
+              </div>
             </div>
           </div>
 
@@ -239,10 +276,6 @@ onMounted(() => {
               <div class="mv mono pnl-down">{{ fmt(lastBar.low) }}</div>
             </div>
             <div class="metric">
-              <div class="mk">收盘</div>
-              <div class="mv mono">{{ fmt(lastBar.close) }}</div>
-            </div>
-            <div class="metric">
               <div class="mk">成交量</div>
               <div class="mv mono">
                 {{ lastBar.volume != null ? fmtInt(lastBar.volume) : '—' }}
@@ -252,13 +285,37 @@ onMounted(() => {
               <div class="mk">成交额</div>
               <div class="mv mono">{{ lastBar.amount != null ? fmtInt(lastBar.amount) : '—' }}</div>
             </div>
+            <!-- 市盈率属财务能力位:数据源未接入 → 诚实置灰显示「—」,不用收盘顶替 -->
+            <div class="metric">
+              <div class="mk">市盈率(TTM)</div>
+              <div
+                class="mv mono pe-empty"
+                title="当前数据源不支持财务数据,切换 Tushare Pro 可启用"
+              >
+                —
+              </div>
+            </div>
           </div>
 
           <div class="ma-legend">
-            <span class="lg"><i style="background: #e0b34a" />MA5</span>
-            <span class="lg"><i style="background: #5aa9e6" />MA20</span>
+            <span class="lg"
+              ><i style="background: #e0b34a" />MA5<em v-if="ma5 != null" class="mono">{{
+                fmt(ma5)
+              }}</em></span
+            >
+            <span class="lg"
+              ><i style="background: #5aa9e6" />MA10<em v-if="ma10 != null" class="mono">{{
+                fmt(ma10)
+              }}</em></span
+            >
+            <span class="lg"
+              ><i style="background: #b07ce0" />MA20<em v-if="ma20 != null" class="mono">{{
+                fmt(ma20)
+              }}</em></span
+            >
             <span class="cap seg-note"
-              >{{ adjust === 'qfq' ? '前复权' : '不复权' }} · 日K · 最近 {{ bars.length }} 根</span
+              >{{ adjust === 'qfq' ? '前复权' : '不复权' }} · {{ tfLabel[timeframe] }} · 最近
+              {{ bars.length }} 根</span
             >
           </div>
 
@@ -267,10 +324,17 @@ onMounted(() => {
           </p>
 
           <div class="chart-wrap">
-            <div v-if="loadingPrices" class="empty">
+            <div v-if="timeframe !== 'day'" class="empty">
+              <div class="empty-icon"><Icon name="db" :size="20" /></div>
+              <div class="empty-title">{{ tfLabel[timeframe] }} 待接入</div>
+              <div class="empty-desc">
+                后端暂仅提供日频数据,周/月聚合接入后此处展示对应周期 K 线(不伪造)。
+              </div>
+            </div>
+            <div v-else-if="loadingPrices" class="empty">
               <div class="empty-title">加载 K 线…</div>
             </div>
-            <Candles v-else-if="bars.length" :data="candleData" :height="360" :ma="[5, 20]" />
+            <Candles v-else-if="bars.length" :data="candleData" :height="360" :ma="[5, 10, 20]" />
             <div v-else class="empty">
               <div class="empty-icon"><Icon name="db" :size="20" /></div>
               <div class="empty-title">本地无「{{ selected }}」的行情缓存</div>
@@ -434,8 +498,19 @@ onMounted(() => {
   justify-content: space-between;
   gap: 16px;
   flex-wrap: wrap;
-  padding: 16px 22px;
+  padding: 16px 24px;
   border-bottom: 0.5px solid var(--border-faint);
+}
+.dh-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+/* 不支持的复权项:诚实置灰、不可点 */
+.segmented button.disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
 }
 .dh-left {
   display: flex;
@@ -497,6 +572,10 @@ onMounted(() => {
   color: var(--text-1);
   font-weight: 500;
 }
+/* 财务缺位:中性灰占位,不参与盈亏色 */
+.mv.pe-empty {
+  color: var(--text-3);
+}
 
 /* MA 图例 */
 .ma-legend {
@@ -516,6 +595,11 @@ onMounted(() => {
   width: 12px;
   height: 2px;
   border-radius: 1px;
+}
+.ma-legend .lg em {
+  font-style: normal;
+  color: var(--text-1);
+  font-size: 11.5px;
 }
 .seg-note {
   margin-left: auto;

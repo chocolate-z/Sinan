@@ -27,12 +27,12 @@ const routes: RouteRecordRaw[] = [
   },
   {
     path: '/indicators',
-    component: () => import('../pages/Locked.vue'),
+    component: () => import('../pages/indicators/Indicators.vue'),
     meta: { title: '指标', needsData: true },
   },
   {
     path: '/models',
-    component: () => import('../pages/Locked.vue'),
+    component: () => import('../pages/models/Models.vue'),
     meta: { title: '模型', needsData: true },
   },
   {

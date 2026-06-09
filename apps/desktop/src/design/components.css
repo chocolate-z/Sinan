@@ -410,6 +410,17 @@
   background: var(--bg-panel-2);
   border: 0.5px solid var(--border);
 }
+.empty-title {
+  font-size: var(--fs-h3);
+  font-weight: 600;
+  color: var(--text-1);
+}
+.empty-desc {
+  font-size: var(--fs-sub);
+  color: var(--text-2);
+  max-width: 360px;
+  line-height: 1.55;
+}
 .skel {
   background: linear-gradient(
     90deg,

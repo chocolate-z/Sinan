@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted } from 'vue';
+import { computed, onMounted, ref } from 'vue';
 import { useRouter } from 'vue-router';
 import { useAppStore } from '../../stores/app';
 import { useTradingStore } from '../../stores/trading';
@@ -11,6 +11,16 @@ import Icon from '../../shell/Icon.vue';
 const app = useAppStore();
 const trading = useTradingStore();
 const router = useRouter();
+
+// 净值图周期(图表壳 chrome;数据待接入,切换仅切视图区间标签)。
+const PERIODS = [
+  { key: '1m', label: '近1月' },
+  { key: '6m', label: '近6月' },
+  { key: 'ytd', label: '今年' },
+  { key: 'all', label: '全部' },
+];
+const period = ref('6m');
+const periodLabel = computed(() => PERIODS.find((p) => p.key === period.value)?.label ?? '');
 
 onMounted(() => {
   if (app.onboardingDone) {
@@ -81,7 +91,7 @@ function pct(v: number | null | undefined, dec = 2): string {
               <div class="m-v mono">¥{{ fmt(personalMV, 0) }}</div>
             </div>
             <div class="metric">
-              <div class="m-k">实时</div>
+              <div class="m-k">实时口径</div>
               <div class="m-v mono">
                 {{ trading.livePersonal?.degraded ? '部分缺价' : '现价×持仓' }}
               </div>
@@ -96,6 +106,13 @@ function pct(v: number | null | undefined, dec = 2): string {
           </div>
           <div class="stat-val mono" :class="app.pnlClass(modelDay ?? modelDayPct ?? 0)">
             {{ modelDay != null ? '¥' + formatPnl(modelDay) : pct(modelDayPct) }}
+          </div>
+          <div
+            v-if="modelDay != null && modelDayPct != null"
+            class="stat-delta mono"
+            :class="app.pnlClass(modelDayPct)"
+          >
+            {{ modelDayPct >= 0 ? '▲' : '▼' }} {{ pct(modelDayPct) }}
           </div>
           <div class="hairline" />
           <div class="stat-metrics">
@@ -113,22 +130,41 @@ function pct(v: number | null | undefined, dec = 2): string {
         </div>
       </div>
 
-      <!-- 净值曲线(待接入)+ 今日信号 -->
+      <!-- 净值曲线(待接入)+ 风控闸 -->
       <div class="grid-21">
         <div class="card">
           <div class="card-head">
             <div>
               <h3 class="card-title">模型净值 vs 沪深300</h3>
-              <span class="card-sub">累计净值 · 含回撤 · 样本外</span>
+              <span class="card-sub">累计净值 · 前复权 · 含回撤</span>
             </div>
+            <div class="segmented">
+              <button
+                v-for="p in PERIODS"
+                :key="p.key"
+                :class="{ on: period === p.key }"
+                @click="period = p.key"
+              >
+                {{ p.label }}
+              </button>
+            </div>
+          </div>
+          <div class="eq-legend">
+            <span class="lg"><i class="ln model" />模型净值</span>
+            <span class="lg"><i class="ln bench" />沪深300</span>
+            <span class="lg"><i class="sw dd" />回撤</span>
+            <span class="lg"><i class="mk buy" />买</span>
+            <span class="lg"><i class="mk sell" />卖</span>
           </div>
           <div class="card-pad">
             <div class="empty">
               <div class="empty-icon"><Icon name="market" :size="20" /></div>
               <div class="empty-title">净值曲线待接入</div>
               <div class="empty-desc">
-                到「回测」生成一次样本外净值曲线,或随盘后调度逐日累计后在此展示。
+                到「回测」生成一次样本外净值曲线,或随盘后调度逐日累计后在此展示(模型线=品牌紫,基准=中性虚线,回撤阴影,买卖点
+                ▲蓝/▼橙)。
               </div>
+              <div class="empty-range cap">选定区间 · {{ periodLabel }}</div>
               <button class="btn btn-primary btn-sm" @click="router.push('/backtest')">
                 去回测 →
               </button>
@@ -139,19 +175,41 @@ function pct(v: number | null | undefined, dec = 2): string {
         <div class="card">
           <div class="card-head">
             <div>
-              <h3 class="card-title">今日信号</h3>
-              <span class="card-sub">收盘后由因子模型生成</span>
+              <h3 class="card-title">风控闸</h3>
+              <span class="card-sub">集中度 / 行业暴露 / 波动率 / 当日回撤</span>
             </div>
+            <span class="badge badge-idle"><span class="dot" />待跑一轮</span>
           </div>
           <div class="card-pad">
             <div class="empty">
-              <div class="empty-icon"><Icon name="signals" :size="20" /></div>
-              <div class="empty-title">今日尚未生成信号</div>
-              <div class="empty-desc">到「信号」页盘后跑一轮,产出当日买卖信号与被风控拦截组。</div>
-              <button class="btn btn-secondary btn-sm" @click="router.push('/signals')">
-                去信号 →
-              </button>
+              <div class="empty-icon"><Icon name="shield" :size="20" /></div>
+              <div class="empty-title">风控校验待生成</div>
+              <div class="empty-desc">
+                盘后跑一轮后,这里展示组合集中度、行业暴露、波动率与当日回撤的占用进度与校验项(按用量
+                ok→warn→err 变色)。
+              </div>
             </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 今日信号(整宽) -->
+      <div class="card">
+        <div class="card-head">
+          <div>
+            <h3 class="card-title">今日信号</h3>
+            <span class="card-sub">收盘后由因子模型生成</span>
+          </div>
+          <button class="btn btn-ghost btn-sm" @click="router.push('/signals')">查看全部</button>
+        </div>
+        <div class="card-pad">
+          <div class="empty">
+            <div class="empty-icon"><Icon name="signals" :size="20" /></div>
+            <div class="empty-title">今日尚未生成信号</div>
+            <div class="empty-desc">到「信号」页盘后跑一轮,产出当日买卖信号与被风控拦截组。</div>
+            <button class="btn btn-primary btn-sm" @click="router.push('/signals')">
+              立即跑一轮 →
+            </button>
           </div>
         </div>
       </div>
@@ -179,6 +237,7 @@ function pct(v: number | null | undefined, dec = 2): string {
   display: grid;
   grid-template-columns: minmax(0, 2.1fr) minmax(0, 1fr);
   gap: 20px;
+  align-items: start;
 }
 .stat {
   display: flex;
@@ -209,6 +268,11 @@ function pct(v: number | null | undefined, dec = 2): string {
   line-height: 1;
   letter-spacing: -0.01em;
 }
+.stat-delta {
+  font-size: var(--fs-sub);
+  font-weight: 600;
+  margin-top: -6px;
+}
 .stat-metrics {
   display: flex;
   gap: 24px;
@@ -224,17 +288,55 @@ function pct(v: number | null | undefined, dec = 2): string {
   color: var(--text-1);
   font-weight: 500;
 }
-.empty-title {
-  font-size: var(--fs-h3);
-  font-weight: 600;
-  color: var(--text-1);
-}
-.empty-desc {
+
+/* 净值卡图例 */
+.eq-legend {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 12px 22px 0;
   font-size: var(--fs-sub);
   color: var(--text-2);
-  max-width: 320px;
-  line-height: 1.5;
 }
+.lg {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.ln {
+  width: 14px;
+  height: 0;
+  border-top: 2px solid var(--accent);
+}
+.ln.bench {
+  border-top-style: dashed;
+  border-top-color: var(--benchmark);
+}
+.sw {
+  width: 9px;
+  height: 9px;
+  border-radius: 2px;
+}
+.sw.dd {
+  background: var(--status-err);
+  opacity: 0.55;
+}
+.mk {
+  width: 0;
+  height: 0;
+  border-left: 4px solid transparent;
+  border-right: 4px solid transparent;
+}
+.mk.buy {
+  border-bottom: 7px solid var(--status-ok);
+}
+.mk.sell {
+  border-top: 7px solid var(--status-warn);
+}
+.empty-range {
+  color: var(--text-3);
+}
+
 .guide {
   max-width: 560px;
 }
@@ -277,5 +379,11 @@ function pct(v: number | null | undefined, dec = 2): string {
   margin: 4px 0 0;
   color: var(--text-3);
   font-size: var(--fs-cap);
+}
+
+@media (max-width: 1080px) {
+  .grid-21 {
+    grid-template-columns: 1fr;
+  }
 }
 </style>

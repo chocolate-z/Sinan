@@ -131,7 +131,7 @@ function weightOf(h: { market_value?: number | null }): number | null {
       </div>
 
       <div class="card card-pad sm">
-        <span class="cap">今日盈亏<span class="live-dot" /></span>
+        <span class="cap">今日实时盈亏<span class="live-dot" /></span>
         <span class="sm-val mono" :class="dayPnl != null ? app.pnlClass(dayPnl) : ''">
           {{ dayPnl == null ? '—' : '¥' + formatPnl(dayPnl) }}
         </span>
@@ -168,7 +168,19 @@ function weightOf(h: { market_value?: number | null }): number | null {
             }}
           </span>
         </div>
-        <span class="ch-tag"><i style="background: var(--pnl-up)" />浮盈=PnL</span>
+        <div class="ch-right">
+          <span class="ch-tag"><i style="background: var(--pnl-up)" />浮盈=PnL</span>
+          <button
+            v-if="tab === 'model'"
+            class="btn btn-ghost btn-sm"
+            @click="
+              trading.fetchModel();
+              trading.fetchLivePnl();
+            "
+          >
+            <Icon name="refresh" :size="14" /> 刷新
+          </button>
+        </div>
       </div>
 
       <!-- 个人:增仓表单 -->
@@ -190,6 +202,7 @@ function weightOf(h: { market_value?: number | null }): number | null {
             <th class="num">成本价</th>
             <th class="num">现价</th>
             <th class="num">市值</th>
+            <th class="num">当日盈亏</th>
             <th class="num">浮动盈亏</th>
             <th class="num">盈亏比例</th>
             <th class="num" style="width: 120px">占比</th>
@@ -209,6 +222,9 @@ function weightOf(h: { market_value?: number | null }): number | null {
             <td class="num">{{ h.current_price == null ? '—' : fmt(h.current_price) }}</td>
             <td class="num">
               {{ h.market_value == null ? '—' : fmtInt(Math.round(h.market_value)) }}
+            </td>
+            <td class="num">
+              <span class="c3">—</span>
             </td>
             <td class="num">
               <span v-if="h.float_pnl == null" class="c3">—</span>
@@ -244,6 +260,9 @@ function weightOf(h: { market_value?: number | null }): number | null {
             <td colspan="3"></td>
             <td class="num foot-strong">
               {{ totalMkt == null ? '—' : fmtInt(Math.round(totalMkt)) }}
+            </td>
+            <td class="num">
+              <span class="c3">—</span>
             </td>
             <td class="num">
               <span v-if="totalFloat == null" class="c3">—</span>
@@ -321,6 +340,12 @@ function weightOf(h: { market_value?: number | null }): number | null {
   color: var(--text-3);
 }
 
+/* card-head 右侧 */
+.ch-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
 /* card-head 右侧 PnL 图例 */
 .card-head .ch-tag {
   display: inline-flex;
