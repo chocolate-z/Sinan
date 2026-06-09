@@ -32,6 +32,7 @@ export interface PaperRunRequest {
   benchmark?: string;
   fill?: boolean;
   model?: Record<string, unknown> | null; // 激活的 ML 模型系数;在场则模型打分(M3)
+  custom?: Array<{ name: string; expr: string; group?: string }>; // 启用的自定义因子(无模型时进等权,M4 v3)
 }
 
 export interface Quote {

@@ -176,3 +176,26 @@ test('激活模型后 paper/run 下发模型系数(模型出信号);无激活模
     await app.close();
   }
 });
+
+test('无激活模型时 paper/run 下发启用的自定义因子(进等权选股)', async () => {
+  const { app, fastify, engine } = await build(TRAIN);
+  try {
+    // 保存一个自定义因子(fake validate: 不含 __ → ok)
+    await fastify.inject({
+      method: 'POST',
+      url: '/api/v1/custom-factors',
+      payload: { name: 'cf1', expr: 'close / delay(close, 10) - 1' },
+    });
+    // 无激活模型 → paper/run:model 为 null,custom 含 cf1
+    await fastify.inject({
+      method: 'POST',
+      url: '/api/v1/paper/run',
+      payload: { today: '2024-07-01', effective_date: '2024-07-02' },
+    });
+    assert.equal(engine.lastPaperReq?.model, null);
+    const custom = (engine.lastPaperReq?.custom ?? []) as Array<{ name: string }>;
+    assert.ok(custom.some((c) => c.name === 'cf1'));
+  } finally {
+    await app.close();
+  }
+});
