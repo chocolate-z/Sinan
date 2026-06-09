@@ -13,7 +13,7 @@
 技术形态:**Tauri 2(Rust 外壳)+ Vue3 前端 + 两个 sidecar:api(NestJS+Fastify,:59914)/ engine(FastAPI,:59915)**。
 存储:SQLite(事务元数据,**仅 api 写**)+ DuckDB/parquet(分析大矩阵,**仅 engine 写**)。
 
-**进度:M0 完成、M1 功能闭环完成、行情页 /market 完成、M2 回测引擎完成(四刀闭环 + 红线审计 + 可回溯明细)、回测可回溯(买卖点/持仓/资产/盈亏)完成。当前正在按设计交接稿做「前端整体重写」(见 §9)。** 仓库 **公开**:https://github.com/chocolate-z/Sinan
+**进度:M0 / M1 闭环 / 行情 /market / M2 回测 均完成。前端按设计交接稿「整体重写」完成(9 页 + 收尾删别名/materials.css,见 §9)。M3 v1 训练完成(walk-forward ElasticNet → 样本内外 IC/ICIR → 模型版本库 → /models 真实页 → 激活 → 模型出信号;对抗式红线审计 3 维 PASS,见 §10)。** 仓库 **公开**:https://github.com/chocolate-z/Sinan
 **CI 三 job 全绿**(node / python / rust),每次 push 自动验证。**约 214 个自动化测试**(前端 46)。
 **数据/撮合一律日频,不支持分时(有意设计,契合 A 股 T+1)。**
 
@@ -156,10 +156,19 @@ pnpm --filter @sinan/desktop dev    # 或 (cd apps/desktop && node node_modules/
 - `metrics.daily_returns` 对 `nav=0` 跳过(组合 nav 恒>0 不触发)、`profit_factor` 可返回 inf(回测路径不传 `trade_pnls` 不触发)→ 健壮性可加固。
 - 胜率/盈亏比/换手率未接入回测报告(需成交 FIFO 配对 / 逐日权重)。
 
+**M3 v1 训练(本会话完成,见 §10)**
+
+- ✅ 6 切片闭环:契约(ModelType/ModelStatus + train/models\_\* 端点)→ `training/features.py`+`labels.py`(特征面板/前向标签,黄金测试)→ `training/train.py`+`/engine/train`(walk-forward 训 ElasticNet,样本内外 IC/ICIR,硬守卫 `purge>=label_horizon`)→ api `0005_models` 模型版本库 + `models.ts` → 前端 `/models` 接真实(训练表单/版本卡/明细/激活)→ `factors/model_score_universe` + `run_eod(model=)` **模型出信号**(激活模型驱动每日选股)。
+- 模型 = **线性系数 JSON**(无二进制/无文件/无外联);依赖 scikit-learn(仅训练用,推理纯 polars)。
+- 对抗式红线审计 3 维 **PASS**(无未来函数泄漏 / 真 OOS / 不落库),并硬化(purge 真隔离 + 分层口径 `layered_*`+`metrics_note` 随 JSON 诚实标注)。
+
+**M3 遗留 / v2(非阻断)**:LightGBM + ensemble(已定 v2 再上,做可选 extra 保持轻装);训练长任务走 jobs/SSE(当前同步,小样本足够);把模型评估的「分层口径」夏普换成接 M2 事件驱动回测的真实 OOS 净值(更严)。
+
 **下一个大里程碑(候选)**
 
-- **M3 训练**(`training/device.py` 设备解析已就绪;特征/标签/walk-forward 训 LightGBM/ElasticNet 叠加 + OOS 评估 + 模型版本库;**M2 的 `backtest/splits.py`+`metrics.py` 可直接复用**)。
-- **M4 指标库 UI**(引擎 DSL 已就绪,缺三栏编辑器页 + IC 质检)、**M5 资讯/估值/桌面特性**、**M6 打包分发+自动更新**(release.yml 脚手架已在,需冻结 sidecar)。
+- **M4 指标库 UI 实接**(引擎 DSL 已就绪;`/indicators` 现为诚实空壳,缺真实 IC/ICIR/十分位分层 + 三栏编辑器 + IC 质检)。
+- **M5 资讯/估值/桌面特性**(`/news` 仍锁定)、**M6 打包分发+自动更新**(release.yml 脚手架已在,需冻结 sidecar;本环境 cargo 镜像曾不可达)。
+- 诚实小缺口:总览净值曲线/风控闸仍空(待盘后逐日累计或接回测);回测胜率/盈亏比/换手率未进报告;设置页自动刷新/盘后落库为只读;未用真实 Tushare token 跑过端到端连通。
 
 > **数据/撮合一律日频**:`price` 是日线 OHLCV、撮合走 T+1 开盘价;**不支持分时(日内)交易**——这是契合 A 股 T+1 与多因子选股定位的有意设计,非数据缺陷(用户已确认知悉)。如要分时需新增 `MINUTE_OHLCV` 能力位 + 分钟数据集 + 分钟撮合,且依赖数据源能拿到分钟历史。
 
@@ -234,3 +243,42 @@ pnpm --filter @sinan/desktop dev    # 或 (cd apps/desktop && node node_modules/
 
 - 单页:**保留 `<script setup>` 逻辑/store/api 不动,只重写 `<template>` + `<style scoped>`**;后端缺的数据用**诚实空状态**(`.empty`),**绝不造假数字**(红线#3)。根结构用 `<PageHero>` + `<div class="page-body">`(padding 28、卡片间距 20),不要旧 `.page` 根。
 - ultracode 会话:可用 Workflow 并行 fan-out 多页 + 对抗式审查(注意 schema agent 偶发不调 StructuredOutput → 工作流报失败但文件可能已落盘,需 `git status` 核对 + 自行验证)。
+
+---
+
+## 10. M3 v1 训练里程碑(已完成,接手必读)
+
+把「多因子打分」升级为「ML 训练 + 样本外评估 + 模型版本库 + 模型出信号」。**v1 仅 ElasticNet**(线性,模型=系数 JSON,无二进制/无外联);LightGBM/ensemble 留 v2。
+
+### 10.1 数据流(全程 PIT,红线#1)
+
+```
+features.py build_feature_panel(asof 逐日 compute_factor_matrix → date×code 标准化因子长表)
+labels.py   build_forward_return_labels(hfq[T+h]/hfq[T]-1,前向,尾 h 日 null)
+   └─ train.py run_train: walk_forward(label_horizon,embargo) 切折 → 每折 fit ElasticNet(train)
+        → 逐日 RankIC(IS=train / OOS=test 物理隔离)→ 全段重训得最终系数
+        → TrainResult{ic_is/ic_oos, icir_is/icir_oos, layered_sharpe_oos/layered_annual_return_oos,
+                        metrics_note, feature_importance(|coef|归一), fold_metrics, model{coef,intercept,feature_cols} }
+```
+
+- **关键红线护栏(对抗审计已验,常驻测试已固化)**:① 特征只经 `data.asof`(只见<=T);② 标签是未来但**绝不进特征**(`usable` 来源 `feature_cols`,结构上排除 `'label'`);③ `run_train` 入口硬守卫 `purge>=label_horizon`(`TrainGuardError`→422),且 `effective_embargo=max(embargo,purge-label_horizon)` 让**实际折间隔离 >= purge**(回显名副其实);④ 横截面统计只在当日截面内(沿用 `winsorize_mad`/`zscore`)。
+- **诚实口径(红线#3)**:IC/ICIR 中性通道;夏普/年化是**顶分位等权分层口径(按 horizon 非重叠抽样,无成本/换手)**,字段名带 `layered_` 前缀 + `metrics_note` 随 JSON 下发,**前端勿渲染成「策略真实夏普」**。样本内外并列存。
+
+### 10.2 落库与端点(红线#6:engine 只算不写库)
+
+- 契约:`ModelType=[elasticnet]` / `ModelStatus=[draft,running,archived]`(与 JobStatus 解耦);端点 engine `train`、api `models_train/list/get/activate`。
+- engine `/engine/train`(仿 `/engine/backtest`,守卫 422 / 无缓存 400)。
+- api `0005_models.sql`(`model_versions`,`model_type/status` CHECK 由契约守护,`test_sql_contract` 白名单已纳入)+ `Repository.{insertModelVersion,modelVersionsList,modelVersionGet,modelVersionActivate,activeModel}` + `modules/models.ts`。
+- 前端 `/models`(`pages/models/Models.vue`):训练表单 → `POST /models/train`;真实版本卡(状态/样本外 IC/ICIR/分层夏普/诚实样本外徽标/激活);明细(样本内外 IC 并列 + 因子重要度条 + 逐折 OOS IC + `metrics_note` 诚实条)。
+
+### 10.3 模型出信号(闭环)
+
+- `factors/model_score_universe(ctx, model)`:`score=intercept+Σcoef·f`(同一 asof 特征,纯 polars 无 sklearn);缺失特征按 0(z-score 中性)计。
+- `paper/runner.py run_eod(model=...)`:有模型用模型打分替换等权 `score_universe`,否则等权(诚实降级)。`/engine/paper/run` 透传 `model`。
+- api `PaperService.run` 取 `repo.activeModel()`(running 模型系数)经 `paper_run` 下发 engine → 激活模型真正驱动每日选股。
+
+### 10.4 关键文件
+
+`services/engine/sinan/training/{features,labels,train,device}.py`、`factors/score.py`(`model_score_universe`)、`paper/runner.py`、`app.py`(`/engine/train`、`PaperRunReq.model`);`services/api/src/{db/migrations/0005_models.sql,db/repository.ts,engine/engine.client.ts,modules/models.ts}`;`apps/desktop/src/pages/models/Models.vue`。测试:`tests/test_training_{data,train}.py`、`test_model_signals.py`、`api/test/models.test.ts`。
+
+> 改训练相关代码后,建议再跑一次 §6 的对抗式红线审计(本里程碑那次抓出 purge 语义瑕疵 + 分层口径标注不够硬,均已修)。
