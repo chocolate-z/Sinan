@@ -22,5 +22,7 @@
   "TradeSide": ["buy", "sell"],
   "TradeReason": ["signal", "stop_loss", "take_profit", "rank_out", "market_filter", "manual"],
   "LogLevel": ["debug", "info", "warn", "error"],
-  "OnboardingStep": ["welcome", "select_source", "credential", "test", "build_cache", "done"]
+  "OnboardingStep": ["welcome", "select_source", "credential", "test", "build_cache", "done"],
+  "ModelType": ["elasticnet"],
+  "ModelStatus": ["draft", "running", "archived"]
 }

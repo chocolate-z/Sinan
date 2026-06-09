@@ -73,6 +73,12 @@ export const ONBOARDING_STEPS = [
 ] as const;
 export type OnboardingStep = (typeof ONBOARDING_STEPS)[number];
 
+export const MODEL_TYPES = ['elasticnet'] as const;
+export type ModelType = (typeof MODEL_TYPES)[number];
+
+export const MODEL_STATUSES = ['draft', 'running', 'archived'] as const;
+export type ModelStatus = (typeof MODEL_STATUSES)[number];
+
 /** 镜像所有枚举,供 consistency 测试逐项与 spec/enums.json 比对。 */
 export const ENUM_MIRROR: Record<string, readonly string[]> = {
   Provider: PROVIDERS,
@@ -88,4 +94,6 @@ export const ENUM_MIRROR: Record<string, readonly string[]> = {
   TradeReason: TRADE_REASONS,
   LogLevel: LOG_LEVELS,
   OnboardingStep: ONBOARDING_STEPS,
+  ModelType: MODEL_TYPES,
+  ModelStatus: MODEL_STATUSES,
 };

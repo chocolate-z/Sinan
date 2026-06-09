@@ -43,7 +43,11 @@
     "prices_get": { "method": "GET", "path": "/prices/:code" },
     "backtests_create": { "method": "POST", "path": "/backtests" },
     "backtests_list": { "method": "GET", "path": "/backtests" },
-    "backtests_get": { "method": "GET", "path": "/backtests/:id" }
+    "backtests_get": { "method": "GET", "path": "/backtests/:id" },
+    "models_train": { "method": "POST", "path": "/models/train" },
+    "models_list": { "method": "GET", "path": "/models" },
+    "models_get": { "method": "GET", "path": "/models/:id" },
+    "models_activate": { "method": "POST", "path": "/models/:id/activate" }
   },
   "engine": {
     "health": { "method": "GET", "path": "/healthz" },
@@ -57,6 +61,7 @@
     "indicators_validate": { "method": "POST", "path": "/engine/indicators/validate" },
     "device": { "method": "GET", "path": "/engine/device" },
     "paper_run": { "method": "POST", "path": "/engine/paper/run" },
-    "backtest": { "method": "POST", "path": "/engine/backtest" }
+    "backtest": { "method": "POST", "path": "/engine/backtest" },
+    "train": { "method": "POST", "path": "/engine/train" }
   }
 }

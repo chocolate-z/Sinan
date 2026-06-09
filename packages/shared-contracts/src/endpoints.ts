@@ -54,6 +54,10 @@ export const API_ENDPOINTS = {
   backtests_create: { method: 'POST', path: '/backtests' },
   backtests_list: { method: 'GET', path: '/backtests' },
   backtests_get: { method: 'GET', path: '/backtests/:id' },
+  models_train: { method: 'POST', path: '/models/train' },
+  models_list: { method: 'GET', path: '/models' },
+  models_get: { method: 'GET', path: '/models/:id' },
+  models_activate: { method: 'POST', path: '/models/:id/activate' },
 } as const satisfies Record<string, EndpointDef>;
 
 /** api ↔ engine 内部(:59915,X-Sinan-Internal)。 */
@@ -70,6 +74,7 @@ export const ENGINE_ENDPOINTS = {
   device: { method: 'GET', path: '/engine/device' },
   paper_run: { method: 'POST', path: '/engine/paper/run' },
   backtest: { method: 'POST', path: '/engine/backtest' },
+  train: { method: 'POST', path: '/engine/train' },
 } as const satisfies Record<string, EndpointDef>;
 
 /** 把含 :param 的路径模板填充为具体路径。 */

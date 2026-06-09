@@ -48,6 +48,10 @@ API_ENDPOINTS: dict[str, dict[str, str]] = {
     "backtests_create": {"method": "POST", "path": "/backtests"},
     "backtests_list": {"method": "GET", "path": "/backtests"},
     "backtests_get": {"method": "GET", "path": "/backtests/:id"},
+    "models_train": {"method": "POST", "path": "/models/train"},
+    "models_list": {"method": "GET", "path": "/models"},
+    "models_get": {"method": "GET", "path": "/models/:id"},
+    "models_activate": {"method": "POST", "path": "/models/:id/activate"},
 }
 
 ENGINE_ENDPOINTS: dict[str, dict[str, str]] = {
@@ -63,6 +67,7 @@ ENGINE_ENDPOINTS: dict[str, dict[str, str]] = {
     "device": {"method": "GET", "path": "/engine/device"},
     "paper_run": {"method": "POST", "path": "/engine/paper/run"},
     "backtest": {"method": "POST", "path": "/engine/backtest"},
+    "train": {"method": "POST", "path": "/engine/train"},
 }
 
 _PARAM_RE = re.compile(r":([A-Za-z_][A-Za-z0-9_]*)")

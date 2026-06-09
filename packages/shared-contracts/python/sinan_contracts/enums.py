@@ -106,6 +106,16 @@ class OnboardingStep(_StrEnum):
     DONE = "done"
 
 
+class ModelType(_StrEnum):
+    ELASTICNET = "elasticnet"
+
+
+class ModelStatus(_StrEnum):
+    DRAFT = "draft"
+    RUNNING = "running"
+    ARCHIVED = "archived"
+
+
 # 供 consistency 测试逐项比对 spec/enums.json。
 ENUM_MIRROR: dict[str, list[str]] = {
     "Provider": [e.value for e in Provider],
@@ -121,4 +131,6 @@ ENUM_MIRROR: dict[str, list[str]] = {
     "TradeReason": [e.value for e in TradeReason],
     "LogLevel": [e.value for e in LogLevel],
     "OnboardingStep": [e.value for e in OnboardingStep],
+    "ModelType": [e.value for e in ModelType],
+    "ModelStatus": [e.value for e in ModelStatus],
 }
