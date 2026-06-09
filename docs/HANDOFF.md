@@ -13,8 +13,8 @@
 技术形态:**Tauri 2(Rust 外壳)+ Vue3 前端 + 两个 sidecar:api(NestJS+Fastify,:59914)/ engine(FastAPI,:59915)**。
 存储:SQLite(事务元数据,**仅 api 写**)+ DuckDB/parquet(分析大矩阵,**仅 engine 写**)。
 
-**进度:M0 / M1 闭环 / 行情 /market / M2 回测 均完成。前端按设计交接稿「整体重写」完成(9 页 + 收尾删别名/materials.css,见 §9)。M3 v1 训练完成(walk-forward ElasticNet → 样本内外 IC/ICIR → 模型版本库 → /models 真实页 → 激活 → 模型出信号;对抗式红线审计 3 维 PASS,见 §10)。** 仓库 **公开**:https://github.com/chocolate-z/Sinan
-**CI 三 job 全绿**(node / python / rust),每次 push 自动验证。**约 214 个自动化测试**(前端 46)。
+**进度:M0 / M1 闭环 / 行情 /market / M2 回测 均完成。前端按设计交接稿「整体重写」完成(9 页 + 收尾删别名/materials.css,见 §9)。M3 v1 训练完成(walk-forward ElasticNet → 样本内外 IC/ICIR → 模型版本库 → /models 真实页 → 激活 → 模型出信号;对抗式红线审计 3 维 PASS,见 §10)。M4 v1 指标库实接完成(`/indicators` 真实因子质检:逐因子 IC 均值/ICIR/覆盖度 + IC 时序 + 十分位分层,复用 M3 特征面板+前向标签+rank_ic)。** 仓库 **公开**:https://github.com/chocolate-z/Sinan
+**CI 三 job 全绿**(node / python / rust),每次 push 自动验证。**约 250 个自动化测试**(前端 46)。
 **数据/撮合一律日频,不支持分时(有意设计,契合 A 股 T+1)。**
 
 已实现(可运行、带测试):
@@ -166,8 +166,9 @@ pnpm --filter @sinan/desktop dev    # 或 (cd apps/desktop && node node_modules/
 
 **下一个大里程碑(候选)**
 
-- **M4 指标库 UI 实接**(引擎 DSL 已就绪;`/indicators` 现为诚实空壳,缺真实 IC/ICIR/十分位分层 + 三栏编辑器 + IC 质检)。
-- **M5 资讯/估值/桌面特性**(`/news` 仍锁定)、**M6 打包分发+自动更新**(release.yml 脚手架已在,需冻结 sidecar;本环境 cargo 镜像曾不可达)。
+- ✅ **M4 v1 指标库实接(本会话完成)**:`factors/quality.py`(复用 M3 特征面板+前向标签+`rank_ic`,逐因子真实 IC 均值/ICIR/覆盖度 + IC 时序 + 十分位分层)+ `/engine/factors/quality` + api `GET /indicators/quality`(按需重算不落库)+ 前端 `/indicators`(质检区间表单 → 因子表 + 详情 `ui/charts/{ICChart,DecileBars}.vue`)。契约 `indicators_quality`/`factors_quality` 端点。
+- **M4 v2**(指标库剩余):自定义因子**三栏 DSL 编辑器**(引擎 `indicators/` 安全沙箱 + `/engine/indicators/validate` 已就绪,缺前端编辑页 + 因子启用/权重落库)。
+- **M5 资讯/估值/桌面特性**(`/news` 仍锁定)、**M6 打包分发+自动更新**(release.yml 脚手架已在,需冻结 sidecar;**本环境 cargo 镜像曾不可达**)。
 - 诚实小缺口:总览净值曲线/风控闸仍空(待盘后逐日累计或接回测);回测胜率/盈亏比/换手率未进报告;设置页自动刷新/盘后落库为只读;未用真实 Tushare token 跑过端到端连通。
 
 > **数据/撮合一律日频**:`price` 是日线 OHLCV、撮合走 T+1 开盘价;**不支持分时(日内)交易**——这是契合 A 股 T+1 与多因子选股定位的有意设计,非数据缺陷(用户已确认知悉)。如要分时需新增 `MINUTE_OHLCV` 能力位 + 分钟数据集 + 分钟撮合,且依赖数据源能拿到分钟历史。
