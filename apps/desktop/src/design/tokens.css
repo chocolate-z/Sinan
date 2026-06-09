@@ -14,11 +14,11 @@
   --sp-6: 32px;
   --sp-7: 48px;
 
-  /* 圆角(macOS 连续圆角观感,偏大) */
-  --r-sm: 6px;
-  --r-md: 8px;
-  --r-lg: 12px;
-  --r-xl: 18px;
+  /* 圆角(深色专业工具风,偏小、克制) */
+  --r-sm: 4px;
+  --r-md: 5px;
+  --r-lg: 7px;
+  --r-xl: 10px;
   --r-pill: 999px;
 
   /* 字体:SF 优先,Win/中文优雅回退 */
@@ -94,42 +94,44 @@
   --ring: 0 0 0 3.5px rgba(0, 122, 255, 0.35);
 }
 
+/* 深色 = 专业开发工具风(Trae/VS Code 系):近黑深空灰、冷峻、低对比、靠细描边分层。 */
 [data-theme='dark'] {
-  --c-bg: #1c1c1e;
-  --c-surface: #2c2c2e;
-  --c-surface-2: #3a3a3c;
-  --c-elevated: #323234;
-  --c-sidebar: rgba(38, 38, 41, 0.72);
-  --c-titlebar: rgba(38, 38, 41, 0.8);
+  --c-bg: #1a1b1e; /* 主背景:近黑深空灰 */
+  --c-surface: #202125; /* 面板/卡片:比 bg 略亮一档 */
+  --c-surface-2: #282a2f; /* 次级/hover */
+  --c-elevated: #26282d; /* 弹层 */
+  --c-sidebar: #16171a; /* 侧栏更深 */
+  --c-titlebar: #16171a; /* 标题栏与侧栏同深 */
 
-  --c-border: #38383a;
-  --c-border-strong: #48484a;
-  --c-hairline: rgba(255, 255, 255, 0.1);
+  --c-border: #2c2e33; /* 细描边(分层主力) */
+  --c-border-strong: #3a3d44;
+  --c-hairline: rgba(255, 255, 255, 0.06);
 
-  --c-text: #f5f5f7;
-  --c-text-2: rgba(235, 235, 245, 0.62);
-  --c-text-3: #8e8e93;
+  --c-text: #d7dae0; /* 柔白,非纯白(护眼) */
+  --c-text-2: #9a9ea7;
+  --c-text-3: #6b6f78;
 
-  --accent: #0a84ff;
-  --accent-hover: #3d9bff;
-  --accent-weak: rgba(10, 132, 255, 0.22);
+  --accent: #4c8dff; /* IDE 亮蓝(选中/交互) */
+  --accent-hover: #6aa1ff;
+  --accent-weak: rgba(76, 141, 255, 0.16);
   --accent-contrast: #ffffff;
 
-  --pnl-pos: #ff6961;
-  --pnl-neg: #3dbb82;
+  --pnl-pos: #f25c54; /* 红涨(深色下略提亮度,仍克制) */
+  --pnl-neg: #36b37e; /* 绿跌 */
   --pnl-up: var(--pnl-pos);
   --pnl-down: var(--pnl-neg);
-  --pnl-flat: #98989d;
+  --pnl-flat: #8a8f99;
 
-  --st-ok: #0a84ff;
-  --st-warn: #ff9f0a;
-  --st-err: #ff453a;
-  --st-info: #0a84ff;
+  --st-ok: #4c8dff;
+  --st-warn: #e0a23a;
+  --st-err: #e5564b;
+  --st-info: #4c8dff;
 
-  --shadow-1: 0 0.5px 1px rgba(0, 0, 0, 0.3), 0 1px 2px rgba(0, 0, 0, 0.36);
-  --shadow-2: 0 2px 6px rgba(0, 0, 0, 0.4), 0 10px 28px rgba(0, 0, 0, 0.5);
-  --shadow-3: 0 16px 48px rgba(0, 0, 0, 0.6);
-  --ring: 0 0 0 3.5px rgba(10, 132, 255, 0.4);
+  /* 阴影极弱:工具风靠描边分层,不靠浮起;shadow-1 退化为一道描边。 */
+  --shadow-1: 0 0 0 1px rgba(0, 0, 0, 0.25);
+  --shadow-2: 0 2px 10px rgba(0, 0, 0, 0.4);
+  --shadow-3: 0 10px 30px rgba(0, 0, 0, 0.55);
+  --ring: 0 0 0 2px rgba(76, 141, 255, 0.45);
 }
 
 /* 用户偏好涨跌反转:只交换盈亏映射(经 pos/neg 基准,无循环引用),不动系统色。 */

@@ -28,7 +28,7 @@ export const useAppStore = defineStore('app', {
   state: (): AppState => ({
     onboardingDone: false,
     step: 'welcome',
-    themePref: 'system',
+    themePref: 'dark',
     systemDark: false,
     pnlInvert: false,
     apiHealth: false,
