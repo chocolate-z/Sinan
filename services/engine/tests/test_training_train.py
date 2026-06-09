@@ -11,8 +11,9 @@ import pytest
 from fastapi.testclient import TestClient
 
 from sinan import app as appmod
+from sinan.backtest.splits import walk_forward
 from sinan.data import DataLayer, store
-from sinan.training import TrainGuardError, run_train
+from sinan.training import TrainGuardError, build_feature_panel, run_train
 
 CODES = ["600519.SH", "000001.SZ", "600036.SH", "000333.SZ", "601318.SH", "600000.SH"]
 
@@ -127,6 +128,44 @@ def test_train_paired_is_oos_and_model(tmp_path):
     import json
 
     json.dumps(res.to_dict())  # 全字段可 JSON 序列化(经 api 落库)
+
+
+def test_feature_cols_never_contain_label(tmp_path):
+    """结构性守卫:特征列永不含 'label' —— 标签当特征是最直接的泄漏路径,从源头封死。"""
+    dates = _dates(40)
+    _write(tmp_path / "c", _signal_frames(dates))
+    fp = build_feature_panel(DataLayer(tmp_path / "c"), CODES, dates)
+    assert "label" not in fp.feature_cols
+    assert all(c.startswith("f_") for c in fp.feature_cols)
+
+
+def test_purge_widens_isolation_and_disjoint():
+    """purge 真隔离:effective_embargo=max(embargo,purge-horizon) 使每折 train/test 间隔 >= purge 且不相交。"""
+    dates = [f"d{i:03d}" for i in range(120)]
+    horizon, embargo, purge = 5, 0, 12
+    eff = max(embargo, purge - horizon)
+    folds = walk_forward(dates, train_span=40, test_span=20, label_horizon=horizon, embargo=eff)
+    assert folds
+    idx = {d: i for i, d in enumerate(dates)}
+    for f in folds:
+        gap = idx[f.test[0]] - idx[f.train[-1]]
+        assert gap >= purge, f"折 {f.index} 隔离 {gap} < purge {purge}"
+        assert set(f.train).isdisjoint(set(f.test))
+
+
+def test_layered_metrics_carry_honest_note(tmp_path):
+    """红线#3 硬化:分层口径夏普/年化以 layered_ 前缀 + metrics_note 随 JSON 下发,诚实标注不依赖注释。"""
+    dates = _dates(100)
+    _write(tmp_path / "c", _signal_frames(dates))
+    res = run_train(
+        DataLayer(tmp_path / "c"), codes=CODES, trading_dates=dates,
+        train_start=dates[0], train_end=dates[-1], label_horizon=5, purge=5,
+        train_span=30, test_span=15,
+    )
+    d = res.to_dict()
+    assert "layered_sharpe_oos" in d and "layered_annual_return_oos" in d
+    assert "sharpe_oos" not in d and "annual_return_oos" not in d
+    assert "分层" in d["metrics_note"] and "非完整" in d["metrics_note"]
 
 
 def test_train_route_guard_and_success(tmp_path, monkeypatch):

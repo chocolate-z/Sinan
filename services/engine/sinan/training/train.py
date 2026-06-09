@@ -50,10 +50,11 @@ class TrainResult:
     ic_oos: float
     icir_is: float
     icir_oos: float
-    # OOS 顶分位分层口径(非完整回测,诚实标注)
-    sharpe_oos: float
-    annual_return_oos: float
+    # OOS 顶分位分层口径(非完整回测,诚实标注随字段名 + metrics_note 一并下发)
+    layered_sharpe_oos: float
+    layered_annual_return_oos: float
     top_quantile: float
+    metrics_note: str
     feature_importance: list[dict]  # [{feature, weight}](|coef| 归一)
     fold_metrics: list[dict]  # [{index, n_train, n_test, ic_oos}]
     model: dict  # {type, feature_cols, coef, intercept, alpha, l1_ratio, label_horizon}
@@ -147,12 +148,15 @@ def run_train(
     if not usable:
         raise ValueError("无可用特征列(因子全部降级);请检查数据缓存覆盖。")
 
+    # purge 须真正参与切分:walk_forward 在 train 尾剔 label_horizon+embargo;若用户为求保守传了
+    # 更大的 purge,放大 embargo 使实际隔离 = max(label_horizon+embargo, purge),令回显 purge 名副其实。
+    effective_embargo = max(embargo, purge - label_horizon)
     folds = walk_forward(
         train_dates,
         train_span=train_span,
         test_span=test_span,
         label_horizon=label_horizon,
-        embargo=embargo,
+        embargo=effective_embargo,
     )
     if not folds:
         raise ValueError(
@@ -237,9 +241,13 @@ def run_train(
         ic_oos=round(sum(ic_oos_series) / len(ic_oos_series), 4) if ic_oos_series else 0.0,
         icir_is=round(metrics.icir(ic_is_series), 4),
         icir_oos=round(metrics.icir(ic_oos_series), 4),
-        sharpe_oos=round(sharpe_oos, 4),
-        annual_return_oos=round(annual_oos, 4),
+        layered_sharpe_oos=round(sharpe_oos, 4),
+        layered_annual_return_oos=round(annual_oos, 4),
         top_quantile=top_quantile,
+        metrics_note=(
+            "样本外 IC/ICIR 为逐日 RankIC 口径;夏普/年化为顶分位等权分层口径"
+            "(按 horizon 非重叠抽样,无交易成本/换手/T+1 撮合),非完整事件驱动回测,勿读作策略真实收益。"
+        ),
         feature_importance=feature_importance,
         fold_metrics=fold_metrics,
         model={
