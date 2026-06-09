@@ -1,0 +1,156 @@
+"""M3 切片3 自测:walk-forward 训练器 + /engine/train 路由 + 红线守卫。
+
+- 红线#1 硬守卫:purge < label_horizon 必拒(TrainGuardError / 路由 422)。
+- 可学习性:构造「动量信号」合成盘(每股固定漂移 g_i),mom20 与前向收益同序 → OOS IC 高、
+  特征重要度以 f_mom20 为首。
+- 红线#3 诚实:样本内外 IC 并列返回;其余因子无信息时权重≈0(不夸大)。
+"""
+
+import polars as pl
+import pytest
+from fastapi.testclient import TestClient
+
+from sinan import app as appmod
+from sinan.data import DataLayer, store
+from sinan.training import TrainGuardError, run_train
+
+CODES = ["600519.SH", "000001.SZ", "600036.SH", "000333.SZ", "601318.SH", "600000.SH"]
+
+
+def _dates(n: int):
+    # 用纯数字交易日串(便于排序),避免月份进位。
+    return [f"2024{1 + i // 28:02d}{1 + i % 28:02d}" for i in range(n)]
+
+
+def _signal_frames(dates):
+    """动量信号盘:股 i 日漂移 g_i(单调),mom20 与前向收益同序;其余因子常量(无信息)。"""
+    price, adj, basic = [], [], []
+    for ci, code in enumerate(CODES):
+        g = -0.002 + ci * 0.001
+        for di, d in enumerate(dates):
+            close = 10.0 * ((1.0 + g) ** di)
+            price.append({
+                "stock_code": code, "trade_date": d,
+                "open": close, "high": close, "low": close, "close": close,
+                "volume": 1000.0, "amount": close * 1000.0,
+            })
+            adj.append({"stock_code": code, "trade_date": d, "adj_factor": 1.0})
+            basic.append({  # pe/pb 常量 → ep/bp 截面无方差(无信息)
+                "stock_code": code, "trade_date": d,
+                "pe_ttm": 15.0, "pb": 1.5, "ps_ttm": 5.0,
+                "total_mv": 1e6, "circ_mv": 8e5, "turnover_rate": 1.5, "dv_ttm": 2.0,
+            })
+    fundamental = [
+        {"stock_code": code, "end_date": "2023-12-31", "ann_date": "20240105", "roe": 8.0}
+        for code in CODES
+    ]
+    return {
+        "price": pl.DataFrame(price),
+        "adj_factor": pl.DataFrame(adj),
+        "daily_basic": pl.DataFrame(basic),
+        "fundamental": pl.DataFrame(fundamental),
+        # 故意无 northbound → north_chg5 全降级(测试诚实降级路径)。
+    }
+
+
+def _write(cache, frames):
+    for ds, df in frames.items():
+        store.write_dataset(cache, ds, df)
+
+
+def test_train_guard_purge_lt_horizon(tmp_path):
+    dates = _dates(60)
+    _write(tmp_path / "c", _signal_frames(dates))
+    with pytest.raises(TrainGuardError):
+        run_train(
+            DataLayer(tmp_path / "c"),
+            codes=CODES,
+            trading_dates=dates,
+            train_start=dates[0],
+            train_end=dates[-1],
+            label_horizon=5,
+            purge=2,  # < label_horizon → 拒
+            train_span=20,
+            test_span=10,
+        )
+
+
+def test_train_recovers_momentum_signal(tmp_path):
+    dates = _dates(100)
+    _write(tmp_path / "c", _signal_frames(dates))
+    res = run_train(
+        DataLayer(tmp_path / "c"),
+        codes=CODES,
+        trading_dates=dates,
+        train_start=dates[0],
+        train_end=dates[-1],
+        label_horizon=5,
+        purge=5,
+        train_span=30,
+        test_span=15,
+    )
+    assert res.n_folds > 0
+    assert res.oos_clean is True
+    # 动量信号 → 样本外 RankIC 应显著为正。
+    assert res.ic_oos > 0.5, f"OOS IC 未恢复动量信号: {res.ic_oos}"
+    # 特征重要度以 f_mom20 为首(其余因子常量无信息 → 权重≈0)。
+    assert res.feature_importance[0]["feature"] == "f_mom20"
+    # north 因无数据被全局降级,不入可用特征。
+    assert "f_north_chg5" not in res.feature_cols
+    assert any("north_chg5" in d for d in res.degraded)
+
+
+def test_train_paired_is_oos_and_model(tmp_path):
+    dates = _dates(100)
+    _write(tmp_path / "c", _signal_frames(dates))
+    res = run_train(
+        DataLayer(tmp_path / "c"),
+        codes=CODES,
+        trading_dates=dates,
+        train_start=dates[0],
+        train_end=dates[-1],
+        label_horizon=5,
+        purge=5,
+        train_span=30,
+        test_span=15,
+    )
+    # 样本内外并列(红线#3)。
+    assert isinstance(res.ic_is, float) and isinstance(res.ic_oos, float)
+    assert len(res.fold_metrics) == res.n_folds
+    # 特征重要度归一(|coef| 占比和≈1,允许全零兜底)。
+    total = sum(f["weight"] for f in res.feature_importance)
+    assert abs(total - 1.0) < 1e-6 or total == 0.0
+    # 模型 = 线性系数 JSON(无二进制),可直接序列化。
+    assert res.model["type"] == "elasticnet"
+    assert len(res.model["coef"]) == len(res.feature_cols)
+    assert "intercept" in res.model
+    import json
+
+    json.dumps(res.to_dict())  # 全字段可 JSON 序列化(经 api 落库)
+
+
+def test_train_route_guard_and_success(tmp_path, monkeypatch):
+    monkeypatch.setenv("SINAN_DATA_DIR", str(tmp_path))
+    dates = _dates(100)
+    _write(tmp_path / "cache", _signal_frames(dates))  # config.cache_dir() == SINAN_DATA_DIR/cache
+    client = TestClient(appmod.app)
+
+    # 422:purge < label_horizon。
+    bad = client.post(
+        "/engine/train",
+        json={"train_start": dates[0], "train_end": dates[-1], "label_horizon": 5, "purge": 1,
+              "train_span": 30, "test_span": 15},
+    )
+    assert bad.status_code == 422
+
+    # 200:正常训练,返回样本外 IC 与模型。
+    ok = client.post(
+        "/engine/train",
+        json={"train_start": dates[0], "train_end": dates[-1], "label_horizon": 5, "purge": 5,
+              "train_span": 30, "test_span": 15},
+    )
+    assert ok.status_code == 200, ok.text
+    body = ok.json()
+    assert body["ic_oos"] > 0.5
+    assert body["model"]["type"] == "elasticnet"
+    assert body["oos_clean"] is True

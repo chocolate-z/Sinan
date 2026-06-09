@@ -3,6 +3,7 @@
 from .device import DeviceConfig, detect_gpu, resolve_device
 from .features import FeaturePanel, build_feature_panel
 from .labels import build_forward_return_labels
+from .train import TrainGuardError, TrainResult, run_train
 
 __all__ = [
     "DeviceConfig",
@@ -11,4 +12,7 @@ __all__ = [
     "FeaturePanel",
     "build_feature_panel",
     "build_forward_return_labels",
+    "TrainResult",
+    "TrainGuardError",
+    "run_train",
 ]

@@ -275,6 +275,62 @@ def backtest(req: BacktestReq) -> dict:
     return res.to_dict()
 
 
+# ── 训练(walk-forward + 样本内外 IC;硬守卫 purge>=label_horizon)──────────
+class TrainReq(BaseModel):
+    train_start: str
+    train_end: str
+    label_horizon: int = 5
+    purge: Optional[int] = None  # 默认 = label_horizon
+    embargo: int = 0
+    train_span: int = 252
+    test_span: int = 63
+    codes: Optional[list[str]] = None
+    model_type: str = "elasticnet"
+    alpha: float = 0.001
+    l1_ratio: float = 0.5
+    top_quantile: float = 0.2
+    train_threads: str = "auto"
+    device: str = "auto"
+
+
+@app.post("/engine/train", dependencies=[Depends(require_internal)])
+def train(req: TrainReq) -> dict:
+    from .training import TrainGuardError, run_train
+
+    dl = DataLayer(config.cache_dir())
+    pdf = dl.asof("price", "99999999", fields=["stock_code", "trade_date"])
+    if pdf.is_empty():
+        raise HTTPException(status_code=400, detail="本地无行情缓存,先建缓存再训练")
+    trading_dates = sorted(set(pdf["trade_date"].to_list()))
+    codes = req.codes or sorted(set(pdf["stock_code"].to_list()))
+
+    try:
+        res = run_train(
+            dl,
+            codes=codes,
+            trading_dates=trading_dates,
+            train_start=req.train_start,
+            train_end=req.train_end,
+            label_horizon=req.label_horizon,
+            purge=req.purge,
+            embargo=req.embargo,
+            train_span=req.train_span,
+            test_span=req.test_span,
+            model_type=req.model_type,
+            alpha=req.alpha,
+            l1_ratio=req.l1_ratio,
+            top_quantile=req.top_quantile,
+            train_threads=req.train_threads,
+            device=req.device,
+        )
+    except TrainGuardError as e:
+        # 422:违反 purge>=label_horizon 硬守卫(红线#1)。
+        raise HTTPException(status_code=422, detail=str(e))
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return res.to_dict()
+
+
 # ── 缓存覆盖 ────────────────────────────────────────────────────────────
 @app.get("/engine/cache/coverage", dependencies=[Depends(require_internal)])
 def coverage() -> dict:
