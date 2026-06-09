@@ -7,6 +7,7 @@ import {
   linePoints,
   monthlyGrid,
   monthlyReturns,
+  tradeMarkers,
   type ChartBox,
   type NavPoint,
 } from '../src/lib/backtest';
@@ -94,6 +95,44 @@ describe('buildNavCharts', () => {
   it('空输入安全', () => {
     const c = buildNavCharts([], BOX, BOX);
     expect(c.portfolio).toBe('');
+  });
+});
+
+describe('tradeMarkers 买卖点映射', () => {
+  const nav: NavPoint[] = [
+    { date: 'd1', nav: 100 },
+    { date: 'd2', nav: 110 },
+    { date: 'd3', nav: 99 },
+  ];
+  it('成交按日期落到曲线索引,坐标与组合线同尺度', () => {
+    const mk = tradeMarkers(
+      [
+        { trade_date: 'd2', code: 'A', side: 'buy', shares: 100, price: 10 },
+        { trade_date: 'd3', code: 'A', side: 'sell', shares: 100, price: 9 },
+      ],
+      nav,
+      BOX,
+      0.99,
+      1.1, // 归一化 yMin/yMax(99/100, 110/100)
+    );
+    expect(mk).toHaveLength(2);
+    expect(mk[0].side).toBe('buy');
+    expect(mk[0].x).toBeCloseTo(50); // idx1 / (3-1) * 100
+    expect(mk[1].x).toBeCloseTo(100); // idx2 末端
+    // d2 归一化 1.1 = yMax → y 到顶 0
+    expect(mk[0].y).toBeCloseTo(0);
+  });
+  it('成交日不在曲线上则跳过;空输入安全', () => {
+    expect(
+      tradeMarkers(
+        [{ trade_date: 'zzz', code: 'A', side: 'buy', shares: 1, price: 1 }],
+        nav,
+        BOX,
+        0,
+        2,
+      ),
+    ).toEqual([]);
+    expect(tradeMarkers([], nav, BOX, 0, 2)).toEqual([]);
   });
 });
 

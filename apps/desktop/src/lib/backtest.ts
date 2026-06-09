@@ -158,6 +158,62 @@ export function buildNavCharts(points: NavPoint[], navBox: ChartBox, ddBox: Char
   };
 }
 
+export interface TradeLite {
+  trade_date: string;
+  code: string;
+  side: string; // buy / sell
+  shares: number;
+  price: number;
+  reason?: string;
+}
+
+export interface TradeMarker {
+  x: number;
+  y: number;
+  side: string;
+  date: string;
+  code: string;
+  shares: number;
+  price: number;
+  reason: string;
+}
+
+/** 把逐笔成交映射到净值曲线坐标(买卖点)。成交日须落在 nav 曲线日期上;坐标与组合线同尺度。 */
+export function tradeMarkers(
+  trades: TradeLite[],
+  navCurve: NavPoint[],
+  box: ChartBox,
+  yMin: number,
+  yMax: number,
+): TradeMarker[] {
+  if (!navCurve.length || !trades.length) return [];
+  const base = navCurve[0].nav || 1;
+  const idxByDate = new Map<string, number>();
+  navCurve.forEach((p, i) => idxByDate.set(p.date, i));
+  const { w, h } = plot(box);
+  const n = navCurve.length;
+  const range = yMax - yMin || 1;
+  const out: TradeMarker[] = [];
+  for (const t of trades) {
+    const idx = idxByDate.get(t.trade_date);
+    if (idx == null) continue;
+    const norm = navCurve[idx].nav / base;
+    const x = box.padLeft + (n === 1 ? 0 : (w * idx) / (n - 1));
+    const y = box.padTop + ((yMax - norm) / range) * h;
+    out.push({
+      x,
+      y,
+      side: t.side,
+      date: t.trade_date,
+      code: t.code,
+      shares: t.shares,
+      price: t.price,
+      reason: t.reason ?? '',
+    });
+  }
+  return out;
+}
+
 /** 诚实评估口径标签(顶部恒显提示条用)。purge 由回测参数传入。 */
 export function honestyBadges(purge: number, costIncluded: boolean): string[] {
   return [

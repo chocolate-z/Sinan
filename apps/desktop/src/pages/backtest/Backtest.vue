@@ -2,11 +2,13 @@
 import { computed, onMounted, reactive, ref } from 'vue';
 import { api } from '../../api/client';
 import { pnlClass } from '../../lib/pnl';
+import { actionClass, actionLabel, reasonLabel } from '../../lib/signals';
 import {
   buildNavCharts,
   honestyBadges,
   monthlyGrid,
   monthlyReturns,
+  tradeMarkers,
   type ChartBox,
 } from '../../lib/backtest';
 
@@ -80,6 +82,18 @@ const charts = computed(() => buildNavCharts(navPoints.value, NAV_BOX, DD_BOX));
 const grid = computed(() => monthlyGrid(monthlyReturns(navPoints.value)));
 const isHonest = computed(() => (result.value ? !!result.value.cost_included : true));
 const badges = computed(() => honestyBadges(result.value?.purge ?? form.purge, isHonest.value));
+
+// 买卖点(标在净值曲线上;方向用系统色,不用盈亏色)。
+const trades = computed<any[]>(() => result.value?.trades ?? []);
+const markers = computed(() =>
+  tradeMarkers(trades.value, navPoints.value, NAV_BOX, charts.value.yMin, charts.value.yMax),
+);
+
+// 选中某天 → 展开当日持仓快照(可回溯)。
+const selectedDay = ref<any | null>(null);
+function selectDay(r: any) {
+  selectedDay.value = selectedDay.value?.date === r.date ? null : r;
+}
 
 const m = computed(() => result.value?.metrics ?? {});
 function pct(v: number | null | undefined): string {
@@ -181,15 +195,29 @@ const MONTHS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12'];
           <div class="legend">
             <span class="lg port">组合</span>
             <span v-if="charts.hasBenchmark" class="lg bench">{{ form.benchmark }}</span>
+            <span class="lg buy">▲ 买</span>
+            <span class="lg sell">▼ 卖</span>
           </div>
           <span class="m-muted oos"
             >样本外 · 训练截止 {{ result.train_end }} 之后 · 起点归一化为 1</span
           >
         </div>
-        <svg class="chart" :viewBox="`0 0 ${NAV_W} ${NAV_BOX.height}`" preserveAspectRatio="none">
-          <polyline v-if="charts.benchmark" class="line bench" :points="charts.benchmark" />
-          <polyline v-if="charts.portfolio" class="line port" :points="charts.portfolio" />
-        </svg>
+        <div class="chart-wrap" :style="{ aspectRatio: `${NAV_W} / ${NAV_BOX.height}` }">
+          <svg class="chart" :viewBox="`0 0 ${NAV_W} ${NAV_BOX.height}`" preserveAspectRatio="none">
+            <polyline v-if="charts.benchmark" class="line bench" :points="charts.benchmark" />
+            <polyline v-if="charts.portfolio" class="line port" :points="charts.portfolio" />
+          </svg>
+          <!-- 买卖点(系统色:买蓝 / 卖橙;非盈亏色) -->
+          <span
+            v-for="(mk, i) in markers"
+            :key="i"
+            class="marker"
+            :class="mk.side === 'buy' ? 'buy' : 'sell'"
+            :style="{ left: `${(mk.x / NAV_W) * 100}%`, top: `${(mk.y / NAV_BOX.height) * 100}%` }"
+            :title="`${mk.date} ${mk.side === 'buy' ? '买' : '卖'} ${mk.code} ${mk.shares}股 @${mk.price}`"
+            >{{ mk.side === 'buy' ? '▲' : '▼' }}</span
+          >
+        </div>
         <div class="dd-label m-muted">回撤(最深 {{ pct(Math.abs(charts.ddMin)) }})</div>
         <svg class="chart" :viewBox="`0 0 ${NAV_W} ${DD_BOX.height}`" preserveAspectRatio="none">
           <path v-if="charts.drawdown" class="dd-area" :d="charts.drawdown" />
@@ -215,6 +243,107 @@ const MONTHS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12'];
               {{ c == null ? '·' : (c * 100).toFixed(1) }}
             </span>
           </div>
+        </div>
+      </div>
+
+      <!-- 逐笔成交(买卖点明细) -->
+      <div v-if="trades.length" class="m-card">
+        <h3>
+          逐笔成交 <span class="m-muted">({{ trades.length }})</span>
+        </h3>
+        <table class="m-table num">
+          <thead>
+            <tr>
+              <th>日期</th>
+              <th>方向</th>
+              <th>代码</th>
+              <th class="r">股数</th>
+              <th class="r">成交价</th>
+              <th class="r">金额</th>
+              <th class="r">成本</th>
+              <th>原因</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="(t, i) in trades" :key="i">
+              <td>{{ t.trade_date }}</td>
+              <td>
+                <span class="m-badge" :class="actionClass(t.side)">{{ actionLabel(t.side) }}</span>
+              </td>
+              <td>{{ t.code }}</td>
+              <td class="r">{{ t.shares }}</td>
+              <td class="r">{{ t.price?.toFixed(2) }}</td>
+              <td class="r">{{ t.amount?.toFixed(0) }}</td>
+              <td class="r m-muted">{{ t.fee_total?.toFixed(2) }}</td>
+              <td class="m-muted">{{ reasonLabel(t.reason) }}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- 逐日明细(资产/盈亏/持仓变化;点某天展开当日持仓)-->
+      <div class="m-card">
+        <h3>逐日明细 <span class="m-muted">点某天看当日持仓</span></h3>
+        <table class="m-table num">
+          <thead>
+            <tr>
+              <th>日期</th>
+              <th class="r">总资产</th>
+              <th class="r">现金</th>
+              <th class="r">持仓市值</th>
+              <th class="r">当日盈亏</th>
+              <th class="r">回撤</th>
+              <th class="r">持仓数</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr
+              v-for="r in navPoints"
+              :key="r.date"
+              class="row"
+              :class="{ sel: selectedDay?.date === r.date }"
+              @click="selectDay(r)"
+            >
+              <td>{{ r.date }}</td>
+              <td class="r">{{ r.nav?.toFixed(0) }}</td>
+              <td class="r m-muted">{{ r.cash?.toFixed(0) }}</td>
+              <td class="r">{{ r.holding_value?.toFixed(0) }}</td>
+              <td class="r" :class="pnlClass(r.day_return ?? 0)">{{ signed(r.day_return) }}</td>
+              <td class="r m-muted">{{ r.drawdown ? pct(r.drawdown) : '—' }}</td>
+              <td class="r">{{ r.positions?.length ?? 0 }}</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <div v-if="selectedDay" class="snapshot">
+          <div class="snap-head">
+            {{ selectedDay.date }} 持仓
+            <span class="m-muted"
+              >(现金 {{ selectedDay.cash?.toFixed(0) }} · 持仓市值
+              {{ selectedDay.holding_value?.toFixed(0) }})</span
+            >
+          </div>
+          <p v-if="!selectedDay.positions?.length" class="m-muted">该日空仓。</p>
+          <table v-else class="m-table num">
+            <thead>
+              <tr>
+                <th>代码</th>
+                <th class="r">股数</th>
+                <th class="r">成本</th>
+                <th class="r">市值</th>
+                <th class="r">占比</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="p in selectedDay.positions" :key="p.code">
+                <td>{{ p.code }}</td>
+                <td class="r">{{ p.shares }}</td>
+                <td class="r m-muted">{{ p.avg_cost?.toFixed(2) }}</td>
+                <td class="r">{{ p.value?.toFixed(0) }}</td>
+                <td class="r m-muted">{{ ((p.value / selectedDay.nav) * 100).toFixed(1) }}%</td>
+              </tr>
+            </tbody>
+          </table>
         </div>
       </div>
     </template>
@@ -355,14 +484,39 @@ const MONTHS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12'];
 .legend .bench {
   color: var(--c-text-3);
 }
+.legend .buy {
+  color: var(--st-info);
+}
+.legend .sell {
+  color: var(--st-warn);
+}
 .oos {
   margin-left: auto;
   font-size: var(--fs-cap);
 }
+.chart-wrap {
+  position: relative;
+  width: 100%;
+}
 .chart {
   width: 100%;
-  height: auto;
+  height: 100%;
   display: block;
+}
+/* 买卖点:绝对定位覆盖在曲线上,不随 svg 非等比缩放变形。方向用系统色(非盈亏色)。 */
+.marker {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  font-size: 9px;
+  line-height: 1;
+  pointer-events: auto;
+  cursor: default;
+}
+.marker.buy {
+  color: var(--st-info);
+}
+.marker.sell {
+  color: var(--st-warn);
 }
 .line {
   fill: none;
@@ -422,6 +576,19 @@ const MONTHS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12'];
 }
 .row {
   cursor: pointer;
+}
+.row.sel {
+  background: var(--accent-weak);
+}
+.snapshot {
+  margin-top: var(--sp-3);
+  padding-top: var(--sp-3);
+  border-top: 1px solid var(--c-hairline);
+}
+.snap-head {
+  font-size: var(--fs-cap);
+  font-weight: 600;
+  margin-bottom: var(--sp-2);
 }
 .disclaimer {
   margin: var(--sp-5) 0 var(--sp-3);
