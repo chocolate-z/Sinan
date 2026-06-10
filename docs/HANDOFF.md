@@ -345,6 +345,7 @@ labels.py   build_forward_return_labels(hfq[T+h]/hfq[T]-1,前向,尾 h 日 null)
 - tauri.conf 非法 `comment` 字段 + `icons/` 缺失(见 §11.3,A 半已修)。
 
 **UI 打磨(本会话)**:
+
 - 品牌 logo 换四色 Fluent 风(`shell/Logo.vue` + `src-tauri/icons/*` 用 Pillow 重生成);标题栏版本号读真实 `package.json`(全项目统一 **0.1.0**);能力探测中文标签抽 `lib/caps.ts` 共享(设置页+引导页);指标质检按钮/输入框重叠修复;Sidebar 文案。
 - 自定义 `ui/DatePicker.vue` 替换 4 页(指标/回测/模型/信号)原生日历(玻璃弹层 + accent 选中 + 月份导航 + 今天/清除)。
 - **引导嵌主界面**(用户要、贴设计稿):未完成 onboarding 时 `Dashboard.vue` 在 AppShell 内(侧栏可见)渲染 `<OnboardingWizard>`,`finish()`→`bootstrap()` 更新 `onboardingDone` 响应式切回总览;`/onboarding` 去 `noShell`;`OnboardingWizard` 去全屏极光 + `min-height:100%`。
@@ -353,12 +354,14 @@ labels.py   build_forward_return_labels(hfq[T+h]/hfq[T]-1,前向,尾 h 日 null)
 - **`/help` 帮助页**(`pages/help/Help.vue`,侧栏系统组:产品定位/工作流/逐页/六红线/FAQ)。
 
 **⚠️ 给下一位的关键提醒**:
+
 - **真实 token 已在对话明文出现两次,用户已重置。新会话务必让用户在引导页输入 token,绝不让其贴进对话。**
 - 桌面端跑法:`pnpm dev`(一键)。⚠️ dev 用 `SINAN_SECRET_STORE=memory` → token 重启不持久,每次重跑要重输 token + 重走引导。
 - 本机环境曾有多个残留 `cargo`/`rustc` 进程互等 package cache 锁导致 `pnpm dev` 卡在「Blocking waiting for file lock」→ `Stop-Process cargo,rustc` 清掉即可(非脚本 bug)。
 - **核心数据流还没在桌面端完整跑通过一次**(建缓存→质检→训练→回测出真实结果)。这几轮用户一直在调 UI/外壳,这是最该补的端到端验证。
 
 **待办(用户明确提 + 候选,按优先级)**:
+
 1. **DatePicker 美观优化**(用户反馈还不够美;截图见指标/模型页)。
 2. **关闭确认对话 + 系统托盘**(关窗时问「最小化到托盘 / 退出软件」;Tauri 托盘 + `lib.rs` 的 `WindowEvent::CloseRequested` 拦截 → 前端弹对话 → 设置项记忆选择;capabilities 需加托盘权限)。
 3. **持仓建仓苹果风重设计**(`pages/portfolio/Portfolio.vue`:那两个无 label 的框是「股数」「成本价」;用户要搜索补全代码/名称 → 需新 api(engine `tushare_provider.stock_list` 未暴露给前端,要加端点)+ 加仓减仓移动加权成本自动计算 + 苹果风表单)。
