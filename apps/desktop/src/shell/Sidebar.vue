@@ -28,6 +28,7 @@ const items: Item[] = [
   { to: '/portfolio', label: '持仓', group: '交易', icon: 'portfolio' },
   { to: '/logs', label: '日志', group: '系统', icon: 'logs' },
   { to: '/settings', label: '设置', group: '系统', icon: 'settings' },
+  { to: '/help', label: '帮助', group: '系统', icon: 'help' },
 ];
 
 const groups = computed(() => {

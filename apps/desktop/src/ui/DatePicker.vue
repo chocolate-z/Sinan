@@ -5,7 +5,7 @@ import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 
 const props = withDefaults(
   defineProps<{ modelValue?: string; placeholder?: string; min?: string; max?: string }>(),
-  { modelValue: '', placeholder: '选择日期' },
+  { modelValue: '', placeholder: '选择日期', min: '', max: '' },
 );
 const emit = defineEmits<{ 'update:modelValue': [string] }>();
 

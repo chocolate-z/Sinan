@@ -8,6 +8,7 @@
     "node": ">=20"
   },
   "scripts": {
+    "dev": "node scripts/dev.mjs",
     "build:contracts": "pnpm --filter @sinan/shared-contracts build",
     "test:contracts": "pnpm --filter @sinan/shared-contracts test",
     "test:api": "pnpm --filter @sinan/api test",

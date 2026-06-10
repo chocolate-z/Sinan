@@ -51,6 +51,7 @@ const routes: RouteRecordRaw[] = [
     meta: { title: '回测', needsData: true },
   },
   { path: '/logs', component: () => import('../pages/logs/Logs.vue'), meta: { title: '日志' } },
+  { path: '/help', component: () => import('../pages/help/Help.vue'), meta: { title: '帮助' } },
   {
     path: '/settings/:tab?',
     component: () => import('../pages/settings/Settings.vue'),

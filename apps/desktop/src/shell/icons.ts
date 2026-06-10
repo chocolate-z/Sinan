@@ -3,6 +3,11 @@
 export type IconEl = [string, Record<string, string | number>];
 
 export const ICONS: Record<string, IconEl[]> = {
+  help: [
+    ['circle', { cx: 12, cy: 12, r: 9 }],
+    ['path', { d: 'M9.6 9.3a2.4 2.4 0 1 1 3.4 2.2c-.7.4-1 .8-1 1.6' }],
+    ['path', { d: 'M12 16.4h.01' }],
+  ],
   dashboard: [
     ['rect', { x: 3, y: 3, width: 7, height: 9, rx: 1.5 }],
     ['rect', { x: 14, y: 3, width: 7, height: 5, rx: 1.5 }],
