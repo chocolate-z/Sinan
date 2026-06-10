@@ -11,6 +11,7 @@ import PageHero from '../../ui/PageHero.vue';
 import EquityChart from '../../ui/charts/EquityChart.vue';
 import RiskBar from '../../ui/charts/RiskBar.vue';
 import Icon from '../../shell/Icon.vue';
+import OnboardingWizard from '../onboarding/OnboardingWizard.vue';
 
 const app = useAppStore();
 const trading = useTradingStore();
@@ -112,31 +113,22 @@ function pct(v: number | null | undefined, dec = 2): string {
 </script>
 
 <template>
-  <PageHero
-    title="总览"
-    :sub="`数据源 ${app.activeProvider ?? '未配置'} · 当日收益来自实时源「现价 vs 昨收」`"
-  >
-    <template #right>
-      <button class="btn btn-secondary btn-sm" @click="router.push('/signals')">
-        <Icon name="refresh" :size="14" /> 盘后跑一轮
-      </button>
-    </template>
-  </PageHero>
+  <!-- 未完成引导 → 嵌主区的引导向导(侧栏由 AppShell 提供;finish 后 bootstrap 更新 onboardingDone 响应式切回总览) -->
+  <OnboardingWizard v-if="!app.onboardingDone" />
 
-  <div class="page-body">
-    <!-- 首启引导 -->
-    <div v-if="!app.onboardingDone" class="card card-pad guide">
-      <h2 class="guide-title">欢迎使用司南</h2>
-      <p class="guide-lead">全本机量化助手 —— 你的数据、你的 token、你的电脑;我们不碰任何数据。</p>
-      <ol class="steps">
-        <li><span class="n">1</span> 选择你自己的数据源(Tushare Pro / AkShare 免费)</li>
-        <li><span class="n">2</span> 填入 token(仅加密存本机钥匙串)</li>
-        <li><span class="n">3</span> 测试连接并建立本地缓存(可断点续传)</li>
-      </ol>
-      <button class="btn btn-primary" @click="router.push('/onboarding')">开始配置 →</button>
-    </div>
+  <template v-else>
+    <PageHero
+      title="总览"
+      :sub="`数据源 ${app.activeProvider ?? '未配置'} · 当日收益来自实时源「现价 vs 昨收」`"
+    >
+      <template #right>
+        <button class="btn btn-secondary btn-sm" @click="router.push('/signals')">
+          <Icon name="refresh" :size="14" /> 盘后跑一轮
+        </button>
+      </template>
+    </PageHero>
 
-    <template v-else>
+    <div class="page-body">
       <!-- PnL 双卡 -->
       <div class="grid-2">
         <div class="card card-pad stat">
@@ -303,8 +295,8 @@ function pct(v: number | null | undefined, dec = 2): string {
       <p class="disclaimer">
         司南是研究与纪律辅助工具,不是投资顾问。所有信号/回测/模拟盘仅供研究参考,不构成投资建议。
       </p>
-    </template>
-  </div>
+    </div>
+  </template>
 </template>
 
 <style scoped>

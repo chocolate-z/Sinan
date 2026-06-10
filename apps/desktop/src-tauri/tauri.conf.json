@@ -5,7 +5,7 @@
   "identifier": "com.sinan.desktop",
   "build": {
     "frontendDist": "../dist",
-    "devUrl": "http://localhost:9527",
+    "devUrl": "http://localhost:9521",
     "beforeDevCommand": "pnpm --filter @sinan/desktop dev",
     "beforeBuildCommand": "pnpm --filter @sinan/desktop build"
   },

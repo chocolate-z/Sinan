@@ -8,7 +8,7 @@ const routes: RouteRecordRaw[] = [
     path: '/onboarding',
     name: 'onboarding',
     component: () => import('../pages/onboarding/OnboardingWizard.vue'),
-    meta: { noShell: true },
+    meta: { title: '引导' },
   },
   {
     path: '/dashboard',

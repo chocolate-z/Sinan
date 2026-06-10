@@ -136,7 +136,7 @@ const buildPct = computed(() => Math.round(build.progress * 100));
 </script>
 
 <template>
-  <div class="wizard-stage main-aurora">
+  <div class="wizard-stage">
     <div class="wizard">
       <!-- 品牌:花朵 logo + 标题 -->
       <header class="brand">
@@ -386,7 +386,7 @@ const buildPct = computed(() => Math.round(build.progress * 100));
 <style scoped>
 /* ── 整页舞台:居中铺底,衬托浮起的向导卡 ──────────────────── */
 .wizard-stage {
-  min-height: 100vh;
+  min-height: 100%;
   display: flex;
   align-items: center;
   justify-content: center;
