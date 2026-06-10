@@ -109,3 +109,27 @@ def test_no_token_test_connection_errors():
     h = p.test_connection()
     assert h.status is ProviderStatus.ERROR
     assert all(v is False for v in h.caps.values())
+
+
+def test_test_connection_passes_required_params_not_misjudged():
+    """回归(真实 bug):income/fina_indicator/index_daily 等必填 ts_code/index_code。探测若缺这些
+    参数,tushare 返回「必填参数」(非积分/权限错)→ 会被误判为无权限。修复后探测带必填参数,
+    有权限即探测为 True。模拟:缺必填参数 → 报必填参数错;给了必填参数 → 成功。"""
+    NEEDS_TS = {"income", "fina_indicator", "forecast", "index_daily", "daily", "adj_factor", "daily_basic", "hk_hold"}
+
+    def handler(request):
+        body = json.loads(request.content)
+        api = body["api_name"]
+        params = body.get("params") or {}
+        if api in NEEDS_TS and "ts_code" not in params:
+            return httpx.Response(200, json={"code": 40002, "msg": "必填参数, ts_code"})
+        if api == "index_weight" and "index_code" not in params:
+            return httpx.Response(200, json={"code": 40002, "msg": "必填参数, index_code"})
+        return httpx.Response(200, json=_ok([], []))  # 有必填参数 → 成功(模拟有权限)
+
+    p = make_provider(handler)
+    h = p.test_connection()
+    assert h.status is ProviderStatus.OK
+    # 探测已带必填参数 → 这些接口不再因「必填参数」错被误判为无权限。
+    for cap in ("FUNDAMENTAL", "FINA_INDICATOR", "INDEX_OHLCV", "INDEX_WEIGHT", "EARNINGS_FORECAST"):
+        assert h.caps[cap] is True, f"{cap} 应为 True(探测已带必填参数,不再误判)"

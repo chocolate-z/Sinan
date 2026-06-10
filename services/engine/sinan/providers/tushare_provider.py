@@ -28,19 +28,22 @@ from .base import (
 
 TUSHARE_URL = "http://api.tushare.pro"
 
-# Tushare 能力 → 探测用 api 名(test_connection 据此构建 caps 矩阵)。
+# Tushare 能力 → (探测 api 名, 探测参数)。test_connection 据此构建 caps 矩阵。
+# ⚠️ 参数必须满足该接口的「必填参数」:income/fina_indicator/index_daily 等必填 ts_code,
+# 否则 tushare 返回「必填参数, ts_code」(非积分/权限错)→ 会把「有权限但缺参数」误判为无权限。
+# 给足必填参数后,tushare 才会真正执行积分/权限校验,探测结果才准确(限 limit=1 拉最小数据)。
 _PROBE = [
-    (Capability.DAILY_OHLCV, "daily"),
-    (Capability.ADJ_FACTOR, "adj_factor"),
-    (Capability.DAILY_BASIC, "daily_basic"),
-    (Capability.FUNDAMENTAL, "income"),
-    (Capability.FINA_INDICATOR, "fina_indicator"),
-    (Capability.NORTHBOUND, "hk_hold"),
-    (Capability.INDEX_OHLCV, "index_daily"),
-    (Capability.INDEX_WEIGHT, "index_weight"),
-    (Capability.SW_INDUSTRY, "index_classify"),
-    (Capability.EARNINGS_FORECAST, "forecast"),
-    (Capability.TRADE_CAL, "trade_cal"),
+    (Capability.DAILY_OHLCV, "daily", {"ts_code": "000001.SZ"}),
+    (Capability.ADJ_FACTOR, "adj_factor", {"ts_code": "000001.SZ"}),
+    (Capability.DAILY_BASIC, "daily_basic", {"ts_code": "000001.SZ"}),
+    (Capability.FUNDAMENTAL, "income", {"ts_code": "000001.SZ"}),
+    (Capability.FINA_INDICATOR, "fina_indicator", {"ts_code": "000001.SZ"}),
+    (Capability.NORTHBOUND, "hk_hold", {"ts_code": "000001.SZ"}),
+    (Capability.INDEX_OHLCV, "index_daily", {"ts_code": "000300.SH"}),
+    (Capability.INDEX_WEIGHT, "index_weight", {"index_code": "000300.SH"}),
+    (Capability.SW_INDUSTRY, "index_classify", {}),
+    (Capability.EARNINGS_FORECAST, "forecast", {"ts_code": "000001.SZ"}),
+    (Capability.TRADE_CAL, "trade_cal", {}),
 ]
 
 _DECLARED = (
@@ -220,11 +223,11 @@ class TushareProvider(IDataProvider):
         degraded: list[str] = []
         latency_ms: float | None = None
         auth_ok = False
-        for cap, api_name in _PROBE:
+        for cap, api_name, probe_params in _PROBE:
             t0 = time.monotonic()
             try:
-                # 极小探测:limit 字段不通用,用窄日期窗口探可达性。
-                self._call(api_name, {"limit": "1"}, "")
+                # 极小探测:带该接口必填参数 + limit=1 拉最小数据;有权限→成功,无权限→积分错(下方捕获)。
+                self._call(api_name, {**probe_params, "limit": "1"}, "")
                 caps[cap.name] = True
                 auth_ok = True
             except ProviderAuthError as e:

@@ -46,7 +46,10 @@ async function request<T>(def: EndpointDef, opts: RequestOpts = {}): Promise<T> 
       if (v !== undefined) url.searchParams.set(k, String(v));
     }
   }
-  const headers: Record<string, string> = { 'content-type': 'application/json' };
+  const headers: Record<string, string> = {};
+  // 仅在确有 body 时才声明 JSON content-type:否则 Fastify 对「content-type=json 但 body 为空」
+  // 的无 body POST(如 provider/test、onboarding/complete、models/activate)报 400「Body cannot be empty」。
+  if (opts.body !== undefined) headers['content-type'] = 'application/json';
   if (runtime.token) headers[HEADERS.sessionToken] = runtime.token;
   const res = await fetch(url.toString(), {
     method: def.method,
