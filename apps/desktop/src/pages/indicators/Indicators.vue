@@ -4,6 +4,7 @@
 import { computed, onMounted, reactive, ref } from 'vue';
 import { api, ApiError } from '../../api/client';
 import PageHero from '../../ui/PageHero.vue';
+import DatePicker from '../../ui/DatePicker.vue';
 import Icon from '../../shell/Icon.vue';
 import ICChart from '../../ui/charts/ICChart.vue';
 import DecileBars from '../../ui/charts/DecileBars.vue';
@@ -160,11 +161,11 @@ async function run() {
         <div class="form-row">
           <div class="field">
             <label class="field-label">起始日</label>
-            <input v-model="form.start" class="input mono" type="date" />
+            <DatePicker v-model="form.start" placeholder="起始日" />
           </div>
           <div class="field">
             <label class="field-label">结束日</label>
-            <input v-model="form.end" class="input mono" type="date" />
+            <DatePicker v-model="form.end" placeholder="结束日" />
           </div>
           <div class="field narrow">
             <label class="field-label">前向(交易日)</label>

@@ -5,6 +5,7 @@ import { actionLabel, factorEntries, reasonLabel } from '../../lib/signals';
 import { useAppStore } from '../../stores/app';
 import { fmtSigned } from '../../lib/format';
 import PageHero from '../../ui/PageHero.vue';
+import DatePicker from '../../ui/DatePicker.vue';
 import Icon from '../../shell/Icon.vue';
 
 const trading = useTradingStore();
@@ -67,11 +68,11 @@ function scorePct(score: number): string {
       <div class="runner">
         <label class="field">
           <span class="field-cap cap">信号日 T</span>
-          <input v-model="today" class="input mono" type="date" />
+          <DatePicker v-model="today" placeholder="信号日 T" />
         </label>
         <label class="field">
           <span class="field-cap cap">生效日 T+1</span>
-          <input v-model="effective" class="input mono" type="date" />
+          <DatePicker v-model="effective" placeholder="生效日 T+1" />
         </label>
         <span class="spacer" />
         <button

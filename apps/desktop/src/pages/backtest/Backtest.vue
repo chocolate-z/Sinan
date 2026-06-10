@@ -8,6 +8,7 @@ import { fmt, fmtInt } from '../../lib/format';
 import PageHero from '../../ui/PageHero.vue';
 import EquityChart from '../../ui/charts/EquityChart.vue';
 import Heatmap from '../../ui/charts/Heatmap.vue';
+import DatePicker from '../../ui/DatePicker.vue';
 import Icon from '../../shell/Icon.vue';
 
 type Scoring = 'auto' | 'model' | 'custom' | 'equal_weight';
@@ -228,15 +229,15 @@ function fixed(v: number | null | undefined): string {
           <div class="form-grid">
             <div class="field">
               <label class="field-label">训练截止</label>
-              <input v-model="form.train_end" class="input mono" type="date" />
+              <DatePicker v-model="form.train_end" placeholder="训练截止" />
             </div>
             <div class="field">
               <label class="field-label">回测起</label>
-              <input v-model="form.backtest_start" class="input mono" type="date" />
+              <DatePicker v-model="form.backtest_start" placeholder="回测起" />
             </div>
             <div class="field">
               <label class="field-label">回测止</label>
-              <input v-model="form.backtest_end" class="input mono" type="date" />
+              <DatePicker v-model="form.backtest_end" placeholder="回测止" />
             </div>
             <div class="field narrow">
               <label class="field-label">Purge(交易日)</label>
