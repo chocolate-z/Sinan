@@ -111,6 +111,30 @@ def test_no_token_test_connection_errors():
     assert all(v is False for v in h.caps.values())
 
 
+def test_mixed_null_then_float_column_no_schema_error():
+    """回归(真实 bug):某数值列前若干行 null、之后才出现浮点(daily_basic 的 pe_ttm/dv_ttm 常见)。
+    polars 若只按前 N 行推断会把该列判为 null/int → append 浮点报「could not append value f64」。
+    infer_schema_length=None 扫全部行 → 正确推断 float,不报错。"""
+
+    def handler(request):
+        return httpx.Response(
+            200,
+            json=_ok(
+                ["ts_code", "trade_date", "open", "high", "low", "close", "vol", "amount"],
+                [
+                    ["x.SH", "20240102", 1.0, 1.0, 1.0, 1.0, 1000, None],
+                    ["x.SH", "20240103", 1.0, 1.0, 1.0, 1.0, 1000, None],
+                    ["x.SH", "20240104", 1.0, 1.0, 1.0, 1.0, 1000, 7.7887],  # 末行才出现浮点
+                ],
+            ),
+        )
+
+    p = make_provider(handler)
+    df = p.daily_bars("x.SH", "2024-01-01", "2024-01-31")  # 不抛 schema 错
+    assert df.height == 3
+    assert df["amount"].to_list()[-1] == 7.7887
+
+
 def test_test_connection_passes_required_params_not_misjudged():
     """回归(真实 bug):income/fina_indicator/index_daily 等必填 ts_code/index_code。探测若缺这些
     参数,tushare 返回「必填参数」(非积分/权限错)→ 会被误判为无权限。修复后探测带必填参数,

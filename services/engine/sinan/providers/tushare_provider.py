@@ -134,7 +134,10 @@ class TushareProvider(IDataProvider):
         items = data.get("items") or []
         if not cols:
             return pl.DataFrame()
-        return pl.DataFrame(items, schema=cols, orient="row")
+        # infer_schema_length=None:扫全部行推断 dtype。否则某列前若干行为 null/整数、之后才出现
+        # 浮点(如 daily_basic 的 pe_ttm/pb/dv_ttm),polars 按前 N 行误判类型 → append 浮点报错
+        # 「could not append value: x of type f64 to the builder」。
+        return pl.DataFrame(items, schema=cols, orient="row", infer_schema_length=None)
 
     # ── 能力方法 ──────────────────────────────────────────────────────────
     def stock_list(self) -> pl.DataFrame:
