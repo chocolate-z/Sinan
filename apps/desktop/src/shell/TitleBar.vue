@@ -2,6 +2,7 @@
 import { onBeforeUnmount, onMounted, ref } from 'vue';
 import { getAppWindow, isTauri } from '../lib/tauri';
 import Logo from './Logo.vue';
+import { version } from '../../package.json'; // 真实版本(具名 import,tree-shake 只留 version)
 
 const inTauri = isTauri();
 const maximized = ref(false);
@@ -43,7 +44,7 @@ onBeforeUnmount(() => unlisten?.());
       <span class="tb-logo"><Logo :size="16" /></span>
       <span class="tb-name">司南</span>
       <span class="tb-sub">Sinan</span>
-      <span class="tb-ver mono">v2.4.0</span>
+      <span class="tb-ver mono">v{{ version }}</span>
     </div>
     <div class="tb-drag" data-tauri-drag-region></div>
 

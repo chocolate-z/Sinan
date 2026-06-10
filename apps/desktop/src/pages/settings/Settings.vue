@@ -35,20 +35,20 @@ const caps = computed(() =>
   testState.for && selected.value && testState.for === selected.value.id ? testState.data : null,
 );
 
-// 能力 id → 中文标签(纯展示;未列出的回退原 id)。
+// 能力枚举名 → 中文标签(key 与 engine Capability 枚举一致;未列出的回退原名)。
 const CAP_LABELS: Record<string, string> = {
-  price: '日线行情',
-  adj_factor: '复权因子',
-  daily_basic: '每日指标',
-  financials: '财务数据',
-  income: '利润表',
-  balancesheet: '资产负债',
-  northbound: '北向资金',
-  index: '指数行情',
-  realtime: '实时报价',
-  moneyflow: '资金流向',
-  block_trade: '大宗交易',
-  top_list: '龙虎榜',
+  DAILY_OHLCV: '日线行情',
+  ADJ_FACTOR: '复权因子',
+  DAILY_BASIC: '每日指标',
+  FUNDAMENTAL: '财务数据',
+  FINA_INDICATOR: '财务指标',
+  NORTHBOUND: '北向资金',
+  INDEX_OHLCV: '指数行情',
+  INDEX_WEIGHT: '指数成分',
+  SW_INDUSTRY: '申万行业',
+  EARNINGS_FORECAST: '业绩预告',
+  TRADE_CAL: '交易日历',
+  REALTIME_QUOTE: '实时报价',
 };
 function capLabel(k: string): string {
   return CAP_LABELS[k] ?? k;

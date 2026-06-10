@@ -90,7 +90,7 @@ function openDatasource() {
           <div class="src-name">{{ providerName }}</div>
           <div class="src-status">
             <span class="src-dot" :class="connected ? 'on' : 'off'" />{{
-              connected ? '已连接 · 缓存就绪' : '点击配置数据源'
+              connected ? '已连接' : '点击配置数据源'
             }}
           </div>
         </div>
