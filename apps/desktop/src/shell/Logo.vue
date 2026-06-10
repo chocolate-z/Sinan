@@ -1,21 +1,70 @@
 <script setup lang="ts">
-// 司南品牌 logo(多色花朵)。固定填充色,不随 currentColor 变化。
+// 司南品牌 logo(Fluent 多色风:绿/蓝/黄/粉四色块,各自线性渐变)。固定填充色,不随主题变。
 withDefaults(defineProps<{ size?: number }>(), { size: 16 });
 </script>
 
 <template>
-  <svg :width="size" :height="size" viewBox="0 0 24 24" aria-hidden="true">
+  <svg :width="size" :height="size" viewBox="0 0 16 16" aria-hidden="true">
     <g fill="none">
       <path
-        fill="#ea8397"
-        d="M10.894 3C7.757 3 7.963 6.785 8.462 8.683c-3.652-2.15-5.56-.9-5.457 2.56c.083 2.772 2.536 3.719 3.755 3.848c-.978.41-1.183 5.543 2.154 5.888c2.67.277 4.264-2.242 4.732-3.533c1.583 1.306 5.142 3.312 6.706.9c1.553-2.412-.052-5.07-1.044-6.1c.905-.364 2.376-1.825 1.044-4.71c-1.337-2.88-4.567-1.456-6.017-.38c.164-1.39-.299-4.156-3.44-4.156"
+        fill="url(#SVGnm3pKbEv)"
+        d="M12.495 8.831a1 1 0 0 0-1 0l-1.99 1.15a1 1 0 0 0-.5.865v2.298a1 1 0 0 0 .5.866l1.99 1.149a1 1 0 0 0 1 0l1.99-1.15a1 1 0 0 0 .5-.865v-2.298a1 1 0 0 0-.5-.866z"
+      />
+      <path fill="url(#SVGoX6x2bBj)" d="M4 9a3 3 0 1 0 0 6a3 3 0 0 0 0-6" />
+      <path
+        fill="url(#SVGWDh1SdIq)"
+        d="M10.5 1A1.5 1.5 0 0 0 9 2.5v3A1.5 1.5 0 0 0 10.5 7h3A1.5 1.5 0 0 0 15 5.5v-3A1.5 1.5 0 0 0 13.5 1z"
       />
       <path
-        fill="#d26b7f"
-        d="M11.398 10.097c.165-1.605-.447-4.346-.771-5.513c.874 1.039 1.172 3.97 1.213 5.307c-.216.74-.612 1.815-.442.206m7.251-1.97c-2.273-.247-4.14 1.569-4.788 2.505l.119.277a7.67 7.67 0 0 1 4.67-2.782M6.6 10.632a2.31 2.31 0 0 0-2.241.755c.91-.277.75-.216 1.784-.334c.823-.098 2.572.68 3.281 1.05l.18-.237a10.2 10.2 0 0 0-3.008-1.234zm1.44 7.631c1.163-.457 2.459-2.787 2.958-3.893l.298.154c-1.553 3.122-2.813 3.796-3.25 3.74zm5.94-4.582v-.458a18.3 18.3 0 0 1 4.968 3.184v.298c-1.553-1.425-3.96-2.612-4.967-3.024"
+        fill="url(#SVGMXa3Gcni)"
+        d="M2.913 1.674a1.214 1.214 0 0 1 2.174 0l1.78 3.537C7.277 6.03 6.688 7 5.778 7H2.22c-.91 0-1.5-.97-1.087-1.79z"
       />
-      <path fill="#977849" d="M12 15.342a2.829 2.829 0 1 0 0-5.657a2.829 2.829 0 0 0 0 5.657" />
-      <path fill="#feecac" d="M12 14.829a2.829 2.829 0 1 0 0-5.657a2.829 2.829 0 0 0 0 5.657" />
+      <defs>
+        <linearGradient
+          id="SVGnm3pKbEv"
+          x1="5.517"
+          x2="13.624"
+          y1="5.949"
+          y2="14.339"
+          gradientUnits="userSpaceOnUse"
+        >
+          <stop stop-color="#52d17c" />
+          <stop offset="1" stop-color="#22918b" />
+        </linearGradient>
+        <linearGradient
+          id="SVGoX6x2bBj"
+          x1="1"
+          x2="7"
+          y1="9"
+          y2="15"
+          gradientUnits="userSpaceOnUse"
+        >
+          <stop stop-color="#0fafff" />
+          <stop offset="1" stop-color="#2764e7" />
+        </linearGradient>
+        <linearGradient
+          id="SVGWDh1SdIq"
+          x1="6.5"
+          x2="13.875"
+          y1="-2"
+          y2="7.563"
+          gradientUnits="userSpaceOnUse"
+        >
+          <stop stop-color="#ffcd0f" />
+          <stop offset="1" stop-color="#fe8401" />
+        </linearGradient>
+        <linearGradient
+          id="SVGMXa3Gcni"
+          x1="1.214"
+          x2="5.355"
+          y1="2.125"
+          y2="6.427"
+          gradientUnits="userSpaceOnUse"
+        >
+          <stop stop-color="#f24a9d" />
+          <stop offset="1" stop-color="#d7257d" />
+        </linearGradient>
+      </defs>
     </g>
   </svg>
 </template>
