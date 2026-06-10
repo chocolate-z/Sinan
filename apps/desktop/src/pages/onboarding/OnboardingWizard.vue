@@ -4,6 +4,7 @@ import { useRouter } from 'vue-router';
 import { ONBOARDING_STEPS } from '@sinan/shared-contracts';
 import { api, subscribeJob } from '../../api/client';
 import { useAppStore } from '../../stores/app';
+import { capLabel } from '../../lib/caps';
 import Icon from '../../shell/Icon.vue';
 import Logo from '../../shell/Logo.vue';
 
@@ -269,7 +270,7 @@ const buildPct = computed(() => Math.round(build.progress * 100));
                 class="chip cap"
                 :class="ok ? 'cap-on' : 'cap-off'"
               >
-                <Icon :name="ok ? 'check' : 'alert'" :size="11" /> {{ name }}
+                <Icon :name="ok ? 'check' : 'alert'" :size="11" /> {{ capLabel(name) }}
               </span>
             </div>
             <div v-if="testResult.data.degraded?.length" class="degraded">

@@ -457,8 +457,15 @@ async function run() {
 .field .input {
   min-width: 150px;
 }
+/* narrow 字段的输入框不强制 150,否则撑破 130px 容器、溢出盖住「运行质检」按钮。 */
+.field.narrow .input {
+  min-width: 0;
+  width: 100%;
+}
 .run-btn {
   height: 30px;
+  flex: none;
+  margin-left: auto;
 }
 .msg-err {
   display: flex;
