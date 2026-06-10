@@ -15,6 +15,12 @@ export async function createApp(opts: AppOptions = {}): Promise<NestFastifyAppli
   app.setGlobalPrefix(API_BASE.replace(/^\//, ''));
   // 本地单用户:放行 Tauri WebView 与本机 localhost/127.0.0.1 任意端口(浏览器开发 :5914 等);
   // 拒绝其它一切来源(红线:零外联)。
-  app.enableCors({ origin: ['tauri://localhost', /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/] });
+  // ⚠️ 必须显式列全 methods/headers:@fastify/cors 默认只放 GET/HEAD/POST,否则 PUT(保存 token/
+  // 设主源)、DELETE(清凭据)、PATCH(jobs) 的 CORS 预检会被拒 → 跨域请求失败。
+  app.enableCors({
+    origin: ['tauri://localhost', /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/],
+    methods: ['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['content-type', 'x-sinan-token'],
+  });
   return app;
 }

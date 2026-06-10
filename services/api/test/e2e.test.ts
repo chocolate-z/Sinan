@@ -27,6 +27,28 @@ async function build() {
   return { app, fastify };
 }
 
+test('CORS 预检放行 PUT/DELETE/PATCH(否则保存 token/设主源/清凭据跨域被拒)', async () => {
+  const { app, fastify } = await build();
+  try {
+    const r = await fastify.inject({
+      method: 'OPTIONS',
+      url: '/api/v1/providers/active',
+      headers: {
+        origin: 'http://localhost:5914',
+        'access-control-request-method': 'PUT',
+        'access-control-request-headers': 'content-type,x-sinan-token',
+      },
+    });
+    const allow = String(r.headers['access-control-allow-methods'] ?? '').toUpperCase();
+    assert.ok(allow.includes('PUT'), `allow-methods 应含 PUT,实际:${allow}`);
+    assert.ok(allow.includes('DELETE'), `allow-methods 应含 DELETE,实际:${allow}`);
+    const allowH = String(r.headers['access-control-allow-headers'] ?? '').toLowerCase();
+    assert.ok(allowH.includes('x-sinan-token'), `allow-headers 应含 x-sinan-token,实际:${allowH}`);
+  } finally {
+    await app.close();
+  }
+});
+
 test('onboarding state machine + providers + credential red-line + provider test', async () => {
   const { app, fastify } = await build();
   try {
