@@ -23,14 +23,12 @@
       }
     ],
     "security": {
-      "comment": "红线#4:WebView 仅可连本机回环;除用户自配源(由 engine 出网)与签名更新外零外联。",
       "csp": "default-src 'self'; connect-src 'self' ipc: http://ipc.localhost http://127.0.0.1:* http://localhost:*; img-src 'self' data:; style-src 'self' 'unsafe-inline'"
     }
   },
   "bundle": {
     "active": true,
     "targets": "all",
-    "icon": ["icons/icon.png"],
-    "comment": "sidecar 冻结产物(engine PyInstaller / api Node SEA)在 M6 经 externalBin 注入;安装包不含 cache/models/token。"
+    "icon": ["icons/icon.png"]
   }
 }

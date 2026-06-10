@@ -22,6 +22,8 @@ venv/
 # Rust / Tauri
 target/
 apps/desktop/src-tauri/binaries/
+apps/desktop/src-tauri/gen/schemas/
+# 注:Cargo.lock 入库(应用锁定 Rust 依赖,可复现构建);gen/schemas 是 tauri-build 生成物,不入库。
 
 # Runtime user data (NEVER commit — zero data/token in repo).
 # 运行期数据在 $APPDATA/Sinan(仓库外),这里只按文件类型忽略,

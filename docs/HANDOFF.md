@@ -291,8 +291,8 @@ labels.py   build_forward_return_labels(hfq[T+h]/hfq[T]-1,前向,尾 h 日 null)
 
 ## 11. 可扩展方向与技术债(候选路线,接手可挑)
 
-> 当前司南端到端可跑(配源 → 缓存 → 因子质检/自定义因子 → 训练 → 回测 → 模拟盘出信号),诚实/纪律/本机三性守住,约 270 测试 CI 绿。
-> **最关键的下一步不是加功能,而是在联网环境用真实 Tushare token 跑一次端到端 + `cargo build` 编译 Tauri 壳,验证「可分发」这条地基。**
+> 当前司南端到端可跑(配源 → 缓存 → 因子质检/自定义因子 → 训练 → 回测 → 模拟盘出信号),诚实/纪律/本机三性守住,约 290 测试 CI 绿。
+> **「可分发」地基已联网验证(2026-06-10,见 §11.3):真实 Tushare token 端到端 smoke 跑通 + `cargo build` 成功编译 Tauri 桌面壳(产出 13MB 可执行)。**
 
 ### 11.1 可扩展功能(按价值/可做性排序)
 
@@ -300,6 +300,7 @@ labels.py   build_forward_return_labels(hfq[T+h]/hfq[T]-1,前向,尾 h 日 null)
 2. ✅ **自定义因子权重(本会话完成)**:`custom_factors` 加 `weight` 列(迁移 `0008`,默认 1.0);`composite_score(weights=)` 按行跳 null 的加权均值(全 1.0 走等权零回归,weight=0 剔除,全 0 兜底等权);`score_universe` 从 custom 构造 weights;契约加 `custom_factors_update`(PUT);api `createCustom` 读 weight + 新 PUT 端点改权重/启用态(非负有限数校验);前端 `/indicators` 创建表单 weight + 已存因子 inline 改权重 + 启用开关。**权重经 `customFactorsForQuality` 自动贯穿实盘 `run_eod` 与回测 `run_backtest`(口径一致)**。约 ~290 测试,CI 绿。**剩余**:ICIR 自动加权(目前手动)、更多内置因子。
 3. **更多内置因子 + DSL 算子**:扩 `factors/library.py`(成长/情绪/反转族)与 `indicators/operators.py`(更多回看算子);新因子若需新数据走 `required_caps` 降级。
 4. **M3 v2 LightGBM / ensemble**:`ModelType` 加 `lightgbm`;`training/train.py` 加非线性分支(lightgbm 建议做可选 extra 保「可分发」轻量);GPU 走 `resolve_device` 已就绪。
+   - **(用户决策 2026-06-10:排在「联网验证可分发地基」之后再做。)** 推理两条路线:① 轻装=`dump_model()` 导出树为 JSON + polars/numpy 自实现树遍历(保住「模型=JSON·推理零重依赖·随包零模型」地基,工作量中等);② 简单=运行时依赖 lightgbm `predict`(破坏轻装,打包带二进制)。树模型更易过拟合 → 诚实 OOS 口径(IS/OOS 并列 + `layered_*`)更吃重。红线#1 不受影响(特征 asof / walk-forward+purge 管线复用)。
 5. **M5 资讯 / 估值**:`/news` 解锁;新增 provider 能力位 + 抓取管线 + 估值分析页。
 6. **真实净值累计**:盘后调度逐日累计一条持久净值曲线(替代总览「取最近回测」),`daily_pnl` 已有逐日数据。
 7. **业绩归因 + 报告导出**:因子贡献归因;回测/信号导出 PDF/Excel。
@@ -316,5 +317,16 @@ labels.py   build_forward_return_labels(hfq[T+h]/hfq[T]-1,前向,尾 h 日 null)
 - **前端页面大量 `any`**:api 响应未加 DTO;可在契约加响应 schema 提升类型安全。
 - **性能**:`factor_quality`/`build_feature_panel` 逐日 asof 循环,大股票池可批量取数优化(一次 asof 拉全区间,内存切片)。
 - **测试 fixture 单调合成盘**:IC 饱和到 1.0,IC 量级无法区分真信号与泄漏 —— 真护栏是结构守卫(已测);可加噪声盘让合法 OOS IC 落 0.3~0.7,提升「假绿」鉴别力。
-- **Tauri 壳本环境未编译**:cargo 镜像不可达;联网环境需验证 sidecar supervisor 起停。
+- ✅ **Tauri 壳已在本机编译通过(2026-06-10)**:cargo 镜像(aliyun)恢复可达;`cargo build` 产出 13MB debug 可执行。修了 2 个真实「可分发」缺口(否则 M6 打包必炸):① `tauri.conf.json` 非法 `comment` 字段(Tauri 2 schema 严格,拒任意字段)② 缺失 `icons/`(Windows 资源需 `icon.ico`,已用 Pillow 生成品牌图标全套)。**仍待**:`tauri dev` 实跑 sidecar supervisor 起停 + `tauri build` 出安装包(需冻结 sidecar:engine PyInstaller / api Node SEA + WiX/NSIS,留 M6)。
 - **日期 ISO 校验只覆盖回测入口**:`/backtests` 已加 `train_end`/`backtest_start`/`backtest_end` 的 `^\d{4}-\d{2}-\d{2}$` 校验(红线#2 纵深);`/models/train` 的 `train_start`/`train_end` 尚未加同款校验(目前同样靠前端 date input 隐式保证 ISO),可补齐成统一中间件。模型 `train_end` 入库后回测端比较亦默认其为 ISO。
+
+### 11.3 联网验证「可分发」地基(2026-06-10,已做)
+
+用户提供真实 Tushare token,在本机联网环境验证地基两半,**均通过**:
+
+- **A 半 · Tauri 桌面壳编译**:cargo 镜像(aliyun,项目级 `.cargo/config.toml`)恢复可达;`cargo build`(src-tauri)从干净状态编译几百个 crate(tauri 2.11 / wry / webview2-com / tao …)成功,产出 13MB debug 可执行(`target/debug/sinan-desktop.exe`)。过程中**抓出并修复 2 个一直藏着的真实缺口**(CI 不编 Tauri、只编 shell-core,故从未暴露):① `tauri.conf.json` 里用 `comment` 键当注释 → Tauri 2 config schema 严格拒任意字段;② `src-tauri/icons/` 整个目录缺失 → Windows 资源生成需 `icon.ico`。修法:删 `comment`、用 Pillow 生成品牌图标(紫渐变圆角 + 指南针指针)`icon.png`/`icon.ico`/多尺寸。
+- **B 半 · 真实数据端到端 smoke**:6 只大盘股 × 2024 全年 → `CacheBuilder` 真实建缓存(`done 6/6`,24 覆盖项,price/adj/daily_basic/**北向**全拉到,242 交易日)→ `score_universe` 真实打分(coverage 0.8,ep/bp/mom20/north_chg5 有效;**roe 诚实降级**——CacheBuilder 不建 fundamental 数据集,符合预期)→ `run_backtest` 真实回测(154 天 / 7 笔 / 含成本,degraded 随结果带出)。**整条数据链在真实数据下跑通**。
+- **token 能力位(该号积分)**:✅ DAILY_OHLCV / ADJ_FACTOR / DAILY_BASIC / NORTHBOUND / SW_INDUSTRY / TRADE_CAL;❌ FUNDAMENTAL / FINA_INDICATOR / INDEX_OHLCV / INDEX_WEIGHT / REALTIME_QUOTE(更高积分门槛)。故 roe 因子与回测沪深300基准在该号下会降级(诚实空,非 bug)。
+- **红线在真实数据下成立**:#4 token 全程只走环境变量、绝不落文件/日志/库;#3 roe 降级如实、coverage 如实;#1/#2 回测走 train_end+purge 守卫、scoring 如实、含成本。⚠️ smoke 回测的「年化/夏普」是手选小样本、无指数基准,**绝不代表真实策略业绩**,仅证明链路跑通。
+
+**仍待(M6 / 联网续做)**:`tauri dev` 实跑 sidecar supervisor 起停 + 端口握手;`tauri build` 出安装包(需冻结 sidecar:engine PyInstaller / api Node SEA,经 `externalBin` 注入 + WiX/NSIS 打包);CacheBuilder 接 `fundamental`/`index_ohlcv` 数据集(让 roe/基准在足额积分下可用);经 api/前端走一遍完整 HTTP 链路(本次 smoke 直调 engine 模块验证数据正确性,未起 sidecar 验证架构链路)。
