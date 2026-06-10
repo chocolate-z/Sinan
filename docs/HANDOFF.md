@@ -330,3 +330,37 @@ labels.py   build_forward_return_labels(hfq[T+h]/hfq[T]-1,前向,尾 h 日 null)
 - **红线在真实数据下成立**:#4 token 全程只走环境变量、绝不落文件/日志/库;#3 roe 降级如实、coverage 如实;#1/#2 回测走 train_end+purge 守卫、scoring 如实、含成本。⚠️ smoke 回测的「年化/夏普」是手选小样本、无指数基准,**绝不代表真实策略业绩**,仅证明链路跑通。
 
 **仍待(M6 / 联网续做)**:`tauri dev` 实跑 sidecar supervisor 起停 + 端口握手;`tauri build` 出安装包(需冻结 sidecar:engine PyInstaller / api Node SEA,经 `externalBin` 注入 + WiX/NSIS 打包);CacheBuilder 接 `fundamental`/`index_ohlcv` 数据集(让 roe/基准在足额积分下可用);经 api/前端走一遍完整 HTTP 链路(本次 smoke 直调 engine 模块验证数据正确性,未起 sidecar 验证架构链路)。
+
+### 11.4 桌面端实跑 + UI 打磨(2026-06-10,本会话 13 commits,93d0b00→127d81b,CI 全绿)
+
+用真实 Tushare token(5100 积分)在桌面端实跑(`pnpm dev` 一键起),抓出并修了一大批「只有真跑桌面端才暴露」的真 bug + 做了一轮 UI 打磨。
+
+**桌面端实跑修的真 bug(CI 抓不到 —— CI 不编 Tauri / 不跑桌面 HTTP 链路)**:
+
+- **CORS 漏 methods(最坑,一串现象的总根因)**:`services/api/src/bootstrap.ts` `enableCors` 只配 origin,@fastify/cors 默认只放 GET/HEAD/POST → `PUT`(保存 token `/credential`、设主源 `/active`)、`DELETE`、`PATCH` 的预检全被拒 → **保存 token 静默失败 → 能力探测全「未授权」**(伪装成「setActive Failed to fetch」「全未授权」等多个无关现象)。修:显式列全 methods + allowedHeaders(content-type, x-sinan-token);e2e 回归测试(OPTIONS 预检断言)。
+- **能力探测误判**:`tushare_provider.py` `test_connection` 的 `_PROBE` 只传 `{limit:1}`,而 income/fina_indicator/index_daily 必填 `ts_code` → tushare 返回「必填参数」(非积分/权限错)被 `except ProviderError:caps=False` 误判为无权限 → 5100 分账号财务/指数显示「未授权」。修:`_PROBE` 改为每接口带必填参数(ts_code/index_code),让 tushare 真正跑权限校验;`test_tushare.py` 回归测试。
+- **前端 content-type 400**:`apps/desktop/src/api/client.ts` 无条件给所有请求加 `content-type:json`,但无 body 的 POST(provider/test、onboarding/complete、models/activate)→ Fastify 400「Body cannot be empty」。修:仅 `opts.body !== undefined` 才加 content-type。
+- **Tauri capabilities 缺失**:`src-tauri/capabilities/` 目录根本不存在(gen 权限空 `{}`)→ 窗口控制(最小/最大/关闭)+ `data-tauri-drag-region` 拖拽全被拒。新增 `capabilities/default.json` 授 `core:window:*`(minimize/maximize/toggle-maximize/start-dragging/close)。
+- **vite watch src-tauri**:vite 监视 `src-tauri/target/`,cargo build 写文件时 `EBUSY` 崩溃(白屏)。`vite.config` 加 `server.watch.ignored: ['**/src-tauri/**']`。
+- tauri.conf 非法 `comment` 字段 + `icons/` 缺失(见 §11.3,A 半已修)。
+
+**UI 打磨(本会话)**:
+- 品牌 logo 换四色 Fluent 风(`shell/Logo.vue` + `src-tauri/icons/*` 用 Pillow 重生成);标题栏版本号读真实 `package.json`(全项目统一 **0.1.0**);能力探测中文标签抽 `lib/caps.ts` 共享(设置页+引导页);指标质检按钮/输入框重叠修复;Sidebar 文案。
+- 自定义 `ui/DatePicker.vue` 替换 4 页(指标/回测/模型/信号)原生日历(玻璃弹层 + accent 选中 + 月份导航 + 今天/清除)。
+- **引导嵌主界面**(用户要、贴设计稿):未完成 onboarding 时 `Dashboard.vue` 在 AppShell 内(侧栏可见)渲染 `<OnboardingWizard>`,`finish()`→`bootstrap()` 更新 `onboardingDone` 响应式切回总览;`/onboarding` 去 `noShell`;`OnboardingWizard` 去全屏极光 + `min-height:100%`。
+- 前端端口 5914 → **9521**(`vite.config` port + `tauri.conf` devUrl;改了要重编 Tauri 才生效)。
+- 一键 **`pnpm dev`**(`scripts/dev.mjs`:编译契约/api → cargo build → 起 vite:9521 → 起桌面壳 + 注入 `SINAN_PYTHON`/`SINAN_API_ENTRY` 等 env;Ctrl+C 一并停。已实跑验证)。
+- **`/help` 帮助页**(`pages/help/Help.vue`,侧栏系统组:产品定位/工作流/逐页/六红线/FAQ)。
+
+**⚠️ 给下一位的关键提醒**:
+- **真实 token 已在对话明文出现两次,用户已重置。新会话务必让用户在引导页输入 token,绝不让其贴进对话。**
+- 桌面端跑法:`pnpm dev`(一键)。⚠️ dev 用 `SINAN_SECRET_STORE=memory` → token 重启不持久,每次重跑要重输 token + 重走引导。
+- 本机环境曾有多个残留 `cargo`/`rustc` 进程互等 package cache 锁导致 `pnpm dev` 卡在「Blocking waiting for file lock」→ `Stop-Process cargo,rustc` 清掉即可(非脚本 bug)。
+- **核心数据流还没在桌面端完整跑通过一次**(建缓存→质检→训练→回测出真实结果)。这几轮用户一直在调 UI/外壳,这是最该补的端到端验证。
+
+**待办(用户明确提 + 候选,按优先级)**:
+1. **DatePicker 美观优化**(用户反馈还不够美;截图见指标/模型页)。
+2. **关闭确认对话 + 系统托盘**(关窗时问「最小化到托盘 / 退出软件」;Tauri 托盘 + `lib.rs` 的 `WindowEvent::CloseRequested` 拦截 → 前端弹对话 → 设置项记忆选择;capabilities 需加托盘权限)。
+3. **持仓建仓苹果风重设计**(`pages/portfolio/Portfolio.vue`:那两个无 label 的框是「股数」「成本价」;用户要搜索补全代码/名称 → 需新 api(engine `tushare_provider.stock_list` 未暴露给前端,要加端点)+ 加仓减仓移动加权成本自动计算 + 苹果风表单)。
+4. **真实数据跑通验证**(建缓存→质检→训练→回测,桌面端真实数据端到端;用户已有 token、能力全可用)。
+5. M6 打包(`tauri build` 安装包 + 冻结 sidecar);M5 资讯;M3 v2 LightGBM(用户倾向轻装:JSON 树+polars 推理);ICIR 自动加权;CacheBuilder 接 fundamental/index_ohlcv;设置页 PUT;`/models/train` ISO 校验。
