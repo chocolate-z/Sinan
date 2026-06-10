@@ -94,7 +94,15 @@ onBeforeUnmount(() => document.removeEventListener('mousedown', onDocPointer));
     >
       <span>{{ modelValue || placeholder }}</span>
       <svg class="dp-cal" width="14" height="14" viewBox="0 0 16 16" fill="none">
-        <rect x="2" y="3" width="12" height="11" rx="1.5" stroke="currentColor" stroke-width="1.2" />
+        <rect
+          x="2"
+          y="3"
+          width="12"
+          height="11"
+          rx="1.5"
+          stroke="currentColor"
+          stroke-width="1.2"
+        />
         <path d="M2 6h12M5 1.5v2M11 1.5v2" stroke="currentColor" stroke-width="1.2" />
       </svg>
     </button>
@@ -103,13 +111,23 @@ onBeforeUnmount(() => document.removeEventListener('mousedown', onDocPointer));
       <div class="dp-head">
         <button type="button" class="dp-nav" aria-label="上个月" @click="prevMonth">
           <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
-            <path d="M9 3 5 7l4 4" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" />
+            <path
+              d="M9 3 5 7l4 4"
+              stroke="currentColor"
+              stroke-width="1.4"
+              stroke-linecap="round"
+            />
           </svg>
         </button>
         <span class="dp-ym mono">{{ viewY }} 年 {{ pad(viewM) }} 月</span>
         <button type="button" class="dp-nav" aria-label="下个月" @click="nextMonth">
           <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
-            <path d="M5 3l4 4-4 4" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" />
+            <path
+              d="M5 3l4 4-4 4"
+              stroke="currentColor"
+              stroke-width="1.4"
+              stroke-linecap="round"
+            />
           </svg>
         </button>
       </div>
