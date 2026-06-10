@@ -9,7 +9,7 @@ export default defineConfig({
   // 固定非默认端口(避开 Vite 默认 5173;Tauri devUrl 必须与此一致)。
   // watch 忽略 src-tauri:否则 vite 监视 Rust target/,cargo build 写文件时 EBUSY 崩溃。
   server: {
-    port: 5914,
+    port: 9527,
     strictPort: true,
     watch: { ignored: ['**/src-tauri/**'] },
   },
