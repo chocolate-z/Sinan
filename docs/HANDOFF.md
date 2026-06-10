@@ -297,7 +297,7 @@ labels.py   build_forward_return_labels(hfq[T+h]/hfq[T]-1,前向,尾 h 日 null)
 ### 11.1 可扩展功能(按价值/可做性排序)
 
 1. ✅ **回测用激活模型 / 自定义因子(本会话完成)**:`run_backtest` 现支持 `model=`/`custom=`,口径与实盘 `run_eod` 一致。契约 `BacktestScoring=[auto,equal_weight,model,custom]`;engine 透传 + `BacktestResult.scoring` 如实回传实际口径;api `backtest.ts` 解析 `scoring`/`model_id`(可「先回测再激活」任一版本)+ **诚实 train_end=max(模型训练截止, 用户值) 守卫**(以模型回测绝不踩进训练窗口,红线#2)+ ISO 日期校验(纵深);迁移 `0007` 加 `scoring`/`model_id` 列(CHECK 入契约白名单);前端回测页打分口径分段选择 + 模型版本选择 + 口径出处徽标 + **因子降级如实显示**(红线#3,审计抓出的在产缺口已修)。黄金测试:模型/自定义 PIT 截断不变式 + 模型路径守卫拒跑。**第四次多智能体对抗式红线审计(5 探针×对抗复核)PASS**(无在产 blocker;抓出并修复前端 degraded 不渲染=红线#3 在产违反)。约 ~285 测试,CI 绿。
-2. **自定义因子权重**:目前等权合成;加权重(ICIR 加权或手动),`custom_factors` 表加 `weight` 列,`composite_score` 支持加权。
+2. ✅ **自定义因子权重(本会话完成)**:`custom_factors` 加 `weight` 列(迁移 `0008`,默认 1.0);`composite_score(weights=)` 按行跳 null 的加权均值(全 1.0 走等权零回归,weight=0 剔除,全 0 兜底等权);`score_universe` 从 custom 构造 weights;契约加 `custom_factors_update`(PUT);api `createCustom` 读 weight + 新 PUT 端点改权重/启用态(非负有限数校验);前端 `/indicators` 创建表单 weight + 已存因子 inline 改权重 + 启用开关。**权重经 `customFactorsForQuality` 自动贯穿实盘 `run_eod` 与回测 `run_backtest`(口径一致)**。约 ~290 测试,CI 绿。**剩余**:ICIR 自动加权(目前手动)、更多内置因子。
 3. **更多内置因子 + DSL 算子**:扩 `factors/library.py`(成长/情绪/反转族)与 `indicators/operators.py`(更多回看算子);新因子若需新数据走 `required_caps` 降级。
 4. **M3 v2 LightGBM / ensemble**:`ModelType` 加 `lightgbm`;`training/train.py` 加非线性分支(lightgbm 建议做可选 extra 保「可分发」轻量);GPU 走 `resolve_device` 已就绪。
 5. **M5 资讯 / 估值**:`/news` 解锁;新增 provider 能力位 + 抓取管线 + 估值分析页。

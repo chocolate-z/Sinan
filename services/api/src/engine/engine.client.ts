@@ -32,7 +32,7 @@ export interface PaperRunRequest {
   benchmark?: string;
   fill?: boolean;
   model?: Record<string, unknown> | null; // 激活的 ML 模型系数;在场则模型打分(M3)
-  custom?: Array<{ name: string; expr: string; group?: string }>; // 启用的自定义因子(无模型时进等权,M4 v3)
+  custom?: Array<{ name: string; expr: string; group?: string; weight?: number }>; // 启用的自定义因子(无模型时进等权,M4 v3;weight 合成加权)
 }
 
 export interface Quote {
@@ -79,7 +79,7 @@ export interface BacktestRequest {
   params?: Record<string, unknown>;
   initial_cash?: number;
   model?: Record<string, unknown> | null; // 激活/指定模型系数;在场则模型线性打分(口径与实盘一致)
-  custom?: Array<{ name: string; expr: string; group?: string }>; // 启用的自定义因子(无模型时进等权)
+  custom?: Array<{ name: string; expr: string; group?: string; weight?: number }>; // 启用的自定义因子(无模型时进等权;weight 合成加权)
 }
 
 export interface TrainRequest {
@@ -105,7 +105,7 @@ export interface FactorQualityRequest {
   label_horizon?: number;
   n_deciles?: number;
   codes?: string[];
-  custom?: Array<{ name: string; expr: string; group?: string }>; // 自定义 DSL 因子(M4 v3)
+  custom?: Array<{ name: string; expr: string; group?: string; weight?: number }>; // 自定义 DSL 因子(M4 v3;weight 合成加权,质检忽略)
 }
 
 /** engine 返回非 2xx 时抛出,携带状态码与 detail,供 api 决定转发何种 HTTP 错误。 */

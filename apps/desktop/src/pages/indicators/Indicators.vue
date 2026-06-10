@@ -17,6 +17,7 @@ const form = reactive({ start: '', end: '', label_horizon: 5 });
 // 自定义因子 DSL 编辑器:沙箱白名单 + 仅回看算子(结构上防未来函数,红线#1)。
 const expr = ref('zscore(-pe_ttm) + rank(roe)');
 const factorName = ref('');
+const factorWeight = ref(1); // 合成权重(1=等权;0=不参与;>1 放大该因子贡献)
 const validating = ref(false);
 const saving = ref(false);
 const saveError = ref<string | null>(null);
@@ -48,14 +49,31 @@ async function saveFactor() {
   saving.value = true;
   saveError.value = null;
   try {
-    await api.createCustomFactor({ name: factorName.value.trim(), expr: expr.value });
+    await api.createCustomFactor({
+      name: factorName.value.trim(),
+      expr: expr.value,
+      weight: factorWeight.value,
+    });
     factorName.value = '';
+    factorWeight.value = 1;
     await loadCustom();
   } catch (e) {
     const d = e instanceof ApiError ? e.detail : e;
     saveError.value = d && typeof d === 'object' ? JSON.stringify(d) : String(d ?? e);
   } finally {
     saving.value = false;
+  }
+}
+// 改合成权重 / 启用态(就地保存,口径贯穿实盘选股与回测)。
+async function updateFactor(id: string, patch: { weight?: number; enabled?: boolean }) {
+  saveError.value = null;
+  try {
+    await api.updateCustomFactor(id, patch);
+    await loadCustom();
+  } catch (e) {
+    const d = e instanceof ApiError ? e.detail : e;
+    saveError.value = d && typeof d === 'object' ? JSON.stringify(d) : String(d ?? e);
+    await loadCustom(); // 失败回滚显示到服务端真值
   }
 }
 async function delFactor(id: string) {
@@ -225,6 +243,16 @@ async function run() {
             class="input mono dsl-name"
             placeholder="因子名(英文,如 my_mom)"
           />
+          <label class="cf-weight" title="合成权重:1=等权,0=不参与,>1 放大该因子贡献">
+            权重
+            <input
+              v-model.number="factorWeight"
+              class="input mono cf-weight-in"
+              type="number"
+              min="0"
+              step="0.5"
+            />
+          </label>
           <button
             class="btn btn-secondary"
             :disabled="saving || !factorName.trim()"
@@ -235,12 +263,42 @@ async function run() {
         </div>
         <p v-if="saveError" class="dsl-err"><Icon name="alert" :size="13" /> {{ saveError }}</p>
 
-        <!-- 已保存的自定义因子(质检时与内置并列计算真实 IC/分层)-->
+        <!-- 已保存的自定义因子(启用者运行质检/选股时与内置并列;权重驱动合成,口径贯穿实盘+回测)-->
         <div v-if="customList.length" class="dsl-saved">
-          <div class="cap dsl-saved-k">已保存因子 · 运行质检时与内置因子并列计算真实 IC/分层</div>
-          <div v-for="c in customList" :key="c.id" class="dsl-saved-row">
+          <div class="cap dsl-saved-k">
+            已保存因子 · 启用项进等权×权重合成(驱动每日选股 + 回测,口径一致)
+          </div>
+          <div
+            v-for="c in customList"
+            :key="c.id"
+            class="dsl-saved-row"
+            :class="{ 'row-off': !c.enabled }"
+          >
+            <label class="cf-switch" :title="c.enabled ? '已启用(点击禁用)' : '已禁用(点击启用)'">
+              <input
+                type="checkbox"
+                :checked="c.enabled"
+                @change="
+                  updateFactor(c.id, { enabled: ($event.target as HTMLInputElement).checked })
+                "
+              />
+              <span class="cf-track"><span class="cf-knob" /></span>
+            </label>
             <span class="dsl-saved-name mono">{{ c.name }}</span>
             <span class="dsl-saved-expr mono">{{ c.expr }}</span>
+            <label class="cf-weight" title="合成权重:1=等权,0=不参与,>1 放大该因子贡献">
+              权重
+              <input
+                class="input mono cf-weight-in"
+                type="number"
+                min="0"
+                step="0.5"
+                :value="c.weight"
+                @change="
+                  updateFactor(c.id, { weight: Number(($event.target as HTMLInputElement).value) })
+                "
+              />
+            </label>
             <button class="btn btn-ghost btn-sm" @click="delFactor(c.id)">删除</button>
           </div>
         </div>
@@ -504,6 +562,64 @@ async function run() {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+.dsl-saved-row.row-off {
+  opacity: 0.5;
+}
+
+/* 合成权重输入(中性,非盈亏色)*/
+.cf-weight {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: none;
+  font-size: var(--fs-cap);
+  color: var(--text-3);
+}
+.cf-weight-in {
+  width: 64px;
+  text-align: right;
+}
+
+/* 启用开关(Status accent 通道:启用=accent)*/
+.cf-switch {
+  flex: none;
+  display: inline-flex;
+  cursor: pointer;
+}
+.cf-switch input {
+  position: absolute;
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+.cf-track {
+  width: 30px;
+  height: 17px;
+  border-radius: 9px;
+  background: var(--bg-base);
+  border: 0.5px solid var(--border);
+  display: inline-flex;
+  align-items: center;
+  padding: 1px;
+  transition: background 0.15s var(--ease);
+}
+.cf-knob {
+  width: 13px;
+  height: 13px;
+  border-radius: 50%;
+  background: var(--text-3);
+  transition:
+    transform 0.15s var(--ease),
+    background 0.15s var(--ease);
+}
+.cf-switch input:checked + .cf-track {
+  background: var(--accent);
+  border-color: transparent;
+}
+.cf-switch input:checked + .cf-track .cf-knob {
+  transform: translateX(13px);
+  background: #fff;
 }
 
 .cols {

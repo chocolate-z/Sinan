@@ -148,6 +148,60 @@ def test_score_universe_with_custom_factor(tmp_path):
     assert "evil" not in bad.effective
 
 
+def test_composite_score_weighting():
+    """加权合成(M4 自定义因子权重):按行跳 null 的加权均值;weight=0 剔除;全 0 退回等权。"""
+    import pytest
+
+    from sinan.factors.score import composite_score
+
+    m = pl.DataFrame({"stock_code": ["A", "B", "C"], "f_a": [1.0, 0.0, -1.0], "f_b": [-1.0, 0.0, 1.0]})
+    eff = ["a", "b"]
+
+    # 等权(weights=None):mean(f_a,f_b) = [0,0,0]。
+    s0 = composite_score(m, eff)["score"].to_list()
+    assert s0 == pytest.approx([0.0, 0.0, 0.0])
+
+    # a 权重 2、b 权重 1:(2·f_a + 1·f_b)/3。
+    sw = composite_score(m, eff, {"a": 2.0, "b": 1.0}).sort("stock_code")["score"].to_list()
+    assert sw == pytest.approx([(2 * 1 - 1) / 3, 0.0, (2 * -1 + 1) / 3])
+
+    # b 权重 0 = 从合成剔除 → score 退化为 f_a。
+    sb0 = composite_score(m, eff, {"a": 1.0, "b": 0.0}).sort("stock_code")["score"].to_list()
+    assert sb0 == pytest.approx([1.0, 0.0, -1.0])
+
+    # 全 0 权重 → 兜底等权(不产出全 null 假分)。
+    sz = composite_score(m, eff, {"a": 0.0, "b": 0.0})["score"].to_list()
+    assert sz == pytest.approx([0.0, 0.0, 0.0])
+
+    # 按行跳 null:A 行 f_b 缺失 → 仅用 f_a(den=2,num=2·f_a → score=f_a)。
+    mn = pl.DataFrame({"stock_code": ["A", "B"], "f_a": [1.0, 2.0], "f_b": [None, 2.0]})
+    sn = composite_score(mn, eff, {"a": 2.0, "b": 1.0}).sort("stock_code")["score"].to_list()
+    assert sn[0] == pytest.approx(1.0)  # A:f_b null → 跳过,score=f_a=1.0
+    assert sn[1] == pytest.approx(2.0)  # B:(2·2+1·2)/3=2.0
+
+
+def test_score_universe_custom_weight_scales_contribution(tmp_path):
+    """自定义因子权重驱动合成:weight=1.0 与不传完全一致(零回归);weight≠1.0 放大其贡献改综合分。"""
+    import pytest
+
+    dates = _dates(30)
+    T = dates[24]
+    cache = tmp_path / "c"
+    _write(cache, _build_frames(dates))
+    EXPR = "close / delay(close, 10) - 1"
+
+    def run(weight=None):
+        c = {"name": "mom10c", "expr": EXPR, "group": "custom"}
+        if weight is not None:
+            c["weight"] = weight
+        r = score_universe(FactorContext(DataLayer(cache), T, CODES), custom=[c])
+        return r.scores.sort("stock_code")["score"].to_list()
+
+    s_default, s_w1, s_w3 = run(), run(1.0), run(3.0)
+    assert s_w1 == pytest.approx(s_default)  # weight=1.0 走等权路径,零回归
+    assert s_w3 != pytest.approx(s_default)  # weight=3.0 放大自定义因子贡献 → 综合分变化
+
+
 def test_cross_section_winsor_and_zscore():
     s = pl.Series("x", [1.0, 2.0, 3.0, 4.0, 100.0])  # 100 为极端值
     w = winsorize_mad(s, n=3.0)

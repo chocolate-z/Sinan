@@ -56,6 +56,7 @@ API_ENDPOINTS: dict[str, dict[str, str]] = {
     "indicators_validate": {"method": "POST", "path": "/indicators/validate"},
     "custom_factors_create": {"method": "POST", "path": "/custom-factors"},
     "custom_factors_list": {"method": "GET", "path": "/custom-factors"},
+    "custom_factors_update": {"method": "PUT", "path": "/custom-factors/:id"},
     "custom_factors_delete": {"method": "DELETE", "path": "/custom-factors/:id"},
 }
 

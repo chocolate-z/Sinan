@@ -797,34 +797,65 @@ export class Repository {
     };
   }
 
-  // ── 自定义因子(M4 v3:DSL 定义,api 落库,engine 与内置并列计算)─────────────
-  customFactorCreate(input: { name: string; expr: string; group?: string }): string {
+  // ── 自定义因子(M4 v3:DSL 定义,api 落库,engine 与内置并列计算;M4 权重:weight 合成加权)─────
+  customFactorCreate(input: {
+    name: string;
+    expr: string;
+    group?: string;
+    weight?: number;
+  }): string {
     const id = randomUUID();
     this.db.run(
-      'INSERT INTO custom_factors(id,name,expr,factor_group,enabled,created_at) VALUES (?,?,?,?,?,?)',
+      'INSERT INTO custom_factors(id,name,expr,factor_group,enabled,weight,created_at) VALUES (?,?,?,?,?,?,?)',
       id,
       input.name,
       input.expr,
       input.group ?? 'custom',
       1,
+      input.weight ?? 1.0,
       now(),
     );
     return id;
   }
 
+  /** 部分更新自定义因子的合成权重 / 启用态(表达式不可改:改公式请删后重建,经沙箱校验)。 */
+  customFactorUpdate(id: string, patch: { weight?: number; enabled?: boolean }): boolean {
+    const before = this.db.get<any>('SELECT id FROM custom_factors WHERE id=?', id);
+    if (!before) return false;
+    const sets: string[] = [];
+    const vals: unknown[] = [];
+    if (patch.weight !== undefined) {
+      sets.push('weight=?');
+      vals.push(patch.weight);
+    }
+    if (patch.enabled !== undefined) {
+      sets.push('enabled=?');
+      vals.push(patch.enabled ? 1 : 0);
+    }
+    if (!sets.length) return true; // 无字段变更:幂等成功
+    vals.push(id);
+    this.db.run(`UPDATE custom_factors SET ${sets.join(',')} WHERE id=?`, ...vals);
+    return true;
+  }
+
   customFactorsList(): any[] {
     return this.db
       .all<any>(
-        'SELECT id,name,expr,factor_group,enabled,created_at FROM custom_factors ORDER BY created_at DESC',
+        'SELECT id,name,expr,factor_group,enabled,weight,created_at FROM custom_factors ORDER BY created_at DESC',
       )
       .map((r) => ({ ...r, enabled: !!r.enabled }));
   }
 
-  /** 启用的自定义因子,形如 engine 期望的 [{name, expr, group}](供质检下发)。 */
-  customFactorsForQuality(): Array<{ name: string; expr: string; group: string }> {
+  /** 启用的自定义因子,形如 engine 期望的 [{name, expr, group, weight}](供质检/打分/回测下发)。 */
+  customFactorsForQuality(): Array<{
+    name: string;
+    expr: string;
+    group: string;
+    weight: number;
+  }> {
     return this.db
-      .all<any>('SELECT name,expr,factor_group FROM custom_factors WHERE enabled=1')
-      .map((r) => ({ name: r.name, expr: r.expr, group: r.factor_group }));
+      .all<any>('SELECT name,expr,factor_group,weight FROM custom_factors WHERE enabled=1')
+      .map((r) => ({ name: r.name, expr: r.expr, group: r.factor_group, weight: r.weight }));
   }
 
   customFactorDelete(id: string): boolean {

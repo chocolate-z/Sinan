@@ -50,14 +50,34 @@ def compute_factor_matrix(
     return base, effective, degraded
 
 
-def composite_score(matrix: pl.DataFrame, effective: list[str]) -> pl.DataFrame:
+def composite_score(
+    matrix: pl.DataFrame, effective: list[str], weights: dict[str, float] | None = None
+) -> pl.DataFrame:
+    """合成分。weights=None 走等权(mean_horizontal,零回归);否则按因子权重加权。
+
+    加权口径 = 逐行「跳 null 的加权均值」:score = Σ(w·f) / Σ(w),仅对该行非 null 的因子求和
+    (与 mean_horizontal 逐行跳 null 语义一致;全 null 行 → null,不补强)。权重缺省 1.0;
+    某因子 weight=0 等价从合成中剔除;总权重<=0(全 0)→ 退回等权,绝不产出全 null 假分。
+    """
     cols = [f"f_{n}" for n in effective]
     if not cols:
         return matrix.with_columns(
             pl.lit(None, dtype=pl.Float64).alias("score"),
             pl.lit(None, dtype=pl.Float64).alias("percentile"),
         )
-    scored = matrix.with_columns(pl.mean_horizontal(cols).alias("score"))
+    if weights is None:
+        score_expr = pl.mean_horizontal(cols)
+    else:
+        ws = [float(weights.get(n, 1.0)) for n in effective]
+        if sum(ws) <= 0:  # 全 0/负 → 等权兜底(避免除零得全 null)
+            score_expr = pl.mean_horizontal(cols)
+        else:
+            num = pl.sum_horizontal([pl.col(c).fill_null(0.0) * w for c, w in zip(cols, ws)])
+            den = pl.sum_horizontal(
+                [pl.when(pl.col(c).is_not_null()).then(w).otherwise(0.0) for c, w in zip(cols, ws)]
+            )
+            score_expr = pl.when(den > 0).then(num / den).otherwise(None)
+    scored = matrix.with_columns(score_expr.alias("score"))
     n = max(scored["score"].drop_nulls().len(), 1)
     scored = scored.with_columns(
         (pl.col("score").rank(method="average") / n).alias("percentile")
@@ -89,10 +109,16 @@ def score_universe(
     factors: list[Factor] = DEFAULT_FACTORS,
     custom: list[dict] | None = None,
 ) -> ScoreResult:
-    """等权多因子合成打分。custom = 启用的自定义 DSL 因子,与内置因子并列进等权(M4 v3)。"""
+    """多因子合成打分。custom = 启用的自定义 DSL 因子,与内置因子并列(M4 v3)。
+
+    权重(M4 自定义因子权重):内置因子恒 1.0;自定义因子用各自 weight(缺省 1.0)。
+    全为 1.0 时退回等权路径(零回归);存在 ≠1.0 权重才走加权合成。
+    """
     all_factors, custom_degraded = _with_custom(factors, custom)
     matrix, effective, degraded = compute_factor_matrix(ctx, all_factors)
-    scored = composite_score(matrix, effective)
+    weights = {c["name"]: float(c.get("weight", 1.0)) for c in (custom or [])}
+    use_weights = any(w != 1.0 for w in weights.values())
+    scored = composite_score(matrix, effective, weights if use_weights else None)
     coverage = len(effective) / len(all_factors) if all_factors else 0.0
     return ScoreResult(
         scores=scored, coverage=coverage, effective=effective, degraded=degraded + custom_degraded

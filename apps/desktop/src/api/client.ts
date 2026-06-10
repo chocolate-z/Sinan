@@ -162,9 +162,11 @@ export const api = {
   }) => request<any>(API_ENDPOINTS.indicators_quality, { query: q }),
   validateIndicator: (expr: string) =>
     request<any>(API_ENDPOINTS.indicators_validate, { body: { expr } }),
-  createCustomFactor: (body: { name: string; expr: string; group?: string }) =>
+  createCustomFactor: (body: { name: string; expr: string; group?: string; weight?: number }) =>
     request<any>(API_ENDPOINTS.custom_factors_create, { body }),
   customFactors: () => request<any[]>(API_ENDPOINTS.custom_factors_list),
+  updateCustomFactor: (id: string, body: { weight?: number; enabled?: boolean }) =>
+    request<any>(API_ENDPOINTS.custom_factors_update, { params: { id }, body }),
   deleteCustomFactor: (id: string) =>
     request<any>(API_ENDPOINTS.custom_factors_delete, { params: { id } }),
 };
