@@ -627,6 +627,8 @@ export class Repository {
       purge: number;
       benchmark: string;
       initial_cash: number;
+      scoring?: string | null;
+      model_id?: string | null;
     },
     result: {
       n_days: number;
@@ -642,9 +644,9 @@ export class Repository {
     const id = randomUUID();
     this.db.run(
       `INSERT INTO backtests(id,strategy_id,backtest_start,backtest_end,train_end,purge,benchmark,
-         initial_cash,n_days,n_trades,total_cost,cost_included,metrics_json,nav_curve_json,
-         trades_json,degraded_json,status,created_at)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+         initial_cash,scoring,model_id,n_days,n_trades,total_cost,cost_included,metrics_json,
+         nav_curve_json,trades_json,degraded_json,status,created_at)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
       id,
       input.strategy_id ?? null,
       input.backtest_start,
@@ -653,6 +655,8 @@ export class Repository {
       input.purge,
       input.benchmark,
       input.initial_cash,
+      input.scoring ?? null,
+      input.model_id ?? null,
       result.n_days,
       result.n_trades,
       result.total_cost,
@@ -671,7 +675,7 @@ export class Repository {
     return this.db
       .all<any>(
         `SELECT id,strategy_id,backtest_start,backtest_end,train_end,purge,benchmark,initial_cash,
-           n_days,n_trades,total_cost,cost_included,metrics_json,status,created_at
+           scoring,model_id,n_days,n_trades,total_cost,cost_included,metrics_json,status,created_at
          FROM backtests ORDER BY created_at DESC`,
       )
       .map((r) => ({
@@ -836,6 +840,29 @@ export class Repository {
       "SELECT model_json FROM model_versions WHERE status='running' ORDER BY created_at DESC LIMIT 1",
     );
     return r?.model_json ? JSON.parse(r.model_json) : null;
+  }
+
+  /** 激活模型的系数 + 训练截止 + 版本 id,供回测(口径与实盘一致 + 红线#2 诚实样本外守卫)。
+   * train_end 用于把回测 train_end 抬到不早于训练截止,确保回测绝不踩进该模型的训练窗口。 */
+  activeModelMeta(): { id: string; train_end: string; model: Record<string, unknown> } | null {
+    const r = this.db.get<any>(
+      "SELECT id,train_end,model_json FROM model_versions WHERE status='running' ORDER BY created_at DESC LIMIT 1",
+    );
+    if (!r?.model_json) return null;
+    return { id: r.id, train_end: r.train_end, model: JSON.parse(r.model_json) };
+  }
+
+  /** 指定模型版本的系数 + 训练截止(供「先回测再激活」:回测任一 draft/archived 版本)。 */
+  modelVersionForBacktest(
+    id: string,
+  ): { id: string; train_end: string; model: Record<string, unknown> } | null {
+    const r = this.db.get<any>('SELECT id,train_end,model_json FROM model_versions WHERE id=?', id);
+    if (!r) return null;
+    return {
+      id: r.id,
+      train_end: r.train_end,
+      model: r.model_json ? JSON.parse(r.model_json) : {},
+    };
   }
 
   /** 激活某模型版本:置为 running,其余 running 降级 archived;若挂策略则回写 active_model_id。 */

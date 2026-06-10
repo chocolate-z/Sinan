@@ -116,6 +116,15 @@ class ModelStatus(_StrEnum):
     ARCHIVED = "archived"
 
 
+class BacktestScoring(_StrEnum):
+    # auto=镜像实盘(有激活模型用模型,否则启用的自定义因子,再否则等权);其余为强制档。
+    # engine 回测结果的 scoring 为解析后的实际口径(永不回传 auto)。
+    AUTO = "auto"
+    EQUAL_WEIGHT = "equal_weight"
+    MODEL = "model"
+    CUSTOM = "custom"
+
+
 # 供 consistency 测试逐项比对 spec/enums.json。
 ENUM_MIRROR: dict[str, list[str]] = {
     "Provider": [e.value for e in Provider],
@@ -133,4 +142,5 @@ ENUM_MIRROR: dict[str, list[str]] = {
     "OnboardingStep": [e.value for e in OnboardingStep],
     "ModelType": [e.value for e in ModelType],
     "ModelStatus": [e.value for e in ModelStatus],
+    "BacktestScoring": [e.value for e in BacktestScoring],
 }

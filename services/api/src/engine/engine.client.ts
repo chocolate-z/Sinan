@@ -71,12 +71,15 @@ export interface PricesResult {
 export interface BacktestRequest {
   backtest_start: string;
   backtest_end: string;
+  /** 样本外边界(开区间,不含该日);守卫拒跑 backtest_start ≤ train_end + purge 个交易日。ISO YYYY-MM-DD。 */
   train_end: string;
   codes?: string[];
   benchmark?: string;
   purge?: number;
   params?: Record<string, unknown>;
   initial_cash?: number;
+  model?: Record<string, unknown> | null; // 激活/指定模型系数;在场则模型线性打分(口径与实盘一致)
+  custom?: Array<{ name: string; expr: string; group?: string }>; // 启用的自定义因子(无模型时进等权)
 }
 
 export interface TrainRequest {

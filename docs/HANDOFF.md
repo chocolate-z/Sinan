@@ -149,6 +149,8 @@ pnpm --filter @sinan/desktop dev    # 或 (cd apps/desktop && node node_modules/
 - ✅ **M2 回测引擎(四刀闭环 + 红线审计收口)**:`backtest/splits.py`(时序切分 / purge / embargo / walk-forward / 硬守卫 `is_oos_clean`)+ `metrics.py`(绩效全集)+ `engine.py`(`run_backtest` 复用 `paper/` 逐日撮合,T 收盘估值 / T+1 开盘成交 / 含成本)+ `/engine/backtest` + api `/backtests`(migration `0003`)+ 回测页 `/backtest`(净值 vs 基准 + 回撤阴影 + 月度热力图 + 诚实口径提示条)。
   **第三次多智能体红线审计**(对抗式 5 agent)结论 **PASS**:实现层四红线无在产违反;曾抓出并已修复红线#1 黄金测试「假绿」→ 换为白盒 `test_backtest_valuation_asof_never_leads_decision_day`(spy `engine._price_map`,断言收盘估值取数 asof 恰为决策日 T),并对抗式自验(注入「估值取数前移到 T+1」会让该测试变红)。
 
+- ✅ **回测口径与实盘一致(本会话完成,见 §11.1 #1)**:`run_backtest(model=,custom=)` 透传 `run_eod`;`scoring` 字段如实标注;api 解析 `scoring`/`model_id` + 诚实 `train_end=max` 守卫 + ISO 校验;迁移 `0007`;前端口径选择 + 出处 + degraded 显示。对抗式红线审计 PASS。
+
 **M2 遗留 minor(非阻断,见审计报告;可后续排期)**
 
 - 回测末日 T+1 成交「有成本无损益」(该笔持仓不进 nav 曲线)→ 末日 `fill=False` 或补一个终值估值点。
@@ -294,7 +296,7 @@ labels.py   build_forward_return_labels(hfq[T+h]/hfq[T]-1,前向,尾 h 日 null)
 
 ### 11.1 可扩展功能(按价值/可做性排序)
 
-1. **回测用激活模型 / 自定义因子**:`run_backtest` 目前走等权 `score_universe`;让回测也支持 `model=`/`custom=`(已有 `model_score_universe`/`score_universe(custom=)`),口径与实盘一致 —— 小而有用。
+1. ✅ **回测用激活模型 / 自定义因子(本会话完成)**:`run_backtest` 现支持 `model=`/`custom=`,口径与实盘 `run_eod` 一致。契约 `BacktestScoring=[auto,equal_weight,model,custom]`;engine 透传 + `BacktestResult.scoring` 如实回传实际口径;api `backtest.ts` 解析 `scoring`/`model_id`(可「先回测再激活」任一版本)+ **诚实 train_end=max(模型训练截止, 用户值) 守卫**(以模型回测绝不踩进训练窗口,红线#2)+ ISO 日期校验(纵深);迁移 `0007` 加 `scoring`/`model_id` 列(CHECK 入契约白名单);前端回测页打分口径分段选择 + 模型版本选择 + 口径出处徽标 + **因子降级如实显示**(红线#3,审计抓出的在产缺口已修)。黄金测试:模型/自定义 PIT 截断不变式 + 模型路径守卫拒跑。**第四次多智能体对抗式红线审计(5 探针×对抗复核)PASS**(无在产 blocker;抓出并修复前端 degraded 不渲染=红线#3 在产违反)。约 ~285 测试,CI 绿。
 2. **自定义因子权重**:目前等权合成;加权重(ICIR 加权或手动),`custom_factors` 表加 `weight` 列,`composite_score` 支持加权。
 3. **更多内置因子 + DSL 算子**:扩 `factors/library.py`(成长/情绪/反转族)与 `indicators/operators.py`(更多回看算子);新因子若需新数据走 `required_caps` 降级。
 4. **M3 v2 LightGBM / ensemble**:`ModelType` 加 `lightgbm`;`training/train.py` 加非线性分支(lightgbm 建议做可选 extra 保「可分发」轻量);GPU 走 `resolve_device` 已就绪。
@@ -315,3 +317,4 @@ labels.py   build_forward_return_labels(hfq[T+h]/hfq[T]-1,前向,尾 h 日 null)
 - **性能**:`factor_quality`/`build_feature_panel` 逐日 asof 循环,大股票池可批量取数优化(一次 asof 拉全区间,内存切片)。
 - **测试 fixture 单调合成盘**:IC 饱和到 1.0,IC 量级无法区分真信号与泄漏 —— 真护栏是结构守卫(已测);可加噪声盘让合法 OOS IC 落 0.3~0.7,提升「假绿」鉴别力。
 - **Tauri 壳本环境未编译**:cargo 镜像不可达;联网环境需验证 sidecar supervisor 起停。
+- **日期 ISO 校验只覆盖回测入口**:`/backtests` 已加 `train_end`/`backtest_start`/`backtest_end` 的 `^\d{4}-\d{2}-\d{2}$` 校验(红线#2 纵深);`/models/train` 的 `train_start`/`train_end` 尚未加同款校验(目前同样靠前端 date input 隐式保证 ISO),可补齐成统一中间件。模型 `train_end` 入库后回测端比较亦默认其为 ISO。

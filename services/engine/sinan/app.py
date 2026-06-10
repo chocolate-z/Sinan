@@ -242,6 +242,8 @@ class BacktestReq(BaseModel):
     purge: int = 5
     params: dict = {}
     initial_cash: float = 1_000_000.0
+    model: Optional[dict] = None  # 激活/指定模型系数(api 下发);在场则模型线性打分,口径与实盘一致
+    custom: Optional[list[dict]] = None  # 启用的自定义 DSL 因子(无模型时进等权合成)
 
 
 @app.post("/engine/backtest", dependencies=[Depends(require_internal)])
@@ -269,6 +271,8 @@ def backtest(req: BacktestReq) -> dict:
             benchmark=req.benchmark,
             purge=req.purge,
             initial_cash=req.initial_cash,
+            model=req.model,
+            custom=req.custom,
         )
     except BacktestGuardError as e:
         # 422:语义合法但违反诚实样本外硬守卫(红线#2)。

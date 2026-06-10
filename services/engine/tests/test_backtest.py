@@ -223,3 +223,118 @@ def test_backtest_rejects_short_window(tmp_path):
             train_end=dates[19],
             purge=5,
         )
+
+
+# ── 口径与实盘一致:回测用激活模型 / 自定义因子(M4 v3 扩展;红线#1 双保险)──────────────
+_MODEL_MOM = {"feature_cols": ["f_mom20"], "coef": [1.0], "intercept": 0.0}
+_CUSTOM_MOM = [{"name": "cf_mom5", "expr": "close / delay(close, 5) - 1", "group": "custom"}]
+
+
+def test_backtest_scoring_field_reports_actual_caliber(tmp_path):
+    """scoring 字段如实回传本次实际口径(红线#3:前端据此标注出处,不混淆模型/等权)。"""
+    cache = tmp_path / "cache"
+    dates = _dates(40)
+    _setup(cache, dates)
+    kw = dict(
+        codes=CODES, trading_dates=dates, backtest_start=dates[26], backtest_end=dates[38],
+        train_end=dates[19], purge=5, params={"buy_threshold": 0.0, "max_holdings": 3},
+    )
+    assert run_backtest(DataLayer(cache), **kw).scoring == "equal_weight"  # 默认纯内置因子等权
+    assert run_backtest(DataLayer(cache), model=_MODEL_MOM, **kw).scoring == "model"
+    assert run_backtest(DataLayer(cache), custom=_CUSTOM_MOM, **kw).scoring == "custom"
+    # 模型优先于自定义(与 run_eod 一致):同时给则口径为 model。
+    assert run_backtest(DataLayer(cache), model=_MODEL_MOM, custom=_CUSTOM_MOM, **kw).scoring == "model"
+    # 空自定义列表退化为等权(不虚标 custom)。
+    assert run_backtest(DataLayer(cache), custom=[], **kw).scoring == "equal_weight"
+
+
+def test_backtest_model_coef_drives_selection(tmp_path):
+    """模型系数真正驱动选股(而非等权):正负系数选出不同股票,证明是模型而非内置等权在打分。"""
+    cache = tmp_path / "cache"
+    dates = _dates(40)
+    _setup(cache, dates)
+    kw = dict(
+        codes=CODES, trading_dates=dates, backtest_start=dates[26], backtest_end=dates[38],
+        train_end=dates[19], purge=5, params={"buy_threshold": 0.0, "max_holdings": 2},
+    )
+    pos = run_backtest(DataLayer(cache), model={**_MODEL_MOM, "coef": [1.0]}, **kw)
+    neg = run_backtest(DataLayer(cache), model={**_MODEL_MOM, "coef": [-1.0]}, **kw)
+    buys_pos = {t["code"] for t in pos.trades if t["side"] == "buy"}
+    buys_neg = {t["code"] for t in neg.trades if t["side"] == "buy"}
+    assert buys_pos and buys_neg
+    assert buys_pos != buys_neg  # 系数反号 → 选股不同 → 确是模型系数在驱动,而非等权
+
+
+def test_backtest_model_truncation_invariance(tmp_path):
+    """黄金测试(红线#1):以模型打分回测,只依赖 <=(回测末日 T+1)的数据;追加更远未来数据
+    不改变 nav/成交数/成本。模型系数为训练期固定 JSON,逐日特征经 asof PIT,绝不引入未来。
+    (与 test_backtest_truncation_invariance 同构,但走 model= 打分路径以覆盖模型场景。)"""
+    dates = _dates(50)
+    full = tmp_path / "full"
+    _setup(full, dates)
+    cutoff = dates[39]
+    trunc = tmp_path / "trunc"
+    _setup(trunc, dates, max_trade_date=cutoff)
+
+    kw = dict(
+        codes=CODES, backtest_start=dates[26], backtest_end=dates[38],
+        train_end=dates[19], purge=5, params={"buy_threshold": 0.0, "max_holdings": 3},
+        model=_MODEL_MOM,
+    )
+    r_full = run_backtest(DataLayer(full), trading_dates=dates, **kw)
+    r_trunc = run_backtest(DataLayer(trunc), trading_dates=dates[:40], **kw)
+
+    assert r_full.scoring == r_trunc.scoring == "model"
+    assert [round(r["nav"], 4) for r in r_full.nav_curve] == [
+        round(r["nav"], 4) for r in r_trunc.nav_curve
+    ]
+    assert r_full.n_trades == r_trunc.n_trades
+    assert round(r_full.total_cost, 4) == round(r_trunc.total_cost, 4)
+
+
+def test_backtest_model_train_window_no_overlap(tmp_path):
+    """红线#2:以模型回测时,硬守卫 is_oos_clean 照样拒跑重叠区间 —— 模型在场绝不绕过守卫。
+    (补「模型 + 非法样本外区间」跨层组合的测试盲点:证明模型路径的样本外纪律不弱于纯因子路径。)"""
+    cache = tmp_path / "cache"
+    dates = _dates(40)
+    _setup(cache, dates)
+    # backtest_start 落在 purge=5 隔离区内 → 即便给了模型也必须拒跑(否则=拿训练窗口样本回测)。
+    with pytest.raises(BacktestGuardError):
+        run_backtest(
+            DataLayer(cache),
+            codes=CODES,
+            trading_dates=dates,
+            backtest_start=dates[20],
+            backtest_end=dates[38],
+            train_end=dates[19],
+            purge=5,
+            model=_MODEL_MOM,
+        )
+
+
+def test_backtest_custom_factor_truncation_invariance(tmp_path):
+    """黄金测试(红线#1):以自定义 DSL 因子回测同样 PIT —— 仅回看算子(delay)+ asof 面板,
+    结构上写不出前视;追加远未来数据不改变 nav/成交。自定义因子接入回测口径的穿越护栏。"""
+    dates = _dates(50)
+    full = tmp_path / "full"
+    _setup(full, dates)
+    cutoff = dates[39]
+    trunc = tmp_path / "trunc"
+    _setup(trunc, dates, max_trade_date=cutoff)
+
+    kw = dict(
+        codes=CODES, backtest_start=dates[26], backtest_end=dates[38],
+        train_end=dates[19], purge=5, params={"buy_threshold": 0.0, "max_holdings": 3},
+        custom=_CUSTOM_MOM,
+    )
+    r_full = run_backtest(DataLayer(full), trading_dates=dates, **kw)
+    r_trunc = run_backtest(DataLayer(trunc), trading_dates=dates[:40], **kw)
+
+    assert r_full.scoring == r_trunc.scoring == "custom"
+    # 自定义因子确有效驱动(非全降级空跑):区间内确有成交。
+    assert r_full.n_trades >= 1
+    assert [round(r["nav"], 4) for r in r_full.nav_curve] == [
+        round(r["nav"], 4) for r in r_trunc.nav_curve
+    ]
+    assert r_full.n_trades == r_trunc.n_trades
+    assert round(r_full.total_cost, 4) == round(r_trunc.total_cost, 4)

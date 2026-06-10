@@ -24,5 +24,6 @@
   "LogLevel": ["debug", "info", "warn", "error"],
   "OnboardingStep": ["welcome", "select_source", "credential", "test", "build_cache", "done"],
   "ModelType": ["elasticnet"],
-  "ModelStatus": ["draft", "running", "archived"]
+  "ModelStatus": ["draft", "running", "archived"],
+  "BacktestScoring": ["auto", "equal_weight", "model", "custom"]
 }

@@ -10,17 +10,49 @@ import EquityChart from '../../ui/charts/EquityChart.vue';
 import Heatmap from '../../ui/charts/Heatmap.vue';
 import Icon from '../../shell/Icon.vue';
 
+type Scoring = 'auto' | 'model' | 'custom' | 'equal_weight';
 const form = reactive({
   train_end: '',
   backtest_start: '',
   backtest_end: '',
   purge: 5,
   benchmark: '000300.SH',
+  scoring: 'auto' as Scoring,
+  model_id: '', // '' = 激活模型(scoring=model 时);否则指定版本
 });
 const running = ref(false);
 const error = ref<string | null>(null);
 const result = ref<any | null>(null);
 const history = ref<any[]>([]);
+const models = ref<any[]>([]); // 模型版本(供「模型」口径选具体版本,可在激活前先回测)
+
+const SCORINGS: Array<{ k: Scoring; label: string }> = [
+  { k: 'auto', label: '自动(镜像实盘)' },
+  { k: 'model', label: '模型' },
+  { k: 'custom', label: '自定义因子' },
+  { k: 'equal_weight', label: '等权基线' },
+];
+function scoringLabel(s?: string): string {
+  return (
+    { model: '模型', custom: '自定义因子', equal_weight: '等权基线', auto: '自动' }[s ?? ''] ?? '—'
+  );
+}
+// 无模型(等权/自定义)时必须声明样本外边界;模型/自动可由后端从模型训练截止 derive。
+const needsTrainEnd = computed(() => form.scoring === 'equal_weight' || form.scoring === 'custom');
+const canRun = computed(
+  () =>
+    !!form.backtest_start &&
+    !!form.backtest_end &&
+    (!needsTrainEnd.value || !!form.train_end) &&
+    !running.value,
+);
+// 结果出处:本次实际口径 + 所用模型版本名(可溯源)+ 生效训练截止(可能被抬高)。
+const resModelName = computed(() => {
+  const id = result.value?.model_id;
+  if (!id) return '';
+  const m = models.value.find((x) => x.id === id);
+  return m?.name || String(id).slice(0, 8);
+});
 
 async function loadHistory() {
   try {
@@ -30,12 +62,30 @@ async function loadHistory() {
   }
 }
 
+async function loadModels() {
+  try {
+    models.value = await api.models();
+  } catch {
+    /* 无模型不阻断 */
+  }
+}
+
 async function runBacktest() {
-  if (!form.train_end || !form.backtest_start || !form.backtest_end) return;
+  if (!canRun.value) return;
   running.value = true;
   error.value = null;
   try {
-    result.value = await api.createBacktest({ ...form });
+    const body: Record<string, unknown> = {
+      train_end: form.train_end || undefined,
+      backtest_start: form.backtest_start,
+      backtest_end: form.backtest_end,
+      purge: form.purge,
+      benchmark: form.benchmark,
+      scoring: form.scoring,
+    };
+    // 仅「模型」口径且指定了具体版本时下发 model_id(空=用激活模型)。
+    if (form.scoring === 'model' && form.model_id) body.model_id = form.model_id;
+    result.value = await api.createBacktest(body);
     await loadHistory();
   } catch (e: any) {
     const d = e?.detail;
@@ -55,7 +105,10 @@ async function loadOne(id: string) {
   }
 }
 
-onMounted(loadHistory);
+onMounted(() => {
+  loadHistory();
+  loadModels();
+});
 
 // ── 净值曲线 → EquityChart 需要的数组(组合/基准各自归一化到首值=1;回撤为百分数)──────
 const navPoints = computed<any[]>(() => result.value?.nav_curve ?? []);
@@ -100,6 +153,8 @@ const heatData = computed(() =>
 // ── 诚实口径 ──────────────────────────────────────────────────────────────────
 const isHonest = computed(() => (result.value ? !!result.value.cost_included : true));
 const badges = computed(() => honestyBadges(result.value?.purge ?? form.purge, isHonest.value));
+// 因子降级清单(engine 如实回传:缺数据/表达式无效的因子被丢弃)。前端必须显示,否则口径标签虚标(红线#3)。
+const degraded = computed<string[]>(() => result.value?.degraded ?? []);
 
 // 选中某天 → 展开当日持仓快照(可回溯)。
 const selectedDay = ref<any | null>(null);
@@ -125,11 +180,7 @@ function fixed(v: number | null | undefined): string {
     sub="事件驱动逐日撮合 · T+1 开盘成交 · 含交易成本 · 仅测训练截止后(诚实样本外)"
   >
     <template #right>
-      <button
-        class="btn btn-primary btn-sm"
-        :disabled="running || !form.train_end || !form.backtest_start || !form.backtest_end"
-        @click="runBacktest"
-      >
+      <button class="btn btn-primary btn-sm" :disabled="!canRun" @click="runBacktest">
         <Icon name="refresh" :size="14" /> {{ running ? '回测中…' : '跑回测' }}
       </button>
     </template>
@@ -144,7 +195,19 @@ function fixed(v: number | null | undefined): string {
         ><span class="dot" />样本外验证</span
       >
       <span v-for="b in badges" :key="b" class="chip">{{ b }}</span>
+      <span v-if="result" class="chip chip-scoring">
+        口径:{{ scoringLabel(result.scoring)
+        }}<template v-if="resModelName"> · {{ resModelName }}</template>
+      </span>
       <span class="h-tail">本回测不代表未来收益,仅供策略纪律性验证。</span>
+    </div>
+
+    <!-- 因子降级如实告知(红线#3 出处诚实):某因子缺数据/表达式无效会被丢弃,口径据实弱化。
+         模型/自定义/等权口径下只要有降级即显示,绝不让「口径:自定义因子」在全降级时虚标。 -->
+    <div v-if="degraded.length" class="degraded-note">
+      <span class="dn-icon"><Icon name="alert" :size="14" /></span>
+      <span class="dn-lead">{{ degraded.length }} 项因子已降级</span>
+      <span class="dn-tail">{{ degraded.join(' · ') }}</span>
     </div>
 
     <p v-if="error" class="msg-err"><Icon name="alert" :size="14" /> {{ error }}</p>
@@ -183,12 +246,38 @@ function fixed(v: number | null | undefined): string {
               <label class="field-label">基准</label>
               <input v-model="form.benchmark" class="input mono" />
             </div>
-            <div class="field btn-cell">
-              <button
-                class="btn btn-primary"
-                :disabled="running || !form.train_end || !form.backtest_start || !form.backtest_end"
-                @click="runBacktest"
+            <div class="field field-wide">
+              <label class="field-label"
+                >打分口径
+                <span class="lbl-hint">口径与实盘一致;等权/自定义需填训练截止</span></label
               >
+              <div class="seg">
+                <button
+                  v-for="s in SCORINGS"
+                  :key="s.k"
+                  type="button"
+                  class="seg-btn"
+                  :class="{ on: form.scoring === s.k }"
+                  @click="form.scoring = s.k"
+                >
+                  {{ s.label }}
+                </button>
+              </div>
+            </div>
+            <div v-if="form.scoring === 'model'" class="field field-wide">
+              <label class="field-label"
+                >模型版本
+                <span class="lbl-hint">空=激活模型;可选未激活版本先回测再激活</span></label
+              >
+              <select v-model="form.model_id" class="input mono">
+                <option value="">（激活模型）</option>
+                <option v-for="mv in models" :key="mv.id" :value="mv.id">
+                  {{ mv.name || mv.id.slice(0, 8) }} · 截止 {{ mv.train_end }} · {{ mv.status }}
+                </option>
+              </select>
+            </div>
+            <div class="field btn-cell">
+              <button class="btn btn-primary" :disabled="!canRun" @click="runBacktest">
                 {{ running ? '回测中…' : '跑回测' }}
               </button>
             </div>
@@ -273,11 +362,12 @@ function fixed(v: number | null | undefined): string {
             <div>
               <h3 class="card-title">净值 vs 基准 · 含买卖点</h3>
               <span class="card-sub"
-                >样本外 · 训练截止 {{ result.train_end }} 之后 · 起点归一化为 1</span
+                >{{ scoringLabel(result.scoring) }}口径 · 样本外 · 训练截止
+                {{ result.train_end }} 之后 · 起点归一化为 1</span
               >
             </div>
             <div class="legend">
-              <span class="lg"><i class="ln port" />模型</span>
+              <span class="lg"><i class="ln port" />{{ scoringLabel(result.scoring) }}</span>
               <span v-if="bench.length" class="lg"><i class="ln bench" />{{ form.benchmark }}</span>
               <span class="lg"><i class="mk buy" />买</span>
               <span class="lg"><i class="mk sell" />卖</span>
@@ -544,6 +634,33 @@ function fixed(v: number | null | undefined): string {
   color: var(--text-2);
 }
 
+/* ── 因子降级条(Status warn 通道:橙;非盈亏色)──────────────────────────────── */
+.degraded-note {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 9px 13px;
+  border-radius: var(--r-md);
+  font-size: var(--fs-sub);
+  background: var(--status-warn-bg);
+  border: 0.5px solid color-mix(in srgb, var(--status-warn) 30%, transparent);
+}
+.dn-icon {
+  display: inline-flex;
+  flex: none;
+  color: var(--status-warn);
+}
+.dn-lead {
+  font-weight: 600;
+  color: var(--text-1);
+}
+.dn-tail {
+  color: var(--text-2);
+  font-family: var(--font-mono);
+  font-size: var(--fs-cap);
+}
+
 /* ── 错误条 ──────────────────────────────────────────────────────────────────── */
 .msg-err {
   display: flex;
@@ -599,6 +716,50 @@ function fixed(v: number | null | undefined): string {
 }
 .bt-cols .field.btn-cell .btn {
   width: 100%;
+}
+
+/* 打分口径:分段控件(选中态用 accent 品牌色,符合三通道解耦)+ 模型版本下拉 */
+.field-wide {
+  grid-column: 1 / -1;
+}
+.lbl-hint {
+  margin-left: 6px;
+  font-weight: 400;
+  font-size: var(--fs-cap);
+  color: var(--text-3);
+}
+.seg {
+  display: flex;
+  gap: 4px;
+  padding: 3px;
+  background: var(--bg-base);
+  border: 0.5px solid var(--border);
+  border-radius: var(--r-md);
+}
+.seg-btn {
+  flex: 1;
+  padding: 6px 8px;
+  border: 0;
+  border-radius: calc(var(--r-md) - 3px);
+  background: transparent;
+  color: var(--text-2);
+  font-size: 11.5px;
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    background 0.15s var(--ease),
+    color 0.15s var(--ease);
+}
+.seg-btn.on {
+  background: var(--accent);
+  color: #fff;
+}
+.seg-btn:hover:not(.on) {
+  color: var(--text-1);
+}
+.chip-scoring {
+  color: var(--accent);
+  border-color: color-mix(in srgb, var(--accent) 35%, transparent);
 }
 
 /* 窄屏:双栏退化为单列 */

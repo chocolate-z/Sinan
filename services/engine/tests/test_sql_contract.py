@@ -33,6 +33,7 @@ _CONTRACT_ENUMS_IN_SQL = [
     "ProviderStatus", "JobType", "JobStatus", "JobTrigger", "Dataset", "LogLevel",
     "Portfolio", "SignalAction", "TradeSide", "TradeReason",
     "ModelType", "ModelStatus",  # M3:model_versions 表的 CHECK 与契约同步
+    "BacktestScoring",  # backtests.scoring CHECK 与契约同步(回测打分口径出处)
 ]
 
 

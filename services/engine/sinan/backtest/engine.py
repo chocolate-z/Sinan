@@ -1,8 +1,13 @@
 """事件驱动逐日回测:复用 paper/ 成本·账户·风控,PIT 取数,硬守卫 backtest_start>train_end+purge。
 
 红线#1 无未来函数:每日 data.asof(只见 <=T);复用 run_eod —— T 收盘估值 nav、T+1 开盘价撮合。
+  模型/自定义因子打分同样逐日经 compute_factor_matrix(asof PIT);模型系数为训练期固定 JSON,
+  自定义因子经沙箱仅回看算子 + asof 面板,结构上写不出前视(过截断不变式黄金测试)。
 红线#2 无虚假回测:守卫拒跑重叠区间;成交一律经 CostModel(印花税0.05%+佣金+冲击),cost_included=True。
-红线#3 不夸大:绩效经 metrics.performance(样本外口径),并列基准超额/IR/跟踪误差。
+  口径与实盘一致:回测可用激活模型(model=)/启用的自定义因子(custom=),由 api 负责把 train_end
+  抬到不早于模型训练截止(max),使「以模型回测」绝不踩进该模型的训练窗口。
+红线#3 不夸大:绩效经 metrics.performance(样本外口径),并列基准超额/IR/跟踪误差;
+  scoring 字段如实回传本次实际口径(model/custom/equal_weight),前端据此标注出处。
 """
 
 from __future__ import annotations
@@ -27,6 +32,9 @@ class BacktestResult:
     purge: int
     benchmark: str
     initial_cash: float
+    # 本次回测实际生效的打分口径:model(激活/指定模型线性打分)/custom(启用的自定义因子等权)
+    # /equal_weight(纯内置因子等权)。供前端如实标注出处(红线#3)。
+    scoring: str
     n_days: int
     n_trades: int
     total_cost: float
@@ -105,6 +113,8 @@ def run_backtest(
     purge: int = 5,
     initial_cash: float = 1_000_000.0,
     periods: int = 252,
+    model: dict | None = None,
+    custom: list[dict] | None = None,
 ) -> BacktestResult:
     tds = sorted(set(trading_dates))
 
@@ -167,6 +177,8 @@ def run_backtest(
             prev_nav=prev_nav,
             peak_nav=peak_nav,
             fill=True,
+            model=model,
+            custom=custom,
         )
         nav_curve.append(
             {
@@ -202,6 +214,8 @@ def run_backtest(
 
     total_cost = sum(t.fee_total for t in account.trades)
     trades = [asdict(tr) for tr in account.trades]  # 逐笔成交(买卖点)
+    # 实际口径:run_eod 内 model 优先于 custom,custom 仅在无模型时生效;空 custom 退化为等权。
+    scoring = "model" if model else ("custom" if custom else "equal_weight")
     return BacktestResult(
         backtest_start=backtest_start,
         backtest_end=backtest_end,
@@ -209,6 +223,7 @@ def run_backtest(
         purge=purge,
         benchmark=benchmark,
         initial_cash=initial_cash,
+        scoring=scoring,
         n_days=len(nav_curve),
         n_trades=len(account.trades),
         total_cost=total_cost,

@@ -21,6 +21,7 @@ from .endpoints import (
     build_path,
 )
 from .enums import (
+    BacktestScoring,
     Board,
     Dataset,
     JobStatus,
@@ -49,6 +50,7 @@ __all__ = [
     "ENGINE_ENDPOINTS",
     "HEADERS",
     "build_path",
+    "BacktestScoring",
     "Board",
     "Dataset",
     "JobStatus",

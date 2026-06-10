@@ -79,6 +79,11 @@ export type ModelType = (typeof MODEL_TYPES)[number];
 export const MODEL_STATUSES = ['draft', 'running', 'archived'] as const;
 export type ModelStatus = (typeof MODEL_STATUSES)[number];
 
+// 回测打分口径:auto=镜像实盘(有激活模型用模型,否则启用的自定义因子,再否则等权);
+// equal_weight/model/custom 为强制档。落库的 scoring 为解析后的实际口径(engine 永不回传 auto)。
+export const BACKTEST_SCORINGS = ['auto', 'equal_weight', 'model', 'custom'] as const;
+export type BacktestScoring = (typeof BACKTEST_SCORINGS)[number];
+
 /** 镜像所有枚举,供 consistency 测试逐项与 spec/enums.json 比对。 */
 export const ENUM_MIRROR: Record<string, readonly string[]> = {
   Provider: PROVIDERS,
@@ -96,4 +101,5 @@ export const ENUM_MIRROR: Record<string, readonly string[]> = {
   OnboardingStep: ONBOARDING_STEPS,
   ModelType: MODEL_TYPES,
   ModelStatus: MODEL_STATUSES,
+  BacktestScoring: BACKTEST_SCORINGS,
 };

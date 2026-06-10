@@ -62,7 +62,55 @@ async function build(engine: FakeEngineClient) {
   await app.init();
   const fastify = app.getHttpAdapter().getInstance();
   await fastify.ready();
-  return { app, fastify };
+  return { app, fastify, engine };
+}
+
+// 训练结果(含模型系数 + 训练截止),供「回测用模型」用例训练/激活模型。
+const TRAIN = {
+  model_type: 'elasticnet',
+  train_start: '2023-01-01',
+  train_end: '2024-06-30',
+  label_horizon: 5,
+  purge: 5,
+  embargo: 0,
+  n_folds: 4,
+  n_samples: 480,
+  feature_cols: ['f_ep', 'f_bp', 'f_roe', 'f_mom20'],
+  ic_is: 0.11,
+  ic_oos: 0.064,
+  icir_is: 0.85,
+  icir_oos: 0.42,
+  layered_sharpe_oos: 0.73,
+  layered_annual_return_oos: 0.058,
+  top_quantile: 0.2,
+  feature_importance: [{ feature: 'f_mom20', weight: 0.55 }],
+  fold_metrics: [{ index: 0, n_train: 120, n_test: 60, ic_oos: 0.07 }],
+  model: {
+    type: 'elasticnet',
+    feature_cols: ['f_ep', 'f_bp', 'f_roe', 'f_mom20'],
+    coef: [0.01, 0.0, 0.02, 0.05],
+    intercept: 0.001,
+  },
+  degraded: [],
+  oos_clean: true,
+  metrics_note: '分层口径,非完整回测。',
+};
+
+/** engine 同时具备训练(TRAIN)与回测回显(backtestResult=null → 按 req 回显 scoring/train_end)。 */
+function buildWithTrain() {
+  return build(new FakeEngineClient(null, [], null, {}, {}, null, TRAIN));
+}
+
+async function trainAndActivate(fastify: any): Promise<string> {
+  const created = (
+    await fastify.inject({
+      method: 'POST',
+      url: '/api/v1/models/train',
+      payload: { train_start: '2023-01-01', train_end: '2024-06-30' },
+    })
+  ).json();
+  await fastify.inject({ method: 'POST', url: `/api/v1/models/${created.id}/activate` });
+  return created.id;
 }
 
 test('POST /backtests 落库,GET 列表/详情可查(含 nav_curve + metrics)', async () => {
@@ -150,6 +198,222 @@ test('GET /backtests/:id 不存在 → 404', async () => {
   try {
     const r = await fastify.inject({ method: 'GET', url: '/api/v1/backtests/nope' });
     assert.equal(r.statusCode, 404);
+  } finally {
+    await app.close();
+  }
+});
+
+// ── 口径与实盘一致:回测用激活模型 / 指定版本 / 自定义因子 / 等权;红线#2 诚实 train_end ─────
+test('回测 auto:有激活模型则下发模型系数,train_end 抬到不早于模型训练截止(红线#2)', async () => {
+  const { app, fastify, engine } = await buildWithTrain();
+  try {
+    const modelId = await trainAndActivate(fastify);
+    const r = await fastify.inject({
+      method: 'POST',
+      url: '/api/v1/backtests',
+      payload: {
+        backtest_start: '2024-08-01',
+        backtest_end: '2024-09-01',
+        train_end: '2024-05-01', // 故意早于模型训练截止 2024-06-30
+      },
+    });
+    assert.equal(r.statusCode, 201);
+    const created = r.json();
+    assert.deepEqual(engine.lastBacktestReq?.model, TRAIN.model); // 下发激活模型系数
+    assert.equal(engine.lastBacktestReq?.train_end, '2024-06-30'); // 抬升:绝不踩进训练窗口
+    assert.equal(created.scoring, 'model');
+    assert.equal(created.model_id, modelId); // 出处可溯源
+    assert.equal(created.train_end, '2024-06-30');
+  } finally {
+    await app.close();
+  }
+});
+
+test('回测 auto:用户 train_end 晚于模型训练截止时取更保守的用户值(max)', async () => {
+  const { app, fastify, engine } = await buildWithTrain();
+  try {
+    await trainAndActivate(fastify);
+    await fastify.inject({
+      method: 'POST',
+      url: '/api/v1/backtests',
+      payload: {
+        backtest_start: '2024-10-01',
+        backtest_end: '2024-11-01',
+        train_end: '2024-09-01',
+      },
+    });
+    assert.equal(engine.lastBacktestReq?.train_end, '2024-09-01'); // max(模型 2024-06-30, 用户 2024-09-01)
+  } finally {
+    await app.close();
+  }
+});
+
+test('回测 model_id:可回测未激活的模型版本(先回测再激活),train_end derive 自该模型', async () => {
+  const { app, fastify, engine } = await buildWithTrain();
+  try {
+    const created = (
+      await fastify.inject({
+        method: 'POST',
+        url: '/api/v1/models/train',
+        payload: { train_start: '2023-01-01', train_end: '2024-06-30' },
+      })
+    ).json(); // draft,未激活
+    const r = await fastify.inject({
+      method: 'POST',
+      url: '/api/v1/backtests',
+      payload: { backtest_start: '2024-08-01', backtest_end: '2024-09-01', model_id: created.id }, // 不给 train_end
+    });
+    assert.equal(r.statusCode, 201);
+    assert.deepEqual(engine.lastBacktestReq?.model, TRAIN.model);
+    assert.equal(engine.lastBacktestReq?.train_end, '2024-06-30'); // derive 自模型训练截止
+    assert.equal(r.json().scoring, 'model');
+    assert.equal(r.json().model_id, created.id);
+  } finally {
+    await app.close();
+  }
+});
+
+test('回测 auto:无激活模型则下发启用的自定义因子(scoring=custom)', async () => {
+  const { app, fastify, engine } = await buildWithTrain();
+  try {
+    await fastify.inject({
+      method: 'POST',
+      url: '/api/v1/custom-factors',
+      payload: { name: 'cf1', expr: 'close / delay(close, 10) - 1' },
+    });
+    const r = await fastify.inject({
+      method: 'POST',
+      url: '/api/v1/backtests',
+      payload: {
+        backtest_start: '2024-08-01',
+        backtest_end: '2024-09-01',
+        train_end: '2024-05-01',
+      },
+    });
+    assert.equal(r.statusCode, 201);
+    assert.equal(engine.lastBacktestReq?.model ?? null, null);
+    const custom = (engine.lastBacktestReq?.custom ?? []) as Array<{ name: string }>;
+    assert.ok(custom.some((c) => c.name === 'cf1'));
+    assert.equal(r.json().scoring, 'custom');
+    assert.equal(r.json().model_id, null);
+    assert.equal(engine.lastBacktestReq?.train_end, '2024-05-01'); // 无模型 → 用户值原样
+  } finally {
+    await app.close();
+  }
+});
+
+test('回测 scoring=equal_weight:即便有激活模型也强制纯等权基线(A/B 对照)', async () => {
+  const { app, fastify, engine } = await buildWithTrain();
+  try {
+    await trainAndActivate(fastify);
+    await fastify.inject({
+      method: 'POST',
+      url: '/api/v1/custom-factors',
+      payload: { name: 'cf1', expr: 'close / delay(close, 10) - 1' },
+    });
+    const r = await fastify.inject({
+      method: 'POST',
+      url: '/api/v1/backtests',
+      payload: {
+        backtest_start: '2024-08-01',
+        backtest_end: '2024-09-01',
+        train_end: '2024-05-01',
+        scoring: 'equal_weight',
+      },
+    });
+    assert.equal(r.statusCode, 201);
+    assert.equal(engine.lastBacktestReq?.model ?? null, null); // 不下发模型
+    assert.equal(engine.lastBacktestReq?.custom ?? null, null); // 也不下发自定义因子
+    assert.equal(r.json().scoring, 'equal_weight');
+    assert.equal(r.json().model_id, null);
+  } finally {
+    await app.close();
+  }
+});
+
+test('回测 scoring=model 但无激活模型 → 400', async () => {
+  const { app, fastify } = await buildWithTrain();
+  try {
+    const r = await fastify.inject({
+      method: 'POST',
+      url: '/api/v1/backtests',
+      payload: {
+        backtest_start: '2024-08-01',
+        backtest_end: '2024-09-01',
+        train_end: '2024-05-01',
+        scoring: 'model',
+      },
+    });
+    assert.equal(r.statusCode, 400);
+  } finally {
+    await app.close();
+  }
+});
+
+test('回测 model_id 不存在 → 404', async () => {
+  const { app, fastify } = await buildWithTrain();
+  try {
+    const r = await fastify.inject({
+      method: 'POST',
+      url: '/api/v1/backtests',
+      payload: { backtest_start: '2024-08-01', backtest_end: '2024-09-01', model_id: 'nope' },
+    });
+    assert.equal(r.statusCode, 404);
+  } finally {
+    await app.close();
+  }
+});
+
+test('回测 无模型且缺 train_end → 400(需声明样本外边界)', async () => {
+  const { app, fastify } = await buildWithTrain();
+  try {
+    const r = await fastify.inject({
+      method: 'POST',
+      url: '/api/v1/backtests',
+      payload: { backtest_start: '2024-08-01', backtest_end: '2024-09-01' },
+    });
+    assert.equal(r.statusCode, 400);
+  } finally {
+    await app.close();
+  }
+});
+
+test('回测 scoring 非法值 → 400', async () => {
+  const { app, fastify } = await buildWithTrain();
+  try {
+    const r = await fastify.inject({
+      method: 'POST',
+      url: '/api/v1/backtests',
+      payload: {
+        backtest_start: '2024-08-01',
+        backtest_end: '2024-09-01',
+        train_end: '2024-05-01',
+        scoring: 'bogus',
+      },
+    });
+    assert.equal(r.statusCode, 400);
+  } finally {
+    await app.close();
+  }
+});
+
+test('回测 非 ISO 日期 → 400(红线#2 纵深:守卫的字典序==日期序依赖规范格式)', async () => {
+  const { app, fastify } = await buildWithTrain();
+  try {
+    // train_end 缺 leading zero('2024-6-30')会让 train_end 抬升的字符串比较失真 → 入口即拒。
+    let r = await fastify.inject({
+      method: 'POST',
+      url: '/api/v1/backtests',
+      payload: { backtest_start: '2024-08-01', backtest_end: '2024-09-01', train_end: '2024-6-30' },
+    });
+    assert.equal(r.statusCode, 400);
+    // backtest_start 非 ISO(YYYYMMDD)同样拒。
+    r = await fastify.inject({
+      method: 'POST',
+      url: '/api/v1/backtests',
+      payload: { backtest_start: '20240801', backtest_end: '2024-09-01', train_end: '2024-05-01' },
+    });
+    assert.equal(r.statusCode, 400);
   } finally {
     await app.close();
   }

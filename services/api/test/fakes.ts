@@ -96,7 +96,11 @@ export class FakeEngineClient implements EngineClient {
     );
   }
 
+  /** 记录最近一次 backtest 请求,供测试断言下发了模型系数 / 自定义因子 / 诚实 train_end。 */
+  lastBacktestReq: BacktestRequest | null = null;
+
   async backtest(req: BacktestRequest): Promise<any> {
+    this.lastBacktestReq = req;
     // 测试守卫转发:backtestResult 形如 {__error:{status,detail}} → 抛 EngineError。
     if (this.backtestResult && this.backtestResult.__error) {
       throw new EngineError(this.backtestResult.__error.status, this.backtestResult.__error.detail);
@@ -105,10 +109,12 @@ export class FakeEngineClient implements EngineClient {
       this.backtestResult ?? {
         backtest_start: req.backtest_start,
         backtest_end: req.backtest_end,
-        train_end: req.train_end,
+        train_end: req.train_end, // 回显 api 传入的(可能被抬高的)诚实样本外边界
         purge: req.purge ?? 5,
         benchmark: req.benchmark ?? '000300.SH',
         initial_cash: req.initial_cash ?? 1_000_000,
+        // 实际口径:与 engine run_backtest 同语义(model 优先,空 custom 退化等权)。
+        scoring: req.model ? 'model' : req.custom && req.custom.length ? 'custom' : 'equal_weight',
         n_days: 2,
         n_trades: 1,
         total_cost: 12.3,
