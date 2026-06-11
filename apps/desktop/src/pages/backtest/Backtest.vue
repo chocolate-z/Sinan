@@ -10,6 +10,7 @@ import EquityChart from '../../ui/charts/EquityChart.vue';
 import Heatmap from '../../ui/charts/Heatmap.vue';
 import DatePicker from '../../ui/DatePicker.vue';
 import RangePicker from '../../ui/RangePicker.vue';
+import RunningBar from '../../ui/RunningBar.vue';
 import Icon from '../../shell/Icon.vue';
 
 const bt = useBacktestStore();
@@ -148,6 +149,7 @@ function fixed(v: number | null | undefined): string {
     </div>
 
     <p v-if="error" class="msg-err"><Icon name="alert" :size="14" /> {{ error }}</p>
+    <RunningBar :active="running" label="回测中 · 逐日撮合" />
 
     <!-- 参数(左列)+ 绩效与净值(右列):有结果时左右双栏,无结果时参数卡全宽 -->
     <div :class="result ? 'bt-cols' : ''">

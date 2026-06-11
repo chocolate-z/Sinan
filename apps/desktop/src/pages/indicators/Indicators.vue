@@ -5,6 +5,7 @@ import { computed, onMounted } from 'vue';
 import { useIndicatorsStore } from '../../stores/indicators';
 import PageHero from '../../ui/PageHero.vue';
 import RangePicker from '../../ui/RangePicker.vue';
+import RunningBar from '../../ui/RunningBar.vue';
 import Icon from '../../shell/Icon.vue';
 import ICChart from '../../ui/charts/ICChart.vue';
 import DecileBars from '../../ui/charts/DecileBars.vue';
@@ -148,6 +149,7 @@ function pct(v: number | null | undefined): string {
           </button>
         </div>
         <p v-if="error" class="msg-err"><Icon name="alert" :size="14" /> {{ error }}</p>
+        <RunningBar :active="loading" label="质检中 · 逐日 RankIC" />
       </div>
     </div>
 

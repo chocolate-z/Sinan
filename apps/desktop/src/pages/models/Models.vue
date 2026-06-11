@@ -8,6 +8,7 @@ import { useAppStore } from '../../stores/app';
 import { fmt, fmtPct } from '../../lib/format';
 import PageHero from '../../ui/PageHero.vue';
 import RangePicker from '../../ui/RangePicker.vue';
+import RunningBar from '../../ui/RunningBar.vue';
 import Icon from '../../shell/Icon.vue';
 
 const app = useAppStore();
@@ -139,6 +140,7 @@ const BT_RULES = [
           <span class="form-hint">数据来自本地缓存;无缓存请先到引导向导建立。</span>
         </div>
         <p v-if="error" class="msg-err"><Icon name="alert" :size="14" /> {{ error }}</p>
+        <RunningBar :active="training" label="训练中 · walk-forward 逐折" />
       </div>
     </div>
 
