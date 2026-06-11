@@ -31,10 +31,13 @@ const selected = computed(
 const selectedCred = computed(() =>
   selected.value ? cred[selected.value.id] : { configured: false, fingerprint: null },
 );
-// 能力探测结果仅在「针对当前选中源测试过」时展示,避免串源误导。
-const caps = computed(() =>
-  testState.for && selected.value && testState.for === selected.value.id ? testState.data : null,
-);
+// 能力探测:本次刚测过用新鲜结果;否则回落到该源「已存的能力矩阵」(缓存,不再每次重测)。
+// 重新探测只在点击「测试连通」时发生。串源不误导:回落用的是该选中源自己存的 caps。
+const caps = computed(() => {
+  if (testState.for && selected.value && testState.for === selected.value.id) return testState.data;
+  const stored = selected.value?.caps as Record<string, boolean> | undefined;
+  return stored && Object.keys(stored).length ? { caps: stored, degraded: [] } : null;
+});
 
 const refreshInterval = computed(() => {
   const v = settings.value?.refresh_interval as number | undefined;

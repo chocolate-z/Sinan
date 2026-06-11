@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, reactive, ref } from 'vue';
+import { computed, onMounted, reactive, ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
 import { ONBOARDING_STEPS } from '@sinan/shared-contracts';
 import { api, subscribeJob } from '../../api/client';
@@ -19,6 +19,31 @@ const provider = ref<'tushare' | 'akshare'>('tushare');
 const token = ref('');
 const showToken = ref(false);
 const quickMode = ref(true);
+// 已配置凭据检测:重建缓存时不必重输 token(直接带入设置里已存的主源 token)。
+const credConfigured = ref(false);
+const replacingToken = ref(false);
+
+async function loadCred() {
+  replacingToken.value = false;
+  if (!needsToken()) {
+    credConfigured.value = false;
+    return;
+  }
+  try {
+    const info = await api.getCredential(provider.value);
+    credConfigured.value = !!info?.configured;
+  } catch {
+    credConfigured.value = false;
+  }
+}
+onMounted(async () => {
+  // 默认主源(设置里已选的) → 重建缓存时直接带入,不必重选/重输。
+  if (app.activeProvider === 'tushare' || app.activeProvider === 'akshare') {
+    provider.value = app.activeProvider;
+  }
+  await loadCred();
+});
+watch(provider, loadCred);
 
 const testResult = reactive<{ loading: boolean; data: any | null; error: string | null }>({
   loading: false,
@@ -211,22 +236,34 @@ const buildPct = computed(() => Math.round(build.progress * 100));
           <h2 class="pane-title">填入凭据</h2>
           <template v-if="needsToken()">
             <label class="field-label" for="ob-token">Tushare Token</label>
-            <div class="token-row">
-              <input
-                id="ob-token"
-                v-model="token"
-                class="input mono token-input"
-                :type="showToken ? 'text' : 'password'"
-                placeholder="粘贴你的 Tushare token…"
-              />
-              <button class="btn btn-secondary" @click="showToken = !showToken">
-                {{ showToken ? '隐藏' : '显示' }}
-              </button>
-            </div>
-            <p class="note">
-              <Icon name="lock" :size="13" />
-              <span>token 仅加密存本机系统钥匙串,司南<b>绝不</b>上传、<b>绝不</b>落明文。</span>
-            </p>
+            <template v-if="credConfigured && !replacingToken">
+              <div class="token-row">
+                <div class="input mono token-masked">已配置 · token 已存本机钥匙串</div>
+                <button class="btn btn-secondary" @click="replacingToken = true">更换</button>
+              </div>
+              <p class="note">
+                <Icon name="check" :size="13" />
+                <span>已检测到设置里配置的 token,<b>无需重输</b> —— 直接下一步即可重建缓存。</span>
+              </p>
+            </template>
+            <template v-else>
+              <div class="token-row">
+                <input
+                  id="ob-token"
+                  v-model="token"
+                  class="input mono token-input"
+                  :type="showToken ? 'text' : 'password'"
+                  placeholder="粘贴你的 Tushare token…"
+                />
+                <button class="btn btn-secondary" @click="showToken = !showToken">
+                  {{ showToken ? '隐藏' : '显示' }}
+                </button>
+              </div>
+              <p class="note">
+                <Icon name="lock" :size="13" />
+                <span>token 仅加密存本机系统钥匙串,司南<b>绝不</b>上传、<b>绝不</b>落明文。</span>
+              </p>
+            </template>
           </template>
           <div v-else class="note">
             <Icon name="check" :size="13" />
@@ -357,10 +394,11 @@ const buildPct = computed(() => Math.round(build.progress * 100));
           <button
             v-else-if="step === 'credential'"
             class="btn btn-primary"
-            :disabled="needsToken() && !token"
+            :disabled="needsToken() && (replacingToken || !credConfigured) && !token"
             @click="saveCredentialAndContinue"
           >
-            保存并测试 <Icon name="chevR" :size="14" />
+            {{ credConfigured && !replacingToken ? '继续并测试' : '保存并测试' }}
+            <Icon name="chevR" :size="14" />
           </button>
           <button
             v-else-if="step === 'test'"
