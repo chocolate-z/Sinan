@@ -115,7 +115,9 @@ function levelBadge(level: string): string {
   flex-direction: column;
   gap: 20px;
 }
+/* 滚动落在「系统事件」卡内的表格,而非整页窗口:表格区按视口高度封顶,内部滚动。 */
 .dt-wrap {
+  max-height: calc(100vh - 290px);
   overflow: auto;
 }
 .col-ts {

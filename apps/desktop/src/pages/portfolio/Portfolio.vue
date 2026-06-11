@@ -123,13 +123,13 @@ const pnlLatest = computed(() =>
 );
 const live = computed(() => (tab.value === 'personal' ? trading.livePersonal : trading.liveModel));
 
-// 逐行「当日盈亏」(金额+百分比):来自 pnlToday 的 by_holding(现价 vs 昨收 × 持仓)。
-// 报价不可用(无实时/无日内回退)的标的 day_pnl 为 null → 该行诚实「—」,绝不补数。
+// 逐行「当日盈亏」(金额+百分比):来自持仓富集字段(现价 vs 昨收 × 持仓),与现价/市值/
+// 浮动盈亏同源(api 按最新报价富集)。报价不可用的标的 day_pnl 为 null → 该行诚实「—」。
 const dayByCode = computed<Record<string, { pnl: number; pct: number }>>(() => {
   const out: Record<string, { pnl: number; pct: number }> = {};
-  for (const b of live.value?.by_holding ?? []) {
-    if (b.day_pnl != null && b.price != null && b.prev_close) {
-      out[b.stock_code] = { pnl: b.day_pnl, pct: (b.price / b.prev_close - 1) * 100 };
+  for (const h of holdings.value) {
+    if (h.day_pnl != null && h.current_price != null && h.prev_close) {
+      out[h.stock_code] = { pnl: h.day_pnl, pct: (h.current_price / h.prev_close - 1) * 100 };
     }
   }
   return out;

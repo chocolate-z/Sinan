@@ -169,16 +169,50 @@ export class TradingController {
 
 @Controller()
 export class PortfolioController {
-  constructor(private readonly repo: Repository) {}
+  constructor(
+    private readonly repo: Repository,
+    @Inject(ENGINE_CLIENT) private readonly engine: EngineClient,
+  ) {}
+
+  /**
+   * 持仓现价估值富集:用 engine 报价(本 token 走日线收盘回退)算 现价/市值/浮动盈亏/
+   * 当日盈亏。报价不可用 → 价相关字段诚实留 null(前端显示「—」,绝不造数,红线#3)。
+   * 仓库只存 股数/成本(手录),现价不入库 → 每次查询按最新报价富集。
+   */
+  private async enrich(holds: any[]): Promise<any[]> {
+    if (!holds.length) return holds;
+    let quotes: Record<string, { price?: number | null; prev_close?: number | null }> = {};
+    try {
+      quotes = await this.engine.quotes(holds.map((h) => h.stock_code));
+    } catch {
+      /* 报价不可用 → 降级 */
+    }
+    return holds.map((h) => {
+      const q = quotes[h.stock_code];
+      const price = q?.price ?? null;
+      const prev = q?.prev_close ?? null;
+      const marketValue = price != null ? h.shares * price : null;
+      const floatPnl = price != null && h.avg_cost != null ? (price - h.avg_cost) * h.shares : null;
+      const dayPnl = price != null && prev != null ? h.shares * (price - prev) : null;
+      return {
+        ...h,
+        current_price: price,
+        market_value: marketValue,
+        float_pnl: floatPnl,
+        prev_close: prev,
+        day_pnl: dayPnl,
+      };
+    });
+  }
 
   @Get('portfolios/model/holdings')
-  modelHoldings(): any {
-    return this.repo.modelHoldings();
+  modelHoldings(): Promise<any> {
+    return this.enrich(this.repo.modelHoldings());
   }
 
   @Get('portfolios/personal/holdings')
-  personalHoldings(): any {
-    return this.repo.personalList();
+  personalHoldings(): Promise<any> {
+    return this.enrich(this.repo.personalList());
   }
 
   @Post('portfolios/personal/holdings')
@@ -214,12 +248,12 @@ export class PortfolioController {
       op,
       note: body.note,
     });
-    return this.repo.personalList();
+    return this.enrich(this.repo.personalList());
   }
 
   @Delete('portfolios/personal/holdings/:code')
-  deletePersonal(@Param('code') code: string): any {
+  deletePersonal(@Param('code') code: string): Promise<any> {
     this.repo.personalDelete(code);
-    return this.repo.personalList();
+    return this.enrich(this.repo.personalList());
   }
 }

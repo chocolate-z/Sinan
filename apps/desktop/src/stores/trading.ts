@@ -10,6 +10,9 @@ export interface Holding {
   current_price?: number | null;
   market_value?: number | null;
   float_pnl?: number | null;
+  // api 按最新报价富集(现价回退日线收盘);报价不可用则 null(诚实「—」)。
+  prev_close?: number | null;
+  day_pnl?: number | null;
   note?: string | null;
 }
 
