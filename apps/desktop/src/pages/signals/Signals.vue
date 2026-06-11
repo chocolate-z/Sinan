@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref } from 'vue';
+import { computed } from 'vue';
 import { useTradingStore } from '../../stores/trading';
 import { actionLabel, blockNote, blockRule, factorEntries, reasonLabel } from '../../lib/signals';
 import { useAppStore } from '../../stores/app';
@@ -10,9 +10,19 @@ import Icon from '../../shell/Icon.vue';
 
 const trading = useTradingStore();
 const app = useAppStore();
-const today = ref('');
-const effective = ref('');
-const tab = ref<'pass' | 'blocked'>('pass');
+// 信号日 / 生效日 / tab 留存于 store(切菜单不丢);v-model 经可写投影直接写 store。
+const today = computed({
+  get: () => trading.signalToday,
+  set: (v: string) => (trading.signalToday = v),
+});
+const effective = computed({
+  get: () => trading.signalEffective,
+  set: (v: string) => (trading.signalEffective = v),
+});
+const tab = computed({
+  get: () => trading.signalTab,
+  set: (v: 'pass' | 'blocked') => (trading.signalTab = v),
+});
 
 async function run() {
   if (!today.value || !effective.value) return;

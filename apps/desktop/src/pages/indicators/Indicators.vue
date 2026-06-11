@@ -1,91 +1,48 @@
 <script setup lang="ts">
 // 指标 · 因子库(M4 接真实)。对因子库逐因子算真实 IC 均值 / ICIR / 覆盖度 + IC 时序 + 十分位分层收益。
 // 红线#3:IC/ICIR/覆盖度 中性通道;分层收益 PnL 通道;缺数据 coverage=0 如实(不造假)。
-import { computed, onMounted, reactive, ref } from 'vue';
-import { api, ApiError } from '../../api/client';
+import { computed, onMounted } from 'vue';
+import { useIndicatorsStore } from '../../stores/indicators';
 import PageHero from '../../ui/PageHero.vue';
 import RangePicker from '../../ui/RangePicker.vue';
 import Icon from '../../shell/Icon.vue';
 import ICChart from '../../ui/charts/ICChart.vue';
 import DecileBars from '../../ui/charts/DecileBars.vue';
 
-const report = ref<any | null>(null);
-const selectedName = ref<string | null>(null);
-const loading = ref(false);
-const error = ref<string | null>(null);
-const form = reactive({ start: '', end: '', label_horizon: 5 });
+const ind = useIndicatorsStore();
+// 表单=store 同一 reactive 引用;DSL 输入(expr/名称/权重)与 selectedName 为可写投影;
+// 其余只读投影,动作转调 store —— 模板与派生 computed 全不动。
+const form = ind.form;
+const expr = computed({ get: () => ind.expr, set: (v: string) => (ind.expr = v) });
+const factorName = computed({
+  get: () => ind.factorName,
+  set: (v: string) => (ind.factorName = v),
+});
+const factorWeight = computed({
+  get: () => ind.factorWeight,
+  set: (v: number) => (ind.factorWeight = v),
+});
+const selectedName = computed({
+  get: () => ind.selectedName,
+  set: (v: string | null) => (ind.selectedName = v),
+});
+const report = computed(() => ind.report);
+const loading = computed(() => ind.loading);
+const error = computed(() => ind.error);
+const validating = computed(() => ind.validating);
+const saving = computed(() => ind.saving);
+const saveError = computed(() => ind.saveError);
+const validation = computed(() => ind.validation);
+const customList = computed(() => ind.customList);
 
-// 自定义因子 DSL 编辑器:沙箱白名单 + 仅回看算子(结构上防未来函数,红线#1)。
-const expr = ref('zscore(-pe_ttm) + rank(roe)');
-const factorName = ref('');
-const factorWeight = ref(1); // 合成权重(1=等权;0=不参与;>1 放大该因子贡献)
-const validating = ref(false);
-const saving = ref(false);
-const saveError = ref<string | null>(null);
-const validation = ref<any | null>(null);
-const customList = ref<any[]>([]);
+const validateExpr = () => ind.validateExpr();
+const saveFactor = () => ind.saveFactor();
+const updateFactor = (id: string, patch: { weight?: number; enabled?: boolean }) =>
+  ind.updateFactor(id, patch);
+const delFactor = (id: string) => ind.delFactor(id);
+const run = () => ind.run();
 
-async function loadCustom() {
-  try {
-    customList.value = await api.customFactors();
-  } catch {
-    customList.value = [];
-  }
-}
-async function validateExpr() {
-  if (!expr.value.trim()) return;
-  validating.value = true;
-  saveError.value = null;
-  try {
-    validation.value = await api.validateIndicator(expr.value);
-  } catch (e) {
-    const d = e instanceof ApiError ? e.detail : e;
-    validation.value = { ok: false, errors: [String(d ?? e)], fields: [], functions: [] };
-  } finally {
-    validating.value = false;
-  }
-}
-async function saveFactor() {
-  if (!factorName.value.trim() || !validation.value?.ok) return;
-  saving.value = true;
-  saveError.value = null;
-  try {
-    await api.createCustomFactor({
-      name: factorName.value.trim(),
-      expr: expr.value,
-      weight: factorWeight.value,
-    });
-    factorName.value = '';
-    factorWeight.value = 1;
-    await loadCustom();
-  } catch (e) {
-    const d = e instanceof ApiError ? e.detail : e;
-    saveError.value = d && typeof d === 'object' ? JSON.stringify(d) : String(d ?? e);
-  } finally {
-    saving.value = false;
-  }
-}
-// 改合成权重 / 启用态(就地保存,口径贯穿实盘选股与回测)。
-async function updateFactor(id: string, patch: { weight?: number; enabled?: boolean }) {
-  saveError.value = null;
-  try {
-    await api.updateCustomFactor(id, patch);
-    await loadCustom();
-  } catch (e) {
-    const d = e instanceof ApiError ? e.detail : e;
-    saveError.value = d && typeof d === 'object' ? JSON.stringify(d) : String(d ?? e);
-    await loadCustom(); // 失败回滚显示到服务端真值
-  }
-}
-async function delFactor(id: string) {
-  try {
-    await api.deleteCustomFactor(id);
-    await loadCustom();
-  } catch {
-    /* 删除失败忽略 */
-  }
-}
-onMounted(loadCustom);
+onMounted(() => ind.loadCustom());
 
 const GROUP_LABEL: Record<string, string> = {
   value: '价值',
@@ -133,22 +90,6 @@ function ic(v: number | null | undefined): string {
 }
 function pct(v: number | null | undefined): string {
   return v == null ? '—' : (v * 100).toFixed(0) + '%';
-}
-
-async function run() {
-  if (!form.start || !form.end) return;
-  loading.value = true;
-  error.value = null;
-  try {
-    report.value = await api.indicatorsQuality({ ...form });
-    selectedName.value = report.value?.factors?.[0]?.name ?? null;
-  } catch (e) {
-    const d = e instanceof ApiError ? e.detail : e;
-    error.value = d && typeof d === 'object' ? JSON.stringify(d) : String(d ?? e);
-    report.value = null;
-  } finally {
-    loading.value = false;
-  }
 }
 </script>
 

@@ -39,6 +39,10 @@ interface LivePnl {
 
 interface TradingState {
   date: string;
+  // 信号页表单(信号日 T / 生效日 T+1 / 当前 tab),留存于 store,切菜单不丢。
+  signalToday: string;
+  signalEffective: string;
+  signalTab: 'pass' | 'blocked';
   signals: SignalRow[];
   modelHoldings: Holding[];
   personalHoldings: Holding[];
@@ -53,6 +57,9 @@ interface TradingState {
 export const useTradingStore = defineStore('trading', {
   state: (): TradingState => ({
     date: '',
+    signalToday: '',
+    signalEffective: '',
+    signalTab: 'pass',
     signals: [],
     modelHoldings: [],
     personalHoldings: [],

@@ -2,8 +2,8 @@
 // 策略 / 模型(M3 接真实)。训练 walk-forward ElasticNet → 模型版本库 → 激活。
 // 红线#3:样本内外 IC 并列;夏普/年化为分层口径(layered_,随 metrics_note 诚实标注);IC/ICIR 中性通道。
 // 流水线为真实系统架构;股票池/风控/成本为打包默认基线(config.defaults.json 真值)。
-import { onMounted, reactive, ref } from 'vue';
-import { api } from '../../api/client';
+import { computed, onMounted } from 'vue';
+import { useModelsStore } from '../../stores/models';
 import { useAppStore } from '../../stores/app';
 import { fmt, fmtPct } from '../../lib/format';
 import PageHero from '../../ui/PageHero.vue';
@@ -11,69 +11,19 @@ import RangePicker from '../../ui/RangePicker.vue';
 import Icon from '../../shell/Icon.vue';
 
 const app = useAppStore();
+const ms = useModelsStore();
+// 表单=store 同一 reactive 引用(v-model 直接写 store);showForm 可写投影;其余只读投影。
+const form = ms.form;
+const showForm = computed({ get: () => ms.showForm, set: (v: boolean) => (ms.showForm = v) });
+const models = computed(() => ms.models);
+const selectedId = computed(() => ms.selectedId);
+const detail = computed(() => ms.detail);
+const training = computed(() => ms.training);
+const error = computed(() => ms.error);
 
-const models = ref<any[]>([]);
-const selectedId = ref<string | null>(null);
-const detail = ref<any | null>(null);
-const showForm = ref(false);
-const training = ref(false);
-const error = ref<string | null>(null);
-
-const form = reactive({
-  train_start: '',
-  train_end: '',
-  label_horizon: 5,
-  purge: 5,
-  train_span: 252,
-  test_span: 63,
-});
-
-async function fetchModels() {
-  try {
-    models.value = await api.models();
-    if (!selectedId.value && models.value.length) selectModel(models.value[0].id);
-  } catch {
-    models.value = [];
-  }
-}
-
-async function selectModel(id: string) {
-  selectedId.value = id;
-  detail.value = null;
-  try {
-    detail.value = await api.model(id);
-  } catch {
-    detail.value = null;
-  }
-}
-
-async function train() {
-  if (!form.train_start || !form.train_end) return;
-  training.value = true;
-  error.value = null;
-  try {
-    const created = await api.trainModel({ ...form });
-    showForm.value = false;
-    await fetchModels();
-    if (created?.id) selectModel(created.id);
-  } catch (e: any) {
-    const d = e?.detail;
-    error.value = d && typeof d === 'object' ? JSON.stringify(d) : String(d ?? e);
-  } finally {
-    training.value = false;
-  }
-}
-
-async function activate(id: string, ev: Event) {
-  ev.stopPropagation();
-  try {
-    await api.activateModel(id);
-    await fetchModels();
-    if (selectedId.value) await selectModel(selectedId.value);
-  } catch (e) {
-    error.value = String(e);
-  }
-}
+const selectModel = (id: string) => ms.selectModel(id);
+const train = () => ms.train();
+const activate = (id: string, ev: Event) => ms.activate(id, ev);
 
 const STATUS: Record<string, { kind: string; label: string }> = {
   running: { kind: 'ok', label: '运行中' },
@@ -87,7 +37,7 @@ function ic(v: number | null | undefined): string {
   return v == null ? '—' : (v >= 0 ? '' : '−') + Math.abs(v).toFixed(3);
 }
 
-onMounted(fetchModels);
+onMounted(() => ms.fetchModels());
 
 // —— 真实系统架构 / 打包默认基线(config.defaults.json)——
 const PIPELINE: { icon: string; k: string; d: string }[] = [
