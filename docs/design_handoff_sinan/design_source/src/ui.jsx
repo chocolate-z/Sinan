@@ -127,6 +127,8 @@ const I = {
   plus: <Icon d={<path d="M12 5v14M5 12h14"/>} size={14} />,
   indicator: <Icon d={<><line x1="4" y1="7" x2="20" y2="7"/><line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="17" x2="20" y2="17"/><circle cx="9" cy="7" r="2.3"/><circle cx="16" cy="12" r="2.3"/><circle cx="7" cy="17" r="2.3"/></>} />,
   model: <Icon d={<><circle cx="6" cy="12" r="2.4"/><circle cx="18" cy="6" r="2.4"/><circle cx="18" cy="18" r="2.4"/><path d="M8.2 11L15.6 7M8.2 13L15.6 17"/></>} />,
+  close: <Icon d={<path d="M6 6l12 12M18 6L6 18"/>} size={16} />,
+  back: <Icon d={<path d="M15 6l-6 6 6 6"/>} size={16} />,
 };
 
 // ---------- Empty state ----------

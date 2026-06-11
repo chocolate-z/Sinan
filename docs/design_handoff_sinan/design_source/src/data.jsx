@@ -157,6 +157,87 @@ const MODELS = [
   { id: "exp", name: "实验 · 动量增强", status: "draft", oosIC: 0.055, sharpe: 1.71, ann: 27.3, since: "2026-05", note: "样本外验证中,未上线" },
 ];
 
+// ---- Sectors 行业板块 (今日) ----
+// chg=涨跌幅%, flow=主力净流入(亿元,正流入/负流出), turnover=成交额(亿), up/down=涨跌家数, lead=领涨股
+const SECTORS = [
+  { name: "有色金属", chg: 4.12, flow: 38.6, turnover: 412, up: 86, down: 12, lead: "紫金矿业", spark: [0,0.6,0.4,1.2,1.8,2.4,2.1,3.0,3.6,4.1] },
+  { name: "光伏设备", chg: 3.74, flow: 31.2, turnover: 386, up: 74, down: 9,  lead: "隆基绿能", spark: [0,-0.3,0.5,1.0,1.6,1.4,2.2,2.8,3.3,3.7] },
+  { name: "电池",     chg: 2.88, flow: 26.4, turnover: 521, up: 63, down: 18, lead: "宁德时代", spark: [0,0.4,0.9,0.7,1.3,1.9,2.1,2.4,2.7,2.9] },
+  { name: "半导体",   chg: 1.96, flow: 12.7, turnover: 468, up: 71, down: 33, lead: "海光信息", spark: [0,0.8,0.5,1.1,0.9,1.4,1.6,1.5,1.8,2.0] },
+  { name: "软件开发", chg: 1.42, flow: 8.3,  turnover: 297, up: 58, down: 29, lead: "金山办公", spark: [0,0.3,0.7,0.6,1.0,1.2,1.1,1.3,1.4,1.4] },
+  { name: "汽车整车", chg: 1.18, flow: 6.9,  turnover: 254, up: 22, down: 11, lead: "比亚迪",   spark: [0,0.5,0.4,0.8,0.7,1.0,0.9,1.1,1.2,1.2] },
+  { name: "医疗器械", chg: 0.46, flow: 1.4,  turnover: 168, up: 41, down: 38, lead: "迈瑞医疗", spark: [0,0.3,-0.2,0.2,0.5,0.3,0.6,0.4,0.5,0.5] },
+  { name: "食品饮料", chg: 0.24, flow: -2.1, turnover: 142, up: 33, down: 31, lead: "贵州茅台", spark: [0,0.2,-0.1,0.3,0.1,0.4,0.2,0.3,0.2,0.2] },
+  { name: "银行",     chg: -0.62, flow: -9.8, turnover: 186, up: 8,  down: 34, lead: "招商银行", spark: [0,-0.2,-0.4,-0.3,-0.5,-0.4,-0.6,-0.5,-0.6,-0.6] },
+  { name: "房地产",   chg: -1.34, flow: -14.2, turnover: 124, up: 11, down: 67, lead: "保利发展", spark: [0,-0.3,-0.6,-0.8,-0.7,-1.0,-1.1,-1.2,-1.3,-1.3] },
+  { name: "证券",     chg: -1.86, flow: -21.5, turnover: 312, up: 5,  down: 43, lead: "东方财富", spark: [0,-0.5,-0.8,-1.1,-1.0,-1.4,-1.5,-1.6,-1.8,-1.9] },
+  { name: "航运港口", chg: -2.41, flow: -16.7, turnover: 98,  up: 4,  down: 39, lead: "中远海控", spark: [0,-0.6,-1.0,-1.4,-1.3,-1.7,-2.0,-2.1,-2.3,-2.4] },
+];
+
+// ---- Sector constituents 板块成分股 (真实名称+代码, 指标由种子生成) ----
+const SECTOR_STOCKS = {
+  "有色金属": [["紫金矿业","601899",17.84],["洛阳钼业","603993",8.36],["北方稀土","600111",24.71],["山东黄金","600547",28.05],["华友钴业","603799",41.62],["赣锋锂业","002460",38.90],["中金黄金","600489",13.27],["锐能商务","603255",30.18]],
+  "光伏设备": [["隆基绿能","601012",19.47],["通威股份","600438",28.64],["阳光电源","300274",78.20],["晶澳科技","002459",14.85],["TCL中环","002129",11.93],["福斯特","603806",16.40]],
+  "电池": [["宁德时代","300750",251.88],["亿纬锂能","300014",42.16],["国轩高科","002074",23.55],["欣旺达","300207",19.78],["比亚迪","002594",268.40]],
+  "半导体": [["海光信息","688041",112.30],["中芯国际","688981",52.74],["北方华创","002371",398.50],["韦尔股份","603501",106.20],["兆易创新","603986",87.41]],
+  "软件开发": [["金山办公","688111",264.80],["用友网络","600588",12.34],["恒生电子","600570",24.07],["广联达","002410",13.95]],
+  "汽车整车": [["比亚迪","002594",268.40],["长城汽车","601633",23.18],["赛力斯","601127",94.65],["上汽集团","600104",15.42],["长安汽车","000625",13.27]],
+  "医疗器械": [["迈瑞医疗","300760",243.10],["联影医疗","688271",128.40],["鱼跃医疗","002223",33.62],["乐普医疗","300003",14.08]],
+  "食品饮料": [["贵州茅台","600519",1486.30],["五粮液","000858",142.55],["泸州老窖","000568",128.70],["伊利股份","600887",26.18],["山西汾酒","600809",198.40]],
+  "银行": [["招商银行","600036",38.92],["工商银行","601398",6.21],["兴业银行","601166",18.34],["平安银行","000001",11.27],["宁波银行","002142",24.86]],
+  "房地产": [["保利发展","600048",8.74],["万科A","000002",7.12],["招商蛇口","001979",9.85],["金地集团","600383",5.43]],
+  "证券": [["东方财富","300059",16.93],["中信证券","600030",26.41],["东方证券","600958",9.78],["国泰君安","601211",17.52]],
+  "航运港口": [["中远海控","601919",13.46],["招商轮船","601872",7.85],["中远海能","600026",15.32],["上港集团","600018",6.27]],
+};
+
+// 根据代码+板块涨跌生成个股指标(确定性)
+function enrichStocks(sectorName, sectorChg) {
+  const list = SECTOR_STOCKS[sectorName] || [];
+  return list.map(([name, code, price]) => {
+    const seed = code.split("").reduce((a, c) => a + c.charCodeAt(0), 0);
+    const rng = mulberry32(seed);
+    const chg = +(sectorChg + (rng() - 0.5) * 3.4).toFixed(2);
+    const flow = +((rng() - 0.42) * (Math.abs(sectorChg) + 1) * 2.4).toFixed(2);
+    const amt = +(price * (8 + rng() * 40)).toFixed(1);
+    const turn = +(0.6 + rng() * 4).toFixed(2);
+    const pe = +(6 + rng() * 40).toFixed(1);
+    return { name, code, price, chg, flow, amt, turn, pe, prevClose: +(price / (1 + chg / 100)).toFixed(2) };
+  }).sort((a, b) => b.chg - a.chg);
+}
+
+// 生成当日分时数据 (240分钟: 上午9:30-11:30 + 下午13:00-15:00)
+function genIntraday(code, prevClose, chg) {
+  const seed = code.split("").reduce((a, c) => a + c.charCodeAt(0), 3);
+  const rng = mulberry32(seed);
+  const N = 240;
+  const target = prevClose * (1 + chg / 100);
+  const price = [], avg = [], vol = [];
+  let p = prevClose, cumPV = 0, cumV = 0;
+  for (let i = 0; i < N; i++) {
+    const t = i / (N - 1);
+    // 朝目标价漂移 + 噪声
+    const drift = (target - p) * 0.035;
+    const noise = (rng() - 0.5) * prevClose * 0.0035;
+    p = p + drift + noise;
+    const v = 0.3 + rng() * 0.7 + (Math.abs(noise) / prevClose) * 40;
+    cumPV += p * v; cumV += v;
+    price.push(p); avg.push(cumPV / cumV); vol.push(v);
+  }
+  price[N - 1] = target;
+  return { price, avg, vol, prevClose, N };
+}
+
+// 分时时间刻度
+const INTRADAY_TICKS = ["9:30", "10:30", "11:30/13:00", "14:00", "15:00"];
+
+// ---- Index summary 大盘指数 ----
+const INDICES = [
+  { name: "上证指数", code: "000001", price: 3284.62, chg: 0.86 },
+  { name: "深证成指", code: "399001", price: 10472.18, chg: 1.24 },
+  { name: "创业板指", code: "399006", price: 2138.94, chg: 1.92 },
+  { name: "沪深300", code: "000300", price: 3912.45, chg: 0.71 },
+];
+
 // ---- Strategy pipeline 策略流水线 ----
 const PIPELINE = [
   { k: "数据落库", d: "行情 / 财务 / 复权", icon: "db" },
@@ -169,5 +250,6 @@ const PIPELINE = [
 Object.assign(window, {
   mulberry32, QUOTES, genEquity, genCandles, SIGNALS, SIGNALS_BLOCKED,
   HOLDINGS_MODEL, HOLDINGS_PERSONAL, TRADES, genDaily, MONTHLY,
-  FACTORS, MODELS, PIPELINE,
+  FACTORS, MODELS, PIPELINE, SECTORS, INDICES,
+  SECTOR_STOCKS, enrichStocks, genIntraday, INTRADAY_TICKS,
 });

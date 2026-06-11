@@ -216,4 +216,88 @@ function RiskBar({ used, limit, label, unit = "%" }) {
   );
 }
 
-Object.assign(window, { useMeasure, EquityChart, Candles, Heatmap, Sparkline, RiskBar });
+// ---------- Intraday line (分时图: 价格线 vs 昨收基准 + 均价线 + 成交量) ----------
+function Intraday({ data, chg, inv, height = 300 }) {
+  const [ref, W] = useMeasure();
+  const padL = 6, padR = 56, padT = 10;
+  const volH = 50, gap = 10, padB = 18;
+  const priceH = height - volH - gap - padB;
+  const innerW = Math.max(10, W - padL - padR);
+  const { price, avg, vol, prevClose, N } = data;
+
+  const allHi = Math.max(...price, prevClose), allLo = Math.min(...price, prevClose);
+  const span = Math.max(allHi - prevClose, prevClose - allLo) * 1.15 || prevClose * 0.02;
+  const hi = prevClose + span, lo = prevClose - span;
+  const x = (i) => padL + (i / (N - 1)) * innerW;
+  const y = (v) => padT + (1 - (v - lo) / (hi - lo)) * (priceH - padT);
+  const baseY = y(prevClose);
+
+  const up = chg >= 0;
+  const lineCol = up ? (inv ? "var(--pnl-down)" : "var(--pnl-up)") : (inv ? "var(--pnl-up)" : "var(--pnl-down)");
+  const fillId = "intfill_" + (up ? "u" : "d");
+
+  const pricePath = price.map((v, i) => `${i ? "L" : "M"}${x(i).toFixed(1)} ${y(v).toFixed(1)}`).join(" ");
+  const areaPath = pricePath + ` L${x(N - 1)} ${baseY} L${padL} ${baseY} Z`;
+  const avgPath = avg.map((v, i) => `${i ? "L" : "M"}${x(i).toFixed(1)} ${y(v).toFixed(1)}`).join(" ");
+
+  // y ticks: top / prevClose / bottom, with price + pct
+  const ticks = [hi, prevClose + span / 2, prevClose, prevClose - span / 2, lo];
+  const vMax = Math.max(...vol);
+  const vy = (v) => (priceH + gap) + (1 - v / vMax) * volH;
+  const bw = Math.max(1, (innerW / N) * 0.6);
+
+  // session split (lunch break) at i=120
+  const splitX = x(120);
+
+  return (
+    <div ref={ref} style={{ width: "100%" }}>
+      <svg width={W} height={height} style={{ display: "block", overflow: "visible" }}>
+        <defs>
+          <linearGradient id="intfill_u" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor="var(--pnl-up)" stopOpacity="0.22" />
+            <stop offset="100%" stopColor="var(--pnl-up)" stopOpacity="0" />
+          </linearGradient>
+          <linearGradient id="intfill_d" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor="var(--pnl-down)" stopOpacity="0.22" />
+            <stop offset="100%" stopColor="var(--pnl-down)" stopOpacity="0" />
+          </linearGradient>
+        </defs>
+        {/* grid + y labels (price left-implied / right shown) */}
+        {ticks.map((t, i) => {
+          const pct = ((t - prevClose) / prevClose) * 100;
+          const isBase = Math.abs(t - prevClose) < 1e-6;
+          const tcls = isBase ? "var(--text-3)" : (pct > 0 ? (inv ? "var(--pnl-down)" : "var(--pnl-up)") : (inv ? "var(--pnl-up)" : "var(--pnl-down)"));
+          return (
+            <g key={i}>
+              <line x1={padL} x2={W - padR} y1={y(t)} y2={y(t)} stroke="var(--grid-line)" strokeDasharray={isBase ? "0" : "0"} />
+              <text x={W - padR + 6} y={y(t) + 3.5} fontSize="10" fill={tcls} fontFamily="var(--font-mono)">{t.toFixed(2)}</text>
+              <text x={W - padR + 6} y={y(t) + 14} fontSize="8.5" fill={tcls} fontFamily="var(--font-mono)" opacity="0.7">{(pct > 0 ? "+" : "") + pct.toFixed(1) + "%"}</text>
+            </g>
+          );
+        })}
+        {/* baseline (昨收) emphasised */}
+        <line x1={padL} x2={W - padR} y1={baseY} y2={baseY} stroke="var(--text-3)" strokeWidth="1" strokeDasharray="4 3" opacity="0.6" />
+        {/* lunch split */}
+        <line x1={splitX} x2={splitX} y1={padT} y2={priceH + gap + volH} stroke="var(--border)" strokeDasharray="2 3" />
+        {/* area + price + avg */}
+        <path d={areaPath} fill={`url(#${fillId})`} />
+        <path d={pricePath} fill="none" stroke={lineCol} strokeWidth="1.6" />
+        <path d={avgPath} fill="none" stroke="#e0b34a" strokeWidth="1.1" opacity="0.9" />
+        {/* volume */}
+        {vol.map((v, i) => {
+          const rising = i === 0 ? price[i] >= prevClose : price[i] >= price[i - 1];
+          const c = (rising !== inv) ? "var(--pnl-up)" : "var(--pnl-down)";
+          return <rect key={i} x={x(i) - bw / 2} y={vy(v)} width={bw} height={(priceH + gap + volH) - vy(v)} fill={c} opacity="0.32" />;
+        })}
+        {/* x ticks */}
+        {INTRADAY_TICKS.map((t, i) => (
+          <text key={i} x={padL + (i / (INTRADAY_TICKS.length - 1)) * innerW} y={height - 4}
+            textAnchor={i === 0 ? "start" : i === INTRADAY_TICKS.length - 1 ? "end" : "middle"}
+            fontSize="9.5" fill="var(--axis-text)" fontFamily="var(--font-mono)">{t}</text>
+        ))}
+      </svg>
+    </div>
+  );
+}
+
+Object.assign(window, { useMeasure, EquityChart, Candles, Heatmap, Sparkline, RiskBar, Intraday });
