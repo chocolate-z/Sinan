@@ -10,6 +10,7 @@ import { drawdownSeries } from '../../lib/backtest';
 import PageHero from '../../ui/PageHero.vue';
 import EquityChart from '../../ui/charts/EquityChart.vue';
 import RiskBar from '../../ui/charts/RiskBar.vue';
+import Sparkline from '../../ui/charts/Sparkline.vue';
 import Icon from '../../shell/Icon.vue';
 import OnboardingWizard from '../onboarding/OnboardingWizard.vue';
 
@@ -107,6 +108,15 @@ const modelDay = computed(() => trading.liveModel?.day_pnl ?? null);
 const modelDayPct = computed(() => trading.modelPnlLatest?.day_pnl_pct ?? null);
 const modelExcess = computed(() => trading.modelPnlLatest?.excess_pct ?? null);
 
+// 双卡迷你净值线:取真实逐日权益(daily_pnl.total_assets)最近 40 点;不足 2 点不画(诚实)。
+const personalNav = computed(() => trading.personalPnl.map((r) => r.total_assets).slice(-40));
+const modelNav = computed(() => trading.modelPnl.map((r) => r.total_assets).slice(-40));
+// 走势涨/跌着色:用 --pnl-up/--pnl-down 令牌(随 data-pnl-invert 自动交换,与 pnlClass 同口径)。
+function sparkColor(s: number[]): string {
+  if (s.length < 2) return 'var(--text-3)';
+  return s[s.length - 1] >= s[0] ? 'var(--pnl-up)' : 'var(--pnl-down)';
+}
+
 function pct(v: number | null | undefined, dec = 2): string {
   return v == null ? '—' : `${v >= 0 ? '+' : ''}${(v * 100).toFixed(dec)}%`;
 }
@@ -136,8 +146,19 @@ function pct(v: number | null | undefined, dec = 2): string {
             <span class="cap">个人账户 · 当日收益</span>
             <span class="ch-tag"><i style="background: var(--pnl-up)" />PnL</span>
           </div>
-          <div class="stat-val mono" :class="app.pnlClass(personalDay ?? 0)">
-            {{ personalDay == null ? '—' : '¥' + formatPnl(personalDay) }}
+          <div class="stat-main">
+            <div class="stat-figs">
+              <div class="stat-val mono" :class="app.pnlClass(personalDay ?? 0)">
+                {{ personalDay == null ? '—' : '¥' + formatPnl(personalDay) }}
+              </div>
+            </div>
+            <Sparkline
+              v-if="personalNav.length >= 2"
+              :values="personalNav"
+              :width="104"
+              :height="40"
+              :color="sparkColor(personalNav)"
+            />
           </div>
           <div class="hairline" />
           <div class="stat-metrics">
@@ -159,15 +180,26 @@ function pct(v: number | null | undefined, dec = 2): string {
             <span class="cap">模型模拟盘 · 当日收益</span>
             <span class="ch-tag"><i style="background: var(--pnl-up)" />PnL</span>
           </div>
-          <div class="stat-val mono" :class="app.pnlClass(modelDay ?? modelDayPct ?? 0)">
-            {{ modelDay != null ? '¥' + formatPnl(modelDay) : pct(modelDayPct) }}
-          </div>
-          <div
-            v-if="modelDay != null && modelDayPct != null"
-            class="stat-delta mono"
-            :class="app.pnlClass(modelDayPct)"
-          >
-            {{ modelDayPct >= 0 ? '▲' : '▼' }} {{ pct(modelDayPct) }}
+          <div class="stat-main">
+            <div class="stat-figs">
+              <div class="stat-val mono" :class="app.pnlClass(modelDay ?? modelDayPct ?? 0)">
+                {{ modelDay != null ? '¥' + formatPnl(modelDay) : pct(modelDayPct) }}
+              </div>
+              <div
+                v-if="modelDay != null && modelDayPct != null"
+                class="stat-delta mono"
+                :class="app.pnlClass(modelDayPct)"
+              >
+                {{ modelDayPct >= 0 ? '▲' : '▼' }} {{ pct(modelDayPct) }}
+              </div>
+            </div>
+            <Sparkline
+              v-if="modelNav.length >= 2"
+              :values="modelNav"
+              :width="104"
+              :height="40"
+              :color="sparkColor(modelNav)"
+            />
           </div>
           <div class="hairline" />
           <div class="stat-metrics">
@@ -339,6 +371,15 @@ function pct(v: number | null | undefined, dec = 2): string {
   width: 7px;
   height: 7px;
   border-radius: 2px;
+}
+.stat-main {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 12px;
+}
+.stat-figs {
+  min-width: 0;
 }
 .stat-val {
   font-size: var(--fs-mono-lg);

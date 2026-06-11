@@ -23,6 +23,20 @@ interface PnlRow {
   drawdown?: number | null;
 }
 
+export interface LiveHolding {
+  stock_code: string;
+  shares: number;
+  price: number | null;
+  prev_close: number | null;
+  day_pnl: number | null;
+}
+interface LivePnl {
+  day_pnl: number;
+  market_value: number;
+  degraded: boolean;
+  by_holding?: LiveHolding[];
+}
+
 interface TradingState {
   date: string;
   signals: SignalRow[];
@@ -30,8 +44,8 @@ interface TradingState {
   personalHoldings: Holding[];
   modelPnl: PnlRow[];
   personalPnl: PnlRow[];
-  liveModel: { day_pnl: number; market_value: number; degraded: boolean } | null;
-  livePersonal: { day_pnl: number; market_value: number; degraded: boolean } | null;
+  liveModel: LivePnl | null;
+  livePersonal: LivePnl | null;
   loading: boolean;
   error: string | null;
 }

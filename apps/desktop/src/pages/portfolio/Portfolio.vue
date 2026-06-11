@@ -123,6 +123,23 @@ const pnlLatest = computed(() =>
 );
 const live = computed(() => (tab.value === 'personal' ? trading.livePersonal : trading.liveModel));
 
+// 逐行「当日盈亏」(金额+百分比):来自 pnlToday 的 by_holding(现价 vs 昨收 × 持仓)。
+// 报价不可用(无实时/无日内回退)的标的 day_pnl 为 null → 该行诚实「—」,绝不补数。
+const dayByCode = computed<Record<string, { pnl: number; pct: number }>>(() => {
+  const out: Record<string, { pnl: number; pct: number }> = {};
+  for (const b of live.value?.by_holding ?? []) {
+    if (b.day_pnl != null && b.price != null && b.prev_close) {
+      out[b.stock_code] = { pnl: b.day_pnl, pct: (b.price / b.prev_close - 1) * 100 };
+    }
+  }
+  return out;
+});
+// 合计当日盈亏:仅汇总有真实当日数据的行(口径与逐行一致);无任何行有数据则不汇总。
+const totalDay = computed<number | null>(() => {
+  const vals = Object.values(dayByCode.value);
+  return vals.length ? vals.reduce((s, v) => s + v.pnl, 0) : null;
+});
+
 // 持仓市值合计:有真实 market_value 才计入,否则为 null(诚实)
 const totalMkt = computed<number | null>(() => {
   const hs = holdings.value;
@@ -302,7 +319,16 @@ function weightOf(h: { market_value?: number | null }): number | null {
               {{ h.market_value == null ? '—' : fmtInt(Math.round(h.market_value)) }}
             </td>
             <td class="num">
-              <span class="c3">—</span>
+              <div v-if="dayByCode[h.stock_code]" class="cell-day">
+                <span :class="app.pnlClass(dayByCode[h.stock_code].pnl)">{{
+                  (dayByCode[h.stock_code].pnl > 0 ? '+' : '') +
+                  fmtInt(Math.round(dayByCode[h.stock_code].pnl))
+                }}</span>
+                <span class="day-pct" :class="app.pnlClass(dayByCode[h.stock_code].pnl)">{{
+                  fmtPct(dayByCode[h.stock_code].pct)
+                }}</span>
+              </div>
+              <span v-else class="c3">—</span>
             </td>
             <td class="num">
               <span v-if="h.float_pnl == null" class="c3">—</span>
@@ -348,7 +374,10 @@ function weightOf(h: { market_value?: number | null }): number | null {
               {{ totalMkt == null ? '—' : fmtInt(Math.round(totalMkt)) }}
             </td>
             <td class="num">
-              <span class="c3">—</span>
+              <span v-if="totalDay == null" class="c3">—</span>
+              <span v-else class="foot-strong" :class="app.pnlClass(totalDay)">
+                {{ (totalDay > 0 ? '+' : '') + fmtInt(Math.round(totalDay)) }}
+              </span>
             </td>
             <td class="num">
               <span v-if="totalFloat == null" class="c3">—</span>
@@ -614,6 +643,16 @@ function weightOf(h: { market_value?: number | null }): number | null {
 .cs-code {
   font-size: 10.5px;
   color: var(--text-3);
+}
+.cell-day {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  align-items: flex-end;
+}
+.day-pct {
+  font-size: 10.5px;
+  opacity: 0.8;
 }
 .dt td.c2,
 .c2 {
