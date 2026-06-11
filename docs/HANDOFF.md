@@ -403,3 +403,28 @@ labels.py   build_forward_return_labels(hfq[T+h]/hfq[T]-1,前向,尾 h 日 null)
 
 - token 本会话又多次明文出现,**新会话务必让用户在引导页输入,绝不让其贴对话**。
 - 本会话期间检测到**并发会话**(另一个 Claude 会话/手动 git 曾 commit「股票搜索端点+持仓弹窗」又 `git reset` 回 eb3d5e9,清掉了未提交的工作)→ **提醒用户别同时开多个会话编辑同一仓库**。本会话「股票搜索 API」是重做的。
+
+### 11.6 本会话(单日期框修复 + v2 视觉漂移闭环 + 状态持久化 + 运行进度,9 commits d791ad6→e880cdb,CI 全绿)
+
+> 接手必读:本轮把 §11.5 留下的「单日期框」彻底修了,并按 v2 决策做完 8 项 🟠 视觉漂移 + ③ 状态持久化 + 运行进度提示。**唯一剩下的大件 = 🔴 行情页全市场快照(已完整定方案+锁决策,未动工,见下)。**
+
+**验证手法(本轮关键)**:用 Claude Preview MCP 起**独立** vite(`--port 9530`,不碰用户的 9521),经 `__vue_app__.config.globalProperties.$pinia._s` 拿 store、`getComputedStyle`/注入临时数据,**实测**每刀效果(DevTools 级)。`.claude/launch.json` 已留(autoPort:false / port 9530)。
+
+**已完成并 CI 绿**:
+
+- **`d791ad6` 单日期框竖排根因 = `empty` 修饰类撞设计系统全局 `.empty`**:DatePicker/RangePicker 触发器「未选值」加的 `empty` 类,与 `components.css` 的空状态容器 `.empty`(flex-direction:column + padding 40 24 居中)同名撞车;且触发器是 `.field`(列 flex)的 flex item,隐式 `min-height:auto` 让其按列内容撑高 → 盖掉显式 `height:30px`(故上轮锁高无效)。**改 `empty`→`is-empty`**(两 picker 模板+scoped)。DevTools 实测 82px 竖排 → 30px 单行。⚠️ 这是「动态修饰类撞全局工具类」的通病,以后加修饰类避开 `.empty/.card/.input` 等全局名。
+- **`2186881` 🟠1 外壳/设置/引导**:状态栏右补实时时钟(本机 HH:MM:SS)、左补「缓存 N 条」(真实 `coverage.total_rows`,**无 GB 字段→不造 GB**);app store 加 `coverage`+`refreshCoverage`(进 bootstrap)。设置数据源网格 `repeat(4,1fr)`、能力探测 `repeat(3,1fr)`。引导 logo 紫渐变软底+accent 描边+发光(**保留四色 Fluent,不回退单色罗盘**——用户拍板)、副标题「本机」→「本地」。**未加引导「本地数据目录」第3源**(后端无 local provider,加=造假,红线#3)。
+- **`1d71236` 🟠2 总览/持仓**:总览 PnL 双卡补 104×40 迷你 Sparkline(真实 `daily_pnl.total_assets` 近 40 点;不足 2 点不画;涨跌用 `--pnl-up/--pnl-down` 令牌随 invert 自动交换)。持仓「当日盈亏」由恒「—」改两行(金额+%),数据复用 `pnlToday.by_holding`(trading store 此前丢弃,现补类型 `LiveHolding`/`LivePnl` 并消费);报价不可用的行诚实「—」。**实测 600396.SH 真实 -7.12%**(引擎报价日线回退,token 无实时仍有值)。
+- **`8085d69` 🟠3 指标(模型页不改)**:指标因子表补「权重/启用」两列(5→7 列贴设计)——自定义因子显示真实权重条+可用开关(`updateFactor`),内置因子「等权/内置」(诚实不伪造可编辑)。**模型页风控约束**经评估**保留文本未改**:模型页风控是静态配置基线(止损/止盈/单票上限),无「当前利用率」,套 RiskBar 须伪造 used 值(违反红线#3);设计的「因子构成」已由真实 `detail.feature_importance` 覆盖。
+- **`34e68c4` 🟠4 信号拦截两列**:修「第4/5列都显示 reason」——拆「拦截规则(短标签 badge)/说明(规则解释)」,`lib/signals` 加 `blockRule()/blockNote()` 由真实 reason 派生(拦截组实际 reason∈{rank_out,market_filter})。**不伪造实例级数字**(未引入后端 note 字段;要「排名第N/阈值X」级具体说明需 engine 出信号时补结构化 note 落库)。+1 测试。
+- **`b3036dd` + `c14dbd0` ③ 页面状态搬 pinia store**:新增 `stores/{backtest,models,indicators}.ts` + trading 加 signalToday/Effective/Tab。**低改动「投影」模式**:`form = store.form`(同一 reactive,v-model 直接写 store 留存);其余 `computed(() => store.x)` 只读投影;可写项(showForm/expr/factorName/factorWeight/selectedName/tab)用**可写 computed**;动作转调 store。**模板与派生 computed 全不动**。效果:长 run() 由 store 拥有 → 离开页面不中断、结果回填;表单/DSL/选中/tab 切菜单留存。实测四页全留存。
+- **`e880cdb` 运行进度提示**:`ui/RunningBar.vue`(不定式动画条 + 诚实「已运行 mm:ss」,自足无后端)接入回测/训练/质检运行态。**不伪造 %**——真实 %/ETA 需 engine 在 walk-forward/逐日循环流式发进度(jobs+SSE,同建缓存),**列为后端跟进**。
+
+**🔴 行情页全市场快照(task #6,已锁方案+决策,未动工)**:
+
+- 用户拍板:**真实板块视角·全市场快照**;**行业口径=申万一级(index_classify L1 + index_member 成分,失败优雅降级到 `stock_basic.industry`)**;**行业映射=engine 内存 memo 按需拉**(不改 CacheBuilder);缺数据三处:**指数条→全A涨跌广度(真实)、资金→北向(有则真无则诚实空)、个股叶子→日K(复用 `/engine/prices`+`Candles.vue`)**。
+- 数据底盘已摸清:缓存 **3486 股 × 2018-01-02~2026-06-11(~22M 行)**;`DataLayer.latest_asof(dataset, asof, fields, codes)` 取 ≤asof 最新行;`_price_map` 取某字段;`kline()` 取日K;`registry.fetch(Capability.SW_INDUSTRY, ...)` / `provider.stock_list()`。**price 数据集是否含 pre_close 待确认**(算当日涨跌要昨收;否则取前一交易日 close)。
+- 实施(契约先行→engine→api→前端,逐刀全绿;**旧行情页保留到前端最后一刀切换,全程不破**):① engine `factors/market.py`:全市场最新交易日快照→个股日涨跌→按申万一级聚合(板块涨跌=成分等权均值/涨跌家数/领涨股/近N日板块 Sparkline)+北向汇总+全A广度;② 契约 `market_snapshot`/`market_sector` + api 代理;③ 前端按 `design_source/src/pages/market.jsx` 重写(全A广度条+板块卡网格 Segmented 排序+右涨跌排行/北向流向+下钻抽屉:板块→成分表→个股日K)。守红线#1(asof PIT)/#3(诚实空)/#6(engine 不写库)。
+- ⚠️ market.jsx 等 `design_source` 文件在本会话起始就是**已修改未提交**状态(用户本轮扩写了市场设计,+400 行),是当前设计真相源;勿覆盖。
+
+**⚠️ 给下一位**:① token 让用户在引导页输入,绝不贴对话;② dev 用 memory 钥匙串,token 重启不持久;③ `pnpm dev` 卡 file lock → Stop-Process cargo,rustc;④ 别同开多会话改同仓库。
