@@ -34,6 +34,10 @@ import StatusBar from './StatusBar.vue';
   overflow: auto;
 }
 .body-inner {
-  min-height: 100%;
+  /* 定高=可滚区高度(.body 由 flex:1 得定高)→ 让需要「内部滚动、不撑整页」的页面(如日志)
+     用 flex:1 占满剩余高度并在卡内滚动;普通页内容超高时溢出由 .body(overflow:auto)照常滚动。 */
+  height: 100%;
+  display: flex;
+  flex-direction: column;
 }
 </style>

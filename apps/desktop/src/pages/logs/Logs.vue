@@ -59,7 +59,7 @@ function levelBadge(level: string): string {
     </div>
 
     <!-- 日志表 -->
-    <div v-else-if="logs.length" class="card">
+    <div v-else-if="logs.length" class="card events-card">
       <div class="card-head">
         <div>
           <h3 class="card-title">系统事件</h3>
@@ -114,10 +114,19 @@ function levelBadge(level: string): string {
   display: flex;
   flex-direction: column;
   gap: 20px;
+  flex: 1;
+  min-height: 0;
 }
-/* 滚动落在「系统事件」卡内的表格,而非整页窗口:表格区按视口高度封顶,内部滚动。 */
+/* 「系统事件」卡占满剩余高度,滚动落在卡内的表格而非整页窗口(无魔法数,随窗口自适应)。 */
+.events-card {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
 .dt-wrap {
-  max-height: calc(100vh - 290px);
+  flex: 1;
+  min-height: 0;
   overflow: auto;
 }
 .col-ts {
