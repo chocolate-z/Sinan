@@ -220,7 +220,7 @@ onBeforeUnmount(() => {
       role="button"
       tabindex="0"
       class="dp-trigger input"
-      :class="{ empty: !modelValue, on: open, 'has-val': !!modelValue }"
+      :class="{ 'is-empty': !modelValue, on: open, 'has-val': !!modelValue }"
       @click="toggle"
       @keydown.enter="toggle"
     >
@@ -427,7 +427,7 @@ onBeforeUnmount(() => {
     border-color var(--t-fast) var(--ease),
     box-shadow var(--t-fast) var(--ease);
 }
-.dp-trigger.empty .dp-val {
+.dp-trigger.is-empty .dp-val {
   color: var(--text-3);
 }
 .dp-trigger.on {

@@ -281,11 +281,11 @@ onBeforeUnmount(() => {
     @click="toggle"
     @keydown.enter="toggle"
   >
-    <span class="rp-seg mono" :class="{ empty: !range[0], active: open && !selecting }">{{
+    <span class="rp-seg mono" :class="{ 'is-empty': !range[0], active: open && !selecting }">{{
       range[0] || placeholderStart
     }}</span>
     <span class="rp-arrow">→</span>
-    <span class="rp-seg mono" :class="{ empty: !range[1], active: open && selecting }">{{
+    <span class="rp-seg mono" :class="{ 'is-empty': !range[1], active: open && selecting }">{{
       range[1] || placeholderEnd
     }}</span>
     <span class="rp-icons">
@@ -467,7 +467,7 @@ onBeforeUnmount(() => {
   padding: 1px 4px;
   border-radius: var(--r-xs);
 }
-.rp-seg.empty {
+.rp-seg.is-empty {
   color: var(--text-3);
 }
 .rp-seg.active {
