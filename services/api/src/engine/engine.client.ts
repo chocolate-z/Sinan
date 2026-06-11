@@ -1,5 +1,6 @@
 /** engine 客户端:api→engine 内部调用(X-Sinan-Internal)。前端永不直连 engine(红线#6)。 */
 import { Injectable } from '@nestjs/common';
+import * as http from 'node:http';
 import * as config from '../config.js';
 
 export interface ProviderTestResult {
@@ -149,6 +150,56 @@ export class HttpEngineClient implements EngineClient {
     return h;
   }
 
+  /**
+   * 长耗时计算(训练/回测/质检/盘后)走 node:http —— **绝不设超时**。
+   * 全局 fetch(undici)默认 headersTimeout=300s:大区间训练(逐日特征面板)可达数分钟,
+   * 到点即 `UND_ERR_HEADERS_TIMEOUT` → api 收到 fetch failed → 通用 500(引擎其实还在算)。
+   * node:http 默认无响应超时,等到引擎算完为止。返回非 2xx 抛 EngineError(转发 status+detail)。
+   */
+  private slowPost(path: string, payload: unknown): Promise<unknown> {
+    const data = JSON.stringify(payload ?? {});
+    const u = new URL(`${config.engineBaseUrl()}${path}`);
+    const headers = { ...this.headers(), 'content-length': String(Buffer.byteLength(data)) };
+    return new Promise((resolve, reject) => {
+      const req = http.request(
+        {
+          hostname: u.hostname,
+          port: u.port,
+          path: `${u.pathname}${u.search}`,
+          method: 'POST',
+          headers,
+        },
+        (res) => {
+          let buf = '';
+          res.setEncoding('utf8');
+          res.on('data', (c) => (buf += c));
+          res.on('end', () => {
+            const status = res.statusCode ?? 0;
+            if (status < 200 || status >= 300) {
+              let detail: unknown;
+              try {
+                detail = (JSON.parse(buf) as { detail?: unknown }).detail;
+              } catch {
+                detail = buf;
+              }
+              reject(new EngineError(status, detail));
+              return;
+            }
+            try {
+              resolve(buf ? JSON.parse(buf) : null);
+            } catch (e) {
+              reject(e);
+            }
+          });
+        },
+      );
+      req.on('error', reject);
+      // 故意不调 req.setTimeout —— 长计算不应被杀。
+      req.write(data);
+      req.end();
+    });
+  }
+
   async providerTest(provider: string, token?: string): Promise<ProviderTestResult> {
     const res = await fetch(`${config.engineBaseUrl()}/engine/provider/test`, {
       method: 'POST',
@@ -184,13 +235,7 @@ export class HttpEngineClient implements EngineClient {
   }
 
   async paperRun(req: PaperRunRequest): Promise<any> {
-    const res = await fetch(`${config.engineBaseUrl()}/engine/paper/run`, {
-      method: 'POST',
-      headers: this.headers(),
-      body: JSON.stringify(req),
-    });
-    if (!res.ok) throw new Error(`engine paper/run ${res.status}`);
-    return res.json();
+    return this.slowPost('/engine/paper/run', req); // 无超时:盘后含特征面板计算
   }
 
   async quotes(codes: string[]): Promise<Record<string, Quote>> {
@@ -214,57 +259,15 @@ export class HttpEngineClient implements EngineClient {
   }
 
   async backtest(req: BacktestRequest): Promise<any> {
-    const res = await fetch(`${config.engineBaseUrl()}/engine/backtest`, {
-      method: 'POST',
-      headers: this.headers(),
-      body: JSON.stringify(req),
-    });
-    if (!res.ok) {
-      let detail: unknown;
-      try {
-        detail = ((await res.json()) as { detail?: unknown }).detail;
-      } catch {
-        detail = await res.text();
-      }
-      throw new EngineError(res.status, detail);
-    }
-    return res.json();
+    return this.slowPost('/engine/backtest', req); // 无超时:逐日撮合回测可达数分钟
   }
 
   async train(req: TrainRequest): Promise<any> {
-    const res = await fetch(`${config.engineBaseUrl()}/engine/train`, {
-      method: 'POST',
-      headers: this.headers(),
-      body: JSON.stringify(req),
-    });
-    if (!res.ok) {
-      let detail: unknown;
-      try {
-        detail = ((await res.json()) as { detail?: unknown }).detail;
-      } catch {
-        detail = await res.text();
-      }
-      throw new EngineError(res.status, detail);
-    }
-    return res.json();
+    return this.slowPost('/engine/train', req); // 无超时:walk-forward 训练逐日特征面板,大区间数分钟
   }
 
   async factorQuality(req: FactorQualityRequest): Promise<any> {
-    const res = await fetch(`${config.engineBaseUrl()}/engine/factors/quality`, {
-      method: 'POST',
-      headers: this.headers(),
-      body: JSON.stringify(req),
-    });
-    if (!res.ok) {
-      let detail: unknown;
-      try {
-        detail = ((await res.json()) as { detail?: unknown }).detail;
-      } catch {
-        detail = await res.text();
-      }
-      throw new EngineError(res.status, detail);
-    }
-    return res.json();
+    return this.slowPost('/engine/factors/quality', req); // 无超时:逐日 IC 计算可达数分钟
   }
 
   async indicatorsValidate(expr: string): Promise<any> {

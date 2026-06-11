@@ -10,7 +10,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Callable, Iterable, Sequence
@@ -107,6 +107,7 @@ class CacheBuilder:
         )
         start_index = int((cursor or {}).get("next_index", 0))
         degraded_caps: set[str] = set()
+        provider_of: dict[tuple[str, str], str] = {}  # (code,dataset)→provider,终态汇报用
 
         def emit(stage: str, idx: int, message: str = "") -> None:
             progress = (idx / total) if total else 1.0
@@ -156,6 +157,7 @@ class CacheBuilder:
                     continue
                 store.write_dataset(self.cache_root, dataset, res)
                 first, last, rows = store.coverage_for(self.cache_root, dataset, code)
+                provider_of[(code, dataset)] = provider_id or "unknown"
                 result.coverage.append(
                     CoverageEntry(code, dataset, provider_id or "unknown", first, last, rows)
                 )
@@ -168,6 +170,30 @@ class CacheBuilder:
 
         result.status = "done"
         result.cursor = {"next_index": total}
-        emit("done", total, "建缓存完成")
-        result.events[-1]["status"] = "done"
+        # 终态:读 store 汇报 universe 全量真实覆盖(含本轮未变动的已缓存项),经 done 事件回传 api 落库。
+        # 修复:此前 coverage 只存于返回值、从不进 SSE 事件 → api data_coverage 永空 → 设置页误判「未建缓存」。
+        final_cov: list[CoverageEntry] = []
+        for c in universe:
+            for ds in datasets:
+                first, last, rows = store.coverage_for(self.cache_root, ds, c)
+                if rows:
+                    final_cov.append(
+                        CoverageEntry(c, ds, provider_of.get((c, ds), "cache"), first, last, rows)
+                    )
+        result.coverage = final_cov
+        done_ev = {
+            "job_id": job_id,
+            "status": "done",
+            "progress": 1.0,
+            "total": total,
+            "done_count": total,
+            "failed_count": result.failed_count,
+            "stage": "done",
+            "message": "建缓存完成",
+            "coverage": [asdict(e) for e in final_cov],
+            "degraded": result.degraded,
+            "ts": datetime.now().isoformat(timespec="seconds"),
+        }
+        result.events.append(done_ev)
+        on_progress(done_ev)
         return result
