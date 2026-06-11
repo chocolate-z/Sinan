@@ -142,6 +142,50 @@ def prices(req: PricesReq) -> dict:
     return {"code": req.code, "adjust": req.adjust, "rows": rows, "degraded": degraded}
 
 
+# ── 股票搜索(代码/名称补全;BYO provider.stock_list,进程内 memo)───────────
+class StockSearchReq(BaseModel):
+    provider: str
+    token: Optional[str] = None
+    q: str = ""
+    limit: int = 20
+
+
+# provider 名 → 完整股票清单(进程内缓存;只缓存成功非空结果,失败/空不缓存以便重试)。
+# 仅内存,随进程消亡;token 绝不入此缓存键(red line #4)。
+_STOCK_LIST_CACHE: dict = {}
+
+
+@app.post("/engine/stocks/search", dependencies=[Depends(require_internal)])
+def stocks_search(req: StockSearchReq) -> dict:
+    """按代码或名称模糊搜索股票。无 token/网络不可达 → 诚实空(不报错)。"""
+    import polars as pl
+
+    df = _STOCK_LIST_CACHE.get(req.provider)
+    if df is None:
+        try:
+            df = _make_provider(req.provider, req.token).stock_list()
+        except Exception:  # noqa: BLE001 — 无 token/网络/权限 → 诚实空
+            df = None
+        if df is not None and not df.is_empty():
+            _STOCK_LIST_CACHE[req.provider] = df
+    if df is None or df.is_empty():
+        return {"stocks": []}
+
+    q = req.q.strip()
+    out = df
+    if q:
+        out = df.filter(
+            pl.col("stock_code").str.to_lowercase().str.contains(q.lower(), literal=True)
+            | pl.col("name").str.contains(q, literal=True)
+        )
+    out = out.head(max(1, min(req.limit, 50)))
+    return {
+        "stocks": [
+            {"code": r["stock_code"], "name": r["name"]} for r in out.iter_rows(named=True)
+        ]
+    }
+
+
 # ── 盘后:出信号 + 模拟盘撮合记账(run_eod)────────────────────────────────
 class PaperPosition(BaseModel):
     code: str

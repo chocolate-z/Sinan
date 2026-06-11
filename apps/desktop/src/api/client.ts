@@ -144,6 +144,10 @@ export const api = {
     code: string,
     opts: { adjust?: 'qfq' | 'none'; limit?: number; start?: string; end?: string } = {},
   ) => request<any>(API_ENDPOINTS.prices_get, { params: { code }, query: { ...opts } }),
+  searchStocks: (q: string, limit = 20) =>
+    request<{ stocks: { code: string; name: string }[] }>(API_ENDPOINTS.stocks_search, {
+      query: { q, limit },
+    }),
 
   // ── 回测域(M2)────────────────────────────────────────────────────────────
   createBacktest: (body: unknown) => request<any>(API_ENDPOINTS.backtests_create, { body }),

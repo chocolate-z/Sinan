@@ -187,3 +187,46 @@ def test_cache_build_sse_stream(tmp_path, monkeypatch):
         {"stock_code", "dataset", "rows", "first_date", "last_date"} <= set(c) for c in all_cov
     )
     assert {c["stock_code"] for c in all_cov} == {"600519.SH", "000001.SZ"}
+
+
+def _fake_stock_list():
+    import polars as pl
+
+    return pl.DataFrame(
+        {
+            "stock_code": ["600519.SH", "000858.SZ", "600036.SH"],
+            "name": ["贵州茅台", "五粮液", "招商银行"],
+            "board": ["主板", "主板", "主板"],
+            "list_date": ["20010827", "19980427", "20020409"],
+        }
+    )
+
+
+def test_stocks_search_by_code_and_name(monkeypatch):
+    appmod._STOCK_LIST_CACHE.clear()
+
+    class Fake:
+        def stock_list(self):
+            return _fake_stock_list()
+
+    monkeypatch.setattr(appmod, "_make_provider", lambda provider, token: Fake())
+    r = client.post("/engine/stocks/search", json={"provider": "tushare", "q": "600519"})
+    assert r.status_code == 200
+    assert [s["code"] for s in r.json()["stocks"]] == ["600519.SH"]
+    r = client.post("/engine/stocks/search", json={"provider": "tushare", "q": "茅台"})
+    assert [s["code"] for s in r.json()["stocks"]] == ["600519.SH"]
+    r = client.post("/engine/stocks/search", json={"provider": "tushare", "q": "", "limit": 2})
+    assert len(r.json()["stocks"]) == 2
+    appmod._STOCK_LIST_CACHE.clear()
+
+
+def test_stocks_search_honest_empty_when_provider_fails(monkeypatch):
+    appmod._STOCK_LIST_CACHE.clear()
+
+    def boom(provider, token):
+        raise RuntimeError("no token / network")
+
+    monkeypatch.setattr(appmod, "_make_provider", boom)
+    r = client.post("/engine/stocks/search", json={"provider": "tushare", "q": "x"})
+    assert r.status_code == 200 and r.json()["stocks"] == []
+    appmod._STOCK_LIST_CACHE.clear()

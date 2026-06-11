@@ -96,6 +96,42 @@ test('onboarding state machine + providers + credential red-line + provider test
   }
 });
 
+test('stocks/search: 无 token 诚实空;配置后按名/代码命中,响应不漏明文', async () => {
+  const { app, fastify } = await build();
+  try {
+    let r = await fastify.inject({
+      method: 'GET',
+      url: `/api/v1/stocks/search?q=${encodeURIComponent('茅台')}`,
+    });
+    assert.equal(r.statusCode, 200);
+    assert.deepEqual(r.json().stocks, []);
+
+    await fastify.inject({
+      method: 'PUT',
+      url: '/api/v1/providers/tushare/credential',
+      payload: { token: TOKEN },
+    });
+
+    r = await fastify.inject({
+      method: 'GET',
+      url: `/api/v1/stocks/search?q=${encodeURIComponent('茅台')}`,
+    });
+    assert.equal(r.statusCode, 200);
+    assert.deepEqual(
+      r.json().stocks.map((s: { code: string }) => s.code),
+      ['600519.SH'],
+    );
+    r = await fastify.inject({ method: 'GET', url: '/api/v1/stocks/search?q=000858' });
+    assert.deepEqual(
+      r.json().stocks.map((s: { code: string }) => s.code),
+      ['000858.SZ'],
+    );
+    assert.ok(!r.body.includes(TOKEN));
+  } finally {
+    await app.close();
+  }
+});
+
 test('health reports db ok; create cache_build job', async () => {
   const { app, fastify } = await build();
   try {

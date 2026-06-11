@@ -25,6 +25,25 @@ export class FakeEngineClient implements EngineClient {
     private readonly qualityResult: any = null,
   ) {}
 
+  async stocksSearch(
+    provider: string,
+    q: string,
+    _token?: string,
+    limit = 20,
+  ): Promise<{ stocks: { code: string; name: string }[] }> {
+    void provider;
+    const all = [
+      { code: '600519.SH', name: '贵州茅台' },
+      { code: '000858.SZ', name: '五粮液' },
+      { code: '600036.SH', name: '招商银行' },
+    ];
+    const ql = q.trim().toLowerCase();
+    const hit = ql
+      ? all.filter((s) => s.code.toLowerCase().includes(ql) || s.name.includes(q.trim()))
+      : all;
+    return { stocks: hit.slice(0, limit) };
+  }
+
   async indicatorsValidate(expr: string): Promise<any> {
     const banned = expr.includes('__');
     return {

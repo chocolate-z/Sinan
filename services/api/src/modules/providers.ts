@@ -1,5 +1,5 @@
 /** 数据源:列表 / 切换主源 / 凭据 CRUD / 连通测试。红线#4:凭据响应永不含明文。 */
-import { Body, Controller, Delete, Get, Param, Post, Put } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Post, Put, Query } from '@nestjs/common';
 import { CredentialPutReqSchema, PROVIDERS } from '@sinan/shared-contracts';
 import { BadRequestException } from '@nestjs/common';
 import { Repository } from '../db/repository.js';
@@ -63,5 +63,27 @@ export class ProvidersController {
     const result = await this.engine.providerTest(id, token);
     this.repo.setProviderStatus(id, result.status === 'ok' ? 'ok' : 'error', result.caps);
     return result;
+  }
+
+  /** GET /stocks/search?q= — 按代码/名称搜股(用激活源的 stock_list)。
+   * 红线#4:token 仅内存转发 engine,绝不入响应;无 token/不可达 → 诚实空。 */
+  @Get('stocks/search')
+  async stocksSearch(
+    @Query('q') q?: string,
+    @Query('limit') limit?: string,
+  ): Promise<{ stocks: { code: string; name: string }[] }> {
+    const provider = (this.repo.settingGet('active_provider') as string) || 'tushare';
+    const token = this.creds.getToken(provider) ?? undefined;
+    if (!token && provider === 'tushare') return { stocks: [] }; // 历史源无 token → 诚实空
+    let n = 20;
+    if (limit) {
+      const p = Number.parseInt(limit, 10);
+      if (Number.isFinite(p)) n = Math.min(Math.max(p, 1), 50);
+    }
+    try {
+      return await this.engine.stocksSearch(provider, q ?? '', token, n);
+    } catch {
+      return { stocks: [] };
+    }
   }
 }
