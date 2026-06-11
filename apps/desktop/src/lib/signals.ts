@@ -68,6 +68,27 @@ export function blockNote(reason?: string | null): string {
   return BLOCK_INFO[reason]?.note ?? reasonLabel(reason);
 }
 
+/**
+ * 交易所板块(由股票代码派生,无需数据):沪/深主板、创业板、科创板、北交所、B股。
+ * 注:这是「交易所板块」,非申万行业板块(行业板块需行情页的申万行业数据)。
+ */
+export function boardLabel(code?: string | null): string {
+  if (!code) return '—';
+  const [num, ex] = code.split('.');
+  if (ex === 'BJ') return '北交所';
+  if (ex === 'SH') {
+    if (num.startsWith('688')) return '科创板';
+    if (num.startsWith('900')) return '沪B';
+    return '沪主板';
+  }
+  if (ex === 'SZ') {
+    if (num.startsWith('300') || num.startsWith('301')) return '创业板';
+    if (num.startsWith('200')) return '深B';
+    return '深主板';
+  }
+  return ex || '—';
+}
+
 /** 方向 → 状态色 class(系统色,不用盈亏色:买入蓝 / 卖出橙 / 持有灰)。 */
 export function actionClass(a: SignalAction): string {
   return a === 'buy' ? 'status-info' : a === 'sell' ? 'status-warn' : '';

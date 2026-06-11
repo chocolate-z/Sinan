@@ -4,6 +4,7 @@ import {
   actionLabel,
   blockNote,
   blockRule,
+  boardLabel,
   factorEntries,
   groupSignals,
   isBlocked,
@@ -48,6 +49,15 @@ describe('signals 展示逻辑', () => {
     // 未知 reason 兜底回退到 reasonLabel,不抛错
     expect(blockRule('manual')).toBe(reasonLabel('manual'));
     expect(blockNote(null)).toBe('—');
+  });
+
+  it('boardLabel 由代码派生交易所板块', () => {
+    expect(boardLabel('600519.SH')).toBe('沪主板');
+    expect(boardLabel('688981.SH')).toBe('科创板');
+    expect(boardLabel('000001.SZ')).toBe('深主板');
+    expect(boardLabel('300750.SZ')).toBe('创业板');
+    expect(boardLabel('830799.BJ')).toBe('北交所');
+    expect(boardLabel(null)).toBe('—');
   });
 
   it('方向用系统色,不用盈亏色', () => {

@@ -44,6 +44,22 @@ export class FakeEngineClient implements EngineClient {
     return { stocks: hit.slice(0, limit) };
   }
 
+  async stockNames(
+    _provider: string,
+    _token?: string,
+    codes?: string[],
+  ): Promise<{ names: Record<string, string> }> {
+    const all: Record<string, string> = {
+      '600519.SH': '贵州茅台',
+      '000858.SZ': '五粮液',
+      '600036.SH': '招商银行',
+    };
+    if (!codes) return { names: all };
+    const names: Record<string, string> = {};
+    for (const c of codes) if (all[c]) names[c] = all[c];
+    return { names };
+  }
+
   async indicatorsValidate(expr: string): Promise<any> {
     const banned = expr.includes('__');
     return {

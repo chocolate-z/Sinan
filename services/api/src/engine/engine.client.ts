@@ -133,6 +133,12 @@ export interface EngineClient {
     token?: string,
     limit?: number,
   ): Promise<{ stocks: StockHit[] }>;
+  /** code→name 映射(信号/持仓展示用)。无 token/不可达 → {}(诚实)。 */
+  stockNames(
+    provider: string,
+    token?: string,
+    codes?: string[],
+  ): Promise<{ names: Record<string, string> }>;
   /** 连接 engine cache/build SSE,逐事件回调。完成时 resolve。 */
   cacheBuild(req: CacheBuildRequest, onEvent: (ev: any) => void): Promise<void>;
   /** 盘后:出信号 + 模拟盘撮合记账(engine 计算,api 落库)。 */
@@ -235,6 +241,20 @@ export class HttpEngineClient implements EngineClient {
     });
     if (!res.ok) throw new Error(`engine stocks/search ${res.status}`);
     return (await res.json()) as { stocks: StockHit[] };
+  }
+
+  async stockNames(
+    provider: string,
+    token?: string,
+    codes?: string[],
+  ): Promise<{ names: Record<string, string> }> {
+    const res = await fetch(`${config.engineBaseUrl()}/engine/stocks/names`, {
+      method: 'POST',
+      headers: this.headers(),
+      body: JSON.stringify({ provider, token, codes }),
+    });
+    if (!res.ok) throw new Error(`engine stocks/names ${res.status}`);
+    return (await res.json()) as { names: Record<string, string> };
   }
 
   async cacheBuild(req: CacheBuildRequest, onEvent: (ev: any) => void): Promise<void> {

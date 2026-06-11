@@ -15,6 +15,7 @@ import {
 import { PORTFOLIOS } from '@sinan/shared-contracts';
 import { Repository } from '../db/repository.js';
 import { ENGINE_CLIENT, type EngineClient } from '../engine/engine.client.js';
+import { CredentialService } from '../secrets/credential.service.js';
 
 interface RunInput {
   strategy_id?: string;
@@ -118,7 +119,24 @@ export class TradingController {
   constructor(
     private readonly paper: PaperService,
     private readonly repo: Repository,
+    @Inject(ENGINE_CLIENT) private readonly engine: EngineClient,
+    private readonly creds: CredentialService,
   ) {}
+
+  // code→name 映射缓存(单例控制器,跨请求保留;空结果不缓存,以便拿到 token 后重试)。
+  private nameCache: Record<string, string> | null = null;
+  private async stockNames(): Promise<Record<string, string>> {
+    if (this.nameCache) return this.nameCache;
+    const provider = (this.repo.settingGet('active_provider') as string) || 'tushare';
+    const token = this.creds.getToken(provider) ?? undefined;
+    try {
+      const r = await this.engine.stockNames(provider, token);
+      if (r?.names && Object.keys(r.names).length) this.nameCache = r.names;
+      return r?.names ?? {};
+    } catch {
+      return {};
+    }
+  }
 
   @Post('paper/run')
   paperRun(@Body() body: RunInput): Promise<any> {
@@ -133,9 +151,12 @@ export class TradingController {
   }
 
   @Get('signals')
-  signals(@Query('date') date?: string): any {
+  async signals(@Query('date') date?: string): Promise<any> {
     if (!date) throw new BadRequestException('date 必填');
-    return this.repo.signalsByDate(date);
+    const sigs = this.repo.signalsByDate(date) as any[];
+    // 富集股票名称(code→name,来自激活源 stock_list);拿不到则诚实留 null(显示代码)。
+    const names = await this.stockNames();
+    return sigs.map((s) => ({ ...s, stock_name: s.stock_name ?? names[s.stock_code] ?? null }));
   }
 
   @Get('trades')

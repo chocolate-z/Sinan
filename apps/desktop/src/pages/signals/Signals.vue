@@ -1,7 +1,14 @@
 <script setup lang="ts">
 import { computed } from 'vue';
 import { useTradingStore } from '../../stores/trading';
-import { actionLabel, blockNote, blockRule, factorEntries, reasonLabel } from '../../lib/signals';
+import {
+  actionLabel,
+  blockNote,
+  blockRule,
+  boardLabel,
+  factorEntries,
+  reasonLabel,
+} from '../../lib/signals';
 import { useAppStore } from '../../stores/app';
 import { fmtSigned } from '../../lib/format';
 import PageHero from '../../ui/PageHero.vue';
@@ -123,6 +130,7 @@ function scorePct(score: number): string {
         <thead>
           <tr>
             <th style="width: 150px">标的</th>
+            <th style="width: 84px">板块</th>
             <th style="width: 78px">方向</th>
             <th style="width: 120px">综合分</th>
             <th>因子贡献</th>
@@ -136,6 +144,9 @@ function scorePct(score: number): string {
                 <span v-if="s.stock_name" class="sym-name">{{ s.stock_name }}</span>
                 <span class="col-code">{{ s.stock_code }}</span>
               </div>
+            </td>
+            <td>
+              <span class="chip">{{ boardLabel(s.stock_code) }}</span>
             </td>
             <td>
               <span class="badge" :class="dirBadge(s.action)">
@@ -195,6 +206,7 @@ function scorePct(score: number): string {
           <thead>
             <tr>
               <th style="width: 150px">标的</th>
+              <th style="width: 84px">板块</th>
               <th style="width: 78px">初选方向</th>
               <th style="width: 120px">综合分</th>
               <th style="width: 230px">拦截规则</th>
@@ -208,6 +220,9 @@ function scorePct(score: number): string {
                   <span v-if="s.stock_name" class="sym-name struck">{{ s.stock_name }}</span>
                   <span class="col-code">{{ s.stock_code }}</span>
                 </div>
+              </td>
+              <td>
+                <span class="chip">{{ boardLabel(s.stock_code) }}</span>
               </td>
               <td>
                 <span class="badge" :class="dirBadge(s.action)">

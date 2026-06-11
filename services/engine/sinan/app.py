@@ -186,6 +186,32 @@ def stocks_search(req: StockSearchReq) -> dict:
     }
 
 
+# ── 股票名称映射(code→name;信号/持仓等展示用,进程内 memo 同搜索)───────────
+class StockNamesReq(BaseModel):
+    provider: str
+    token: Optional[str] = None
+    codes: Optional[list[str]] = None  # 给定则只返这些;否则返全表
+
+
+@app.post("/engine/stocks/names", dependencies=[Depends(require_internal)])
+def stocks_names(req: StockNamesReq) -> dict:
+    """code→name 映射(用激活源 stock_list,进程内 memo)。无 token/不可达 → 诚实空 {}。"""
+    import polars as pl
+
+    df = _STOCK_LIST_CACHE.get(req.provider)
+    if df is None:
+        try:
+            df = _make_provider(req.provider, req.token).stock_list()
+        except Exception:  # noqa: BLE001 — 无 token/网络/权限 → 诚实空
+            df = None
+        if df is not None and not df.is_empty():
+            _STOCK_LIST_CACHE[req.provider] = df
+    if df is None or df.is_empty():
+        return {"names": {}}
+    out = df.filter(pl.col("stock_code").is_in(req.codes)) if req.codes else df
+    return {"names": {r["stock_code"]: r["name"] for r in out.iter_rows(named=True)}}
+
+
 # ── 盘后:出信号 + 模拟盘撮合记账(run_eod)────────────────────────────────
 class PaperPosition(BaseModel):
     code: str
