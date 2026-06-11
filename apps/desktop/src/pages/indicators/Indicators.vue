@@ -107,6 +107,27 @@ const selected = computed(
   () => factors.value.find((f) => f.name === selectedName.value) ?? factors.value[0] ?? null,
 );
 
+// 因子表「权重 / 启用」列:仅自定义因子有真实可调权重/启用态;内置因子=等权·内置(诚实,
+// 不伪造可编辑)。按名匹配已保存的自定义因子,拿真实 weight/enabled/id。
+const customByName = computed<Record<string, any>>(() => {
+  const m: Record<string, any> = {};
+  for (const c of customList.value) m[c.name] = c;
+  return m;
+});
+const maxWeight = computed(() => {
+  let mx = 1;
+  for (const f of factors.value) {
+    const c = customByName.value[f.name];
+    if (c) mx = Math.max(mx, Number(c.weight) || 0);
+  }
+  return mx || 1;
+});
+function weightBar(name: string): number {
+  const c = customByName.value[name];
+  const w = c ? Number(c.weight) || 0 : 1;
+  return Math.round((w / maxWeight.value) * 100);
+}
+
 function ic(v: number | null | undefined): string {
   return v == null ? '—' : (v >= 0 ? '' : '−') + Math.abs(v).toFixed(3);
 }
@@ -333,6 +354,8 @@ async function run() {
               <th class="num">IC 均值</th>
               <th class="num">ICIR</th>
               <th class="num">覆盖度</th>
+              <th class="num">权重</th>
+              <th class="en-th">启用</th>
             </tr>
           </thead>
           <tbody>
@@ -352,6 +375,34 @@ async function run() {
               <td class="num">{{ ic(f.ic_mean) }}</td>
               <td class="num dim">{{ ic(f.icir) }}</td>
               <td class="num dim">{{ pct(f.coverage) }}</td>
+              <td class="num">
+                <div v-if="customByName[f.name]" class="wt-cell">
+                  <span class="wt-v mono">{{ customByName[f.name].weight }}</span>
+                  <div class="wt-bar">
+                    <div class="wt-fill" :style="{ width: weightBar(f.name) + '%' }" />
+                  </div>
+                </div>
+                <span v-else class="dim wt-eq">等权</span>
+              </td>
+              <td class="en-td" @click.stop>
+                <label
+                  v-if="customByName[f.name]"
+                  class="cf-switch"
+                  :title="customByName[f.name].enabled ? '已启用(点击禁用)' : '已禁用(点击启用)'"
+                >
+                  <input
+                    type="checkbox"
+                    :checked="customByName[f.name].enabled"
+                    @change="
+                      updateFactor(customByName[f.name].id, {
+                        enabled: ($event.target as HTMLInputElement).checked,
+                      })
+                    "
+                  />
+                  <span class="cf-track"><span class="cf-knob" /></span>
+                </label>
+                <span v-else class="chip built-in">内置</span>
+              </td>
             </tr>
           </tbody>
         </table>
@@ -654,6 +705,47 @@ async function run() {
 }
 .dim {
   color: var(--text-2);
+}
+
+/* 因子表「权重 / 启用」列 */
+.en-th {
+  width: 56px;
+  text-align: center;
+}
+.wt-cell {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  justify-content: flex-end;
+}
+.wt-v {
+  color: var(--text-1);
+}
+.wt-bar {
+  width: 34px;
+  height: 4px;
+  background: var(--bg-input);
+  border-radius: 2px;
+  overflow: hidden;
+  flex: none;
+}
+.wt-fill {
+  height: 100%;
+  background: var(--accent);
+  opacity: 0.85;
+}
+.wt-eq {
+  font-size: 11px;
+  color: var(--text-3);
+}
+.en-td {
+  text-align: center;
+}
+.en-td .cf-switch {
+  vertical-align: middle;
+}
+.built-in {
+  font-size: 10.5px;
 }
 
 .detail-head {
