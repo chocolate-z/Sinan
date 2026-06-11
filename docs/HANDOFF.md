@@ -367,3 +367,39 @@ labels.py   build_forward_return_labels(hfq[T+h]/hfq[T]-1,前向,尾 h 日 null)
 3. **持仓建仓苹果风重设计**(`pages/portfolio/Portfolio.vue`:那两个无 label 的框是「股数」「成本价」;用户要搜索补全代码/名称 → 需新 api(engine `tushare_provider.stock_list` 未暴露给前端,要加端点)+ 加仓减仓移动加权成本自动计算 + 苹果风表单)。
 4. **真实数据跑通验证**(建缓存→质检→训练→回测,桌面端真实数据端到端;用户已有 token、能力全可用)。
 5. M6 打包(`tauri build` 安装包 + 冻结 sidecar);M5 资讯;M3 v2 LightGBM(用户倾向轻装:JSON 树+polars 推理);ICIR 自动加权;CacheBuilder 接 fundamental/index_ohlcv;设置页 PUT;`/models/train` ISO 校验。
+
+### 11.5 本会话(很长的一轮:UI 控件 + 一批真实 bug 修复 + 可观测性 + 设计审计,12 commits,07cf2bf→0a58279,CI 全绿)
+
+> 接手必读:这一轮做了很多,但**有一个用户最在意的 bug 没修好**(单日期框样式),用户自己找到了真因(padding)。还有一份**完整的设计稿还原审计**留给 v2。
+
+**已完成并 CI 绿(按时间)**:
+
+- **DatePicker 三次迭代**(`07cf2bf` macOS 风 → `eb3d5e9` AntD 风 + Teleport 根治弹层裁切 → `0a58279` 触发器 button→div + 锁高)。⚠️ **见下「未解决」**。
+- **`cbb6bfe` 训练/质检 500 根因 = undici 300s 超时**:api→engine 走全局 fetch(undici)默认 headersTimeout=300s;大区间训练逐日构建特征面板 5 股 2018-2026 实测 **339.6s** > 300s → `UND_ERR_HEADERS_TIMEOUT` → api 收到 fetch failed → 非 EngineError → NestJS 通用 500(引擎其实在算,结果有限/JSON 合法,**非算法错**)。修:`engine.client` 长耗时端点(train/backtest/factorQuality/paperRun)改走 **`node:http`(默认无响应超时)**;undici 不可直接 import,用 node 内置 http。**同 commit 修缓存覆盖未落库**(CacheBuilder coverage 只进返回值、从不进 SSE 事件 → api data_coverage 永空 → 设置页误判未建缓存)。`bb71a9a` 把 coverage 改逐股增量回传(all-stocks 友好 + 部分构建 + 重建回填)。
+- **`261597f` 缓存损坏 parquet 自愈**:写入中断留 0 字节 parquet → 下次 read_parquet 即「File out of specification: header+footer ≥12 bytes」→ 整个建缓存崩。修:**原子写**(`_atomic_write_parquet` 临时文件+os.replace)+ **安全读**(`_safe_read_parquet` 读到损坏→删除自愈 + 返回 None);`data/store.py`。
+- **`2ca2900` RangePicker(仿 AntD Vue)**:`ui/RangePicker.vue` 单框「开始→结束」+ 双月面板 + 区间高亮 + Teleport;替换 **指标/回测/模型** 三处起止对(单独日期如训练截止/信号日仍用单 `DatePicker`)。
+- **持仓建仓弹窗端到端**(`d4956e4` 股票搜索 API:契约 `stocks_search` + engine `/engine/stocks/search`(provider.stock_list 内存 memo,无 token 诚实空)+ api 代理 + `api.searchStocks`;`0108ba4` `repository.personalAdjust(op=set/add/reduce)` 移动加权成本;`ebccfd7` `ui/Modal.vue` + `ui/StockSearch.vue` + Portfolio 卡片右上「建仓」+ 每行加/减/删 + 加仓预览加权均价)。
+- **`35822a7`** 能力探测结果缓存(设置页 caps 回落到该源已存的 caps_json,只点「测试连通」才重测)+ 重建缓存不必重输 token(OnboardingWizard 默认主源 + 检测已配置凭据 → 显示「已配置」直接「继续并测试」)。
+- **`fa7d368` 长任务写入统一日志(可观测性)**:`repo.logInsert` 本就「落库+发 SSE」,接到建缓存(逐股:`缓存 600519.SH · 2018-01-02~2026-06-09 · price/adj/basic/north · N 行`)/ 训练 / 质检 / 回测(开始+完成+耗时+失败)。**日志页(持久+实时流)= 切菜单不丢的可观测面**。
+
+**⚠️ 未解决(v2 高优先,用户最在意)**:
+
+- **单日期框被撑成竖排高框**(回测「训练截止」、信号「信号日 T / 生效日 T+1」用的是单 `DatePicker`)。表现:占位文字居中 + 日历图标在下,框约 64px 高,而非 30px 单行。**用户自己定位到:是 padding 问题。** 我试过 button→div + 显式 `height:30px`+box-sizing+nowrap(`0a58279`)**仍未解决** → 说明根因不在触发器元素,而在某处 **padding**(候选:`.field`/`.input`/页面 `.runner`/`.dp` 包裹层的纵向 padding,或 `.input { padding: 0 10px }` 被更具体规则覆盖)。**下一会话第一件事:在桌面端 DevTools 里量 `.dp-trigger` 的 computed height/padding,定位那条 padding 改掉。** 注:同页 `RangePicker`(div 触发器)单行正常,可对照其 computed 样式找差异。
+
+**v2 设计稿还原(用户要"严格按 design_handoff_sinan 还原",本会话已做 10-agent 并行审计,结论如下)**:
+
+- **决策(用户拍板)**:**保留"实现比 mock 设计稿更真实"的改进**(真实 API / 诚实空态 / 能力探测真值 / 隐私多列 / 引导多了欢迎步+token 复用)——v2 只修**纯视觉漂移**,不回退真实接口。
+- 🔴 **Blocker — 行情页完全没还原**:设计稿(`design_source/src/pages/market.jsx`)是**行业板块视角**(大盘指数条 + 板块卡片网格 + 涨跌排行 + 资金流向 Top6 + 右滑下钻抽屉:板块→成分股列表→**个股分时图**);当前实现是报价表 + 日K线,完全不同。⚠️ **数据可行性**:分时图需分钟数据,用户 token **没有**(有日线/复权/每日指标/北向/**申万行业**/交易日历)。建议方案:**真实板块视角**(用日线+申万行业做板块卡/排行/资金流/成分股列表;叶子分时用日K替代)。用户答复倾向未最终敲定(会话提前收尾),v2 开始时再确认。
+- 🟠 **Major 漂移(清晰可还原,数据多已具备)**:① 总览 PnL 双卡缺**迷你 Sparkline 净值图**(`ui/charts/Sparkline.vue` 已存,接最近净值点);② 指标因子表缺**权重列(进度条)+ 启用开关**(5列 vs 设计7列);③ 模型缺**「因子构成」卡**(数据在 `detail.feature_importance`)+ 风控约束应是**带进度条 RiskBar**(`ui/charts/RiskBar.vue` 已存)非纯文字;④ 信号拦截表第4/5列都显示 `reason`(应为 `blockedBy` 拦截规则 + `note` 说明 两字段,需 trading store / 后端补字段);⑤ 持仓**当日盈亏格应两行(金额+百分比)**,现只「—」;⑥ 设置数据源网格应**固定 4 列**、能力探测**固定 3 列**(现 auto-fit 回流变形,纯 CSS);⑦ 引导 logo 背景应**紫渐变+发光**(现普通卡片,纯 CSS)+ 缺**「本地数据目录」第3数据源** + 副标题「本机」→「本地」;⑧ 外壳 Logo 应**单色罗盘**(现 Fluent 四色花朵 `shell/Logo.vue`)+ **状态栏缺「缓存 GB·条数」+ 实时时钟**。
+- 🟢 **回测页:零漂移**(配色三通道全对、布局/卡片/热力图/逐笔逐日均还原到位)。
+- 审计全文(逐页 design vs impl vs fix)在本会话 workflow 输出,可在 v2 重跑 `design-fidelity-audit` 工作流复现。
+
+**其他本会话提出、未做的候选**:
+
+- **页面状态跨导航持久化**(用户痛点:切菜单后表单/进度丢)。已提两方案:① 全局「运行中」指示器(状态栏显示"训练中…/建缓存 45%",任何页可见,轻量);② 表单+进度搬进 pinia store(完整但重)。日志页已部分缓解(能看在不在跑)。
+- 关闭确认 + 系统托盘(§11.4 待办②,仍未做)。
+
+**⚠️ 给下一位**:
+
+- token 本会话又多次明文出现,**新会话务必让用户在引导页输入,绝不让其贴对话**。
+- 本会话期间检测到**并发会话**(另一个 Claude 会话/手动 git 曾 commit「股票搜索端点+持仓弹窗」又 `git reset` 回 eb3d5e9,清掉了未提交的工作)→ **提醒用户别同时开多个会话编辑同一仓库**。本会话「股票搜索 API」是重做的。
