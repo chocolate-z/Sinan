@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue';
-import { api } from '../../api/client';
+import { computed, onMounted } from 'vue';
+import { useBacktestStore, type Scoring } from '../../stores/backtest';
 import { pnlClass } from '../../lib/pnl';
 import { actionLabel, reasonLabel } from '../../lib/signals';
 import { drawdownSeries, honestyBadges, monthlyGrid, monthlyReturns } from '../../lib/backtest';
@@ -12,21 +12,16 @@ import DatePicker from '../../ui/DatePicker.vue';
 import RangePicker from '../../ui/RangePicker.vue';
 import Icon from '../../shell/Icon.vue';
 
-type Scoring = 'auto' | 'model' | 'custom' | 'equal_weight';
-const form = reactive({
-  train_end: '',
-  backtest_start: '',
-  backtest_end: '',
-  purge: 5,
-  benchmark: '000300.SH',
-  scoring: 'auto' as Scoring,
-  model_id: '', // '' = 激活模型(scoring=model 时);否则指定版本
-});
-const running = ref(false);
-const error = ref<string | null>(null);
-const result = ref<any | null>(null);
-const history = ref<any[]>([]);
-const models = ref<any[]>([]); // 模型版本(供「模型」口径选具体版本,可在激活前先回测)
+const bt = useBacktestStore();
+// 表单为 store 的同一 reactive 引用(v-model 直接写 store → 切菜单留存);其余为只读投影。
+const form = bt.form;
+const running = computed(() => bt.running);
+const error = computed(() => bt.error);
+const result = computed(() => bt.result);
+const history = computed(() => bt.history);
+const models = computed(() => bt.models);
+const selectedDay = computed(() => bt.selectedDay);
+const canRun = computed(() => bt.canRun);
 
 const SCORINGS: Array<{ k: Scoring; label: string }> = [
   { k: 'auto', label: '自动(镜像实盘)' },
@@ -39,15 +34,6 @@ function scoringLabel(s?: string): string {
     { model: '模型', custom: '自定义因子', equal_weight: '等权基线', auto: '自动' }[s ?? ''] ?? '—'
   );
 }
-// 无模型(等权/自定义)时必须声明样本外边界;模型/自动可由后端从模型训练截止 derive。
-const needsTrainEnd = computed(() => form.scoring === 'equal_weight' || form.scoring === 'custom');
-const canRun = computed(
-  () =>
-    !!form.backtest_start &&
-    !!form.backtest_end &&
-    (!needsTrainEnd.value || !!form.train_end) &&
-    !running.value,
-);
 // 结果出处:本次实际口径 + 所用模型版本名(可溯源)+ 生效训练截止(可能被抬高)。
 const resModelName = computed(() => {
   const id = result.value?.model_id;
@@ -56,60 +42,12 @@ const resModelName = computed(() => {
   return m?.name || String(id).slice(0, 8);
 });
 
-async function loadHistory() {
-  try {
-    history.value = await api.backtests();
-  } catch {
-    /* 列表失败不阻断 */
-  }
-}
-
-async function loadModels() {
-  try {
-    models.value = await api.models();
-  } catch {
-    /* 无模型不阻断 */
-  }
-}
-
-async function runBacktest() {
-  if (!canRun.value) return;
-  running.value = true;
-  error.value = null;
-  try {
-    const body: Record<string, unknown> = {
-      train_end: form.train_end || undefined,
-      backtest_start: form.backtest_start,
-      backtest_end: form.backtest_end,
-      purge: form.purge,
-      benchmark: form.benchmark,
-      scoring: form.scoring,
-    };
-    // 仅「模型」口径且指定了具体版本时下发 model_id(空=用激活模型)。
-    if (form.scoring === 'model' && form.model_id) body.model_id = form.model_id;
-    result.value = await api.createBacktest(body);
-    await loadHistory();
-  } catch (e: any) {
-    const d = e?.detail;
-    error.value = d && typeof d === 'object' && d.message ? d.message : String(d ?? e);
-    result.value = null;
-  } finally {
-    running.value = false;
-  }
-}
-
-async function loadOne(id: string) {
-  error.value = null;
-  try {
-    result.value = await api.backtest(id);
-  } catch (e) {
-    error.value = String(e);
-  }
-}
+const runBacktest = () => bt.run();
+const loadOne = (id: string) => bt.loadOne(id);
 
 onMounted(() => {
-  loadHistory();
-  loadModels();
+  bt.loadHistory();
+  bt.loadModels();
 });
 
 // ── 净值曲线 → EquityChart 需要的数组(组合/基准各自归一化到首值=1;回撤为百分数)──────
@@ -158,11 +96,8 @@ const badges = computed(() => honestyBadges(result.value?.purge ?? form.purge, i
 // 因子降级清单(engine 如实回传:缺数据/表达式无效的因子被丢弃)。前端必须显示,否则口径标签虚标(红线#3)。
 const degraded = computed<string[]>(() => result.value?.degraded ?? []);
 
-// 选中某天 → 展开当日持仓快照(可回溯)。
-const selectedDay = ref<any | null>(null);
-function selectDay(r: any) {
-  selectedDay.value = selectedDay.value?.date === r.date ? null : r;
-}
+// 选中某天 → 展开当日持仓快照(可回溯;选中态也留存于 store)。
+const selectDay = (r: any) => bt.selectDay(r);
 
 const m = computed(() => result.value?.metrics ?? {});
 function pct(v: number | null | undefined): string {
