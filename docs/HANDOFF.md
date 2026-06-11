@@ -428,3 +428,17 @@ labels.py   build_forward_return_labels(hfq[T+h]/hfq[T]-1,前向,尾 h 日 null)
 - ⚠️ market.jsx 等 `design_source` 文件在本会话起始就是**已修改未提交**状态(用户本轮扩写了市场设计,+400 行),是当前设计真相源;勿覆盖。
 
 **⚠️ 给下一位**:① token 让用户在引导页输入,绝不贴对话;② dev 用 memory 钥匙串,token 重启不持久;③ `pnpm dev` 卡 file lock → Stop-Process cargo,rustc;④ 别同开多会话改同仓库。
+
+**本会话续(用户验机后报的真 bug + 性能,3 commits)**:
+
+- **`880b766` 持仓现价富集 + 日志滚动**:持仓行「现价/市值/浮动盈亏/盈亏比例/当日盈亏」恒「—」真因=持仓接口只返原始行(手录股数+成本,现价不入库),从不取现价估值(「今日实时盈亏」走另一条 `livePnl` 路径故能算)。修:api `PortfolioController.enrich()` 用 `engine.quotes`(本 token 走日线收盘回退)算 current_price/market_value/float_pnl/prev_close/day_pnl,model+personal 查询/加减仓/删除均富集,报价不可用诚实留 null;前端 `Holding` 加 prev_close/day_pnl,Portfolio 逐行当日盈亏改读富集持仓(与现价同源)。⚠️ **是 api 后端改动 → 需重启 `pnpm dev`(重编 api)才生效**。日志:`.dt-wrap` 加 `max-height:calc(100vh - 290px)` → 滚动落「系统事件」卡内而非整页。
+- **`7fcccf8` 性能(用户#1优先级,DONE)**:`DataLayer` 每实例物化数据集到 duckdb 临时表(首次 asof 按 codes 分区裁剪整段读入,后续逐日 asof 只内存切片)。质检/训练逐日 asof 从「N 次重扫 parquet」→「1 次读入 + N 次内存查询」(分钟→秒)。**WHERE/QUALIFY/ORDER 不变 → PIT 不变式不受影响,158 engine 测试全过**。进一步向量化(整段一次算全因子)留后续。
+
+**用户拍板的发布前开发顺序(① 已完成)**:① 性能✓ → ② 🔴行情页 → ③ 真实进度%(回测/训练接 jobs+SSE)→ ④ M6 打包 → ⑤ 多专家视角 UX 评审(Workflow,发布前质量关)。
+
+**🔴 行情页后端 scoping 收尾(可直接写 `factors/market.py`)**:
+
+- 行业:`sw_industry` 数据集**在 layout 有定义(PIT by in_date)但 CacheBuilder `_DATASET_FETCH` 没建 → 未缓存**。按拍板走 provider:申万一级 `index_classify`(L1)+`index_member` 成分,进程内 memo,失败优雅降级 `stock_basic.industry`。
+- 个股当日涨跌:**`COLS_PRICE` 无 pre_close** → 取 price asof 每股最后 2 个 close 算 chg(物化后内存查询快);daily_basic 是否有 pct_chg 待确认。
+- 宇宙=price 缓存 distinct stock_code(3486);最新日=max trade_date;北向已缓存。
+- 实施序:契约 `market_snapshot`/`market_sector` → engine `factors/market.py`(全A广度+板块聚合) → api 代理 → 前端按 `market.jsx` 整页重写(下钻叶子日K复用 `/prices`+`Candles.vue`)。旧行情页保留到最后一刀切换。守红线#1/#3/#6。
