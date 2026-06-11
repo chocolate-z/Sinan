@@ -7,7 +7,7 @@ import { api } from '../../api/client';
 import { useAppStore } from '../../stores/app';
 import { fmt, fmtPct } from '../../lib/format';
 import PageHero from '../../ui/PageHero.vue';
-import DatePicker from '../../ui/DatePicker.vue';
+import RangePicker from '../../ui/RangePicker.vue';
 import Icon from '../../shell/Icon.vue';
 
 const app = useAppStore();
@@ -147,13 +147,19 @@ const BT_RULES = [
       </div>
       <div class="card-pad">
         <div class="form-grid">
-          <div class="field">
-            <label class="field-label">训练起</label>
-            <DatePicker v-model="form.train_start" placeholder="训练起" />
-          </div>
-          <div class="field">
-            <label class="field-label">训练止</label>
-            <DatePicker v-model="form.train_end" placeholder="训练止" />
+          <div class="field" style="grid-column: span 2">
+            <label class="field-label">训练区间</label>
+            <RangePicker
+              :model-value="[form.train_start, form.train_end]"
+              placeholder-start="训练起"
+              placeholder-end="训练止"
+              @update:model-value="
+                (v) => {
+                  form.train_start = v[0];
+                  form.train_end = v[1];
+                }
+              "
+            />
           </div>
           <div class="field">
             <label class="field-label">标签前向(交易日)</label>

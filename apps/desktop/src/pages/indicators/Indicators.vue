@@ -4,7 +4,7 @@
 import { computed, onMounted, reactive, ref } from 'vue';
 import { api, ApiError } from '../../api/client';
 import PageHero from '../../ui/PageHero.vue';
-import DatePicker from '../../ui/DatePicker.vue';
+import RangePicker from '../../ui/RangePicker.vue';
 import Icon from '../../shell/Icon.vue';
 import ICChart from '../../ui/charts/ICChart.vue';
 import DecileBars from '../../ui/charts/DecileBars.vue';
@@ -159,13 +159,19 @@ async function run() {
       </div>
       <div class="card-pad">
         <div class="form-row">
-          <div class="field">
-            <label class="field-label">起始日</label>
-            <DatePicker v-model="form.start" placeholder="起始日" />
-          </div>
-          <div class="field">
-            <label class="field-label">结束日</label>
-            <DatePicker v-model="form.end" placeholder="结束日" />
+          <div class="field field-range">
+            <label class="field-label">质检区间</label>
+            <RangePicker
+              :model-value="[form.start, form.end]"
+              placeholder-start="起始日"
+              placeholder-end="结束日"
+              @update:model-value="
+                (v) => {
+                  form.start = v[0];
+                  form.end = v[1];
+                }
+              "
+            />
           </div>
           <div class="field narrow">
             <label class="field-label">前向(交易日)</label>
@@ -451,6 +457,12 @@ async function run() {
 }
 .field.narrow {
   width: 130px;
+}
+.field-range {
+  flex: 1 1 320px;
+}
+.field-range .input {
+  min-width: 300px;
 }
 .field .field-label {
   margin-bottom: 6px;

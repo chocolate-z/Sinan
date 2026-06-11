@@ -9,6 +9,7 @@ import PageHero from '../../ui/PageHero.vue';
 import EquityChart from '../../ui/charts/EquityChart.vue';
 import Heatmap from '../../ui/charts/Heatmap.vue';
 import DatePicker from '../../ui/DatePicker.vue';
+import RangePicker from '../../ui/RangePicker.vue';
 import Icon from '../../shell/Icon.vue';
 
 type Scoring = 'auto' | 'model' | 'custom' | 'equal_weight';
@@ -231,13 +232,19 @@ function fixed(v: number | null | undefined): string {
               <label class="field-label">训练截止</label>
               <DatePicker v-model="form.train_end" placeholder="训练截止" />
             </div>
-            <div class="field">
-              <label class="field-label">回测起</label>
-              <DatePicker v-model="form.backtest_start" placeholder="回测起" />
-            </div>
-            <div class="field">
-              <label class="field-label">回测止</label>
-              <DatePicker v-model="form.backtest_end" placeholder="回测止" />
+            <div class="field" style="grid-column: span 2">
+              <label class="field-label">回测区间</label>
+              <RangePicker
+                :model-value="[form.backtest_start, form.backtest_end]"
+                placeholder-start="回测起"
+                placeholder-end="回测止"
+                @update:model-value="
+                  (v) => {
+                    form.backtest_start = v[0];
+                    form.backtest_end = v[1];
+                  }
+                "
+              />
             </div>
             <div class="field narrow">
               <label class="field-label">Purge(交易日)</label>
