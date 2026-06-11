@@ -189,17 +189,29 @@ export class PortfolioController {
       stock_name?: string;
       shares?: number;
       avg_cost?: number;
+      price?: number;
+      op?: 'set' | 'add' | 'reduce';
       note?: string;
     },
   ): any {
-    if (!body?.stock_code || body.shares == null || body.avg_cost == null) {
-      throw new BadRequestException('stock_code / shares / avg_cost 必填');
+    const op = body?.op ?? 'set';
+    if (!['set', 'add', 'reduce'].includes(op)) {
+      throw new BadRequestException('op 必须为 set/add/reduce');
     }
-    this.repo.personalUpsert({
+    if (!body?.stock_code || body.shares == null) {
+      throw new BadRequestException('stock_code / shares 必填');
+    }
+    if (!(body.shares > 0)) throw new BadRequestException('shares 必须 > 0');
+    const price = body.price ?? body.avg_cost; // 加/减仓用 price;建仓/兼容用 avg_cost
+    if (op !== 'reduce' && (price == null || !(price > 0))) {
+      throw new BadRequestException('成本/价格 必填且 > 0');
+    }
+    this.repo.personalAdjust({
       stock_code: body.stock_code,
       stock_name: body.stock_name,
       shares: body.shares,
-      avg_cost: body.avg_cost,
+      price: price ?? 0,
+      op,
       note: body.note,
     });
     return this.repo.personalList();

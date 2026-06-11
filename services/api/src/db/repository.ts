@@ -617,6 +617,61 @@ export class Repository {
     this.db.run('DELETE FROM holdings_personal WHERE stock_code=?', code);
   }
 
+  /** 加/减/建仓(移动加权成本)。
+   * - add:有现有 → 新均价 = (旧股数×旧均价 + 加仓股数×加仓价)/总股数;无现有 → 以 price 建仓。
+   * - reduce:减股数(均价不变);减到 ≤0 自动清仓(删除)。
+   * - set:直接以 price 为均价覆盖(兼容旧入口)。 */
+  personalAdjust(input: {
+    stock_code: string;
+    stock_name?: string | null;
+    shares: number;
+    price: number;
+    op: 'set' | 'add' | 'reduce';
+    note?: string | null;
+  }): void {
+    const code = input.stock_code;
+    const existing = this.db.get<{ shares: number; avg_cost: number; stock_name: string | null }>(
+      'SELECT shares, avg_cost, stock_name FROM holdings_personal WHERE stock_code=?',
+      code,
+    );
+    if (input.op === 'reduce') {
+      if (!existing) return; // 无持仓可减
+      const newShares = existing.shares - input.shares;
+      if (newShares <= 0) {
+        this.personalDelete(code); // 减完清仓
+        return;
+      }
+      this.db.run(
+        'UPDATE holdings_personal SET shares=?, updated_at=? WHERE stock_code=?',
+        newShares,
+        now(),
+        code,
+      );
+      return;
+    }
+    if (input.op === 'add' && existing) {
+      const newShares = existing.shares + input.shares;
+      const newCost =
+        (existing.shares * existing.avg_cost + input.shares * input.price) / newShares;
+      this.personalUpsert({
+        stock_code: code,
+        stock_name: input.stock_name ?? existing.stock_name ?? undefined,
+        shares: newShares,
+        avg_cost: newCost,
+        note: input.note ?? undefined,
+      });
+      return;
+    }
+    // set,或 add 但无现有 → 以 price 为均价建仓
+    this.personalUpsert({
+      stock_code: code,
+      stock_name: input.stock_name ?? undefined,
+      shares: input.shares,
+      avg_cost: input.price,
+      note: input.note ?? undefined,
+    });
+  }
+
   // ── 回测(engine 计算,api 落库展示;红线#6:engine 不写 SQLite)─────────────
   insertBacktest(
     input: {
