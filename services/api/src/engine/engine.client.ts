@@ -139,6 +139,10 @@ export interface EngineClient {
     token?: string,
     codes?: string[],
   ): Promise<{ names: Record<string, string> }>;
+  /** 行情页全市场快照(全A广度 + 板块卡)。无缓存/无行业 → 诚实空。 */
+  marketSnapshot(provider: string, token?: string, sparkDays?: number): Promise<any>;
+  /** 行情页板块成分股。 */
+  marketSector(provider: string, industry: string, token?: string): Promise<any>;
   /** 连接 engine cache/build SSE,逐事件回调。完成时 resolve。 */
   cacheBuild(req: CacheBuildRequest, onEvent: (ev: any) => void): Promise<void>;
   /** 盘后:出信号 + 模拟盘撮合记账(engine 计算,api 落库)。 */
@@ -255,6 +259,26 @@ export class HttpEngineClient implements EngineClient {
     });
     if (!res.ok) throw new Error(`engine stocks/names ${res.status}`);
     return (await res.json()) as { names: Record<string, string> };
+  }
+
+  async marketSnapshot(provider: string, token?: string, sparkDays = 20): Promise<any> {
+    const res = await fetch(`${config.engineBaseUrl()}/engine/market/snapshot`, {
+      method: 'POST',
+      headers: this.headers(),
+      body: JSON.stringify({ provider, token, spark_days: sparkDays }),
+    });
+    if (!res.ok) throw new Error(`engine market/snapshot ${res.status}`);
+    return res.json();
+  }
+
+  async marketSector(provider: string, industry: string, token?: string): Promise<any> {
+    const res = await fetch(`${config.engineBaseUrl()}/engine/market/sector`, {
+      method: 'POST',
+      headers: this.headers(),
+      body: JSON.stringify({ provider, token, industry }),
+    });
+    if (!res.ok) throw new Error(`engine market/sector ${res.status}`);
+    return res.json();
   }
 
   async cacheBuild(req: CacheBuildRequest, onEvent: (ev: any) => void): Promise<void> {

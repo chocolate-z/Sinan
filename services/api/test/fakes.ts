@@ -60,6 +60,36 @@ export class FakeEngineClient implements EngineClient {
     return { names };
   }
 
+  async marketSnapshot(_provider: string, _token?: string, _sparkDays?: number): Promise<any> {
+    return {
+      asof: '2024-01-03',
+      breadth: { total: 2, up: 1, down: 1, flat: 0, avg_chg: 0.0 },
+      sectors: [
+        {
+          name: '银行',
+          chg: 2.0,
+          count: 1,
+          up: 1,
+          down: 0,
+          lead: '招商银行',
+          lead_chg: 2.0,
+          spark: [1.0, 1.02],
+        },
+      ],
+      spark_days: 20,
+    };
+  }
+
+  async marketSector(_provider: string, industry: string, _token?: string): Promise<any> {
+    return {
+      industry,
+      asof: '2024-01-03',
+      constituents: [
+        { stock_code: '600036.SH', name: '招商银行', price: 35.0, chg: 2.0, turnover: 1.2 },
+      ],
+    };
+  }
+
   async indicatorsValidate(expr: string): Promise<any> {
     const banned = expr.includes('__');
     return {

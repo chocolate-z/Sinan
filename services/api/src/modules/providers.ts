@@ -86,4 +86,29 @@ export class ProvidersController {
       return { stocks: [] };
     }
   }
+
+  /** GET /market/snapshot — 全市场快照(板块视角)。用激活源 stock_list 建行业映射;不可达→诚实空。 */
+  @Get('market/snapshot')
+  async marketSnapshot(): Promise<any> {
+    const provider = (this.repo.settingGet('active_provider') as string) || 'tushare';
+    const token = this.creds.getToken(provider) ?? undefined;
+    try {
+      return await this.engine.marketSnapshot(provider, token);
+    } catch {
+      return { asof: null, breadth: null, sectors: [] };
+    }
+  }
+
+  /** GET /market/sector?industry= — 板块成分股。 */
+  @Get('market/sector')
+  async marketSector(@Query('industry') industry?: string): Promise<any> {
+    if (!industry) throw new BadRequestException('industry 必填');
+    const provider = (this.repo.settingGet('active_provider') as string) || 'tushare';
+    const token = this.creds.getToken(provider) ?? undefined;
+    try {
+      return await this.engine.marketSector(provider, industry, token);
+    } catch {
+      return { industry, asof: null, constituents: [] };
+    }
+  }
 }

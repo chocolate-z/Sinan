@@ -149,6 +149,11 @@ export const api = {
       query: { q, limit },
     }),
 
+  // ── 行情域:全市场快照(板块视角)──────────────────────────────────────────
+  marketSnapshot: () => request<any>(API_ENDPOINTS.market_snapshot),
+  marketSector: (industry: string) =>
+    request<any>(API_ENDPOINTS.market_sector, { query: { industry } }),
+
   // ── 回测域(M2)────────────────────────────────────────────────────────────
   createBacktest: (body: unknown) => request<any>(API_ENDPOINTS.backtests_create, { body }),
   backtests: () => request<any[]>(API_ENDPOINTS.backtests_list),

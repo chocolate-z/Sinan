@@ -46,6 +46,8 @@ API_ENDPOINTS: dict[str, dict[str, str]] = {
     "quotes_list": {"method": "GET", "path": "/quotes"},
     "prices_get": {"method": "GET", "path": "/prices/:code"},
     "stocks_search": {"method": "GET", "path": "/stocks/search"},
+    "market_snapshot": {"method": "GET", "path": "/market/snapshot"},
+    "market_sector": {"method": "GET", "path": "/market/sector"},
     "backtests_create": {"method": "POST", "path": "/backtests"},
     "backtests_list": {"method": "GET", "path": "/backtests"},
     "backtests_get": {"method": "GET", "path": "/backtests/:id"},
