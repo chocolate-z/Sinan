@@ -109,11 +109,13 @@ class CacheBuilder:
         degraded_caps: set[str] = set()
         provider_of: dict[tuple[str, str], str] = {}  # (code,dataset)→provider,终态汇报用
 
-        def emit(stage: str, idx: int, message: str = "") -> None:
+        def emit(
+            stage: str, idx: int, message: str = "", coverage: list[CoverageEntry] | None = None
+        ) -> None:
             progress = (idx / total) if total else 1.0
-            ev = {
+            ev: dict = {
                 "job_id": job_id,
-                "status": "running",
+                "status": "done" if stage == "done" else "running",
                 "progress": round(progress, 4),
                 "total": total,
                 "done_count": idx,
@@ -122,6 +124,10 @@ class CacheBuilder:
                 "message": message,
                 "ts": datetime.now().isoformat(timespec="seconds"),
             }
+            if coverage:
+                ev["coverage"] = [asdict(c) for c in coverage]
+            if stage in ("done", "paused"):
+                ev["degraded"] = result.degraded
             result.events.append(ev)
             on_progress(ev)
 
@@ -156,44 +162,30 @@ class CacheBuilder:
                     # 该 code 此 dataset 无新数据,不算失败。
                     continue
                 store.write_dataset(self.cache_root, dataset, res)
-                first, last, rows = store.coverage_for(self.cache_root, dataset, code)
                 provider_of[(code, dataset)] = provider_id or "unknown"
-                result.coverage.append(
-                    CoverageEntry(code, dataset, provider_id or "unknown", first, last, rows)
-                )
+
+            # 本股当前全量覆盖(读 store,含本轮跳过的已缓存项)→ 逐股增量回传,api 即时落库。
+            # 修复:此前 coverage 只进返回值、从不进 SSE 事件 → api data_coverage 永空 → 设置页
+            # 误判「未建缓存」。逐股回传(非单个巨型 done 事件):① 部分/中断构建也记录已完成股票;
+            # ② all-stocks(数千只)不产生多 MB 事件;③ 重建(全跳过)也把磁盘已有缓存如实回填。
+            stock_cov: list[CoverageEntry] = []
+            for ds in datasets:
+                first, last, rows = store.coverage_for(self.cache_root, ds, code)
+                if rows:
+                    stock_cov.append(
+                        CoverageEntry(
+                            code, ds, provider_of.get((code, ds), "cache"), first, last, rows
+                        )
+                    )
+            result.coverage.extend(stock_cov)
 
             done = idx + 1
             result.done_count = done
             if done % flush_every == 0 or done == total:
                 result.cursor = {"next_index": done}
-            emit("fetching", done, f"{code} 完成")
+            emit("fetching", done, f"{code} 完成", coverage=stock_cov)
 
         result.status = "done"
         result.cursor = {"next_index": total}
-        # 终态:读 store 汇报 universe 全量真实覆盖(含本轮未变动的已缓存项),经 done 事件回传 api 落库。
-        # 修复:此前 coverage 只存于返回值、从不进 SSE 事件 → api data_coverage 永空 → 设置页误判「未建缓存」。
-        final_cov: list[CoverageEntry] = []
-        for c in universe:
-            for ds in datasets:
-                first, last, rows = store.coverage_for(self.cache_root, ds, c)
-                if rows:
-                    final_cov.append(
-                        CoverageEntry(c, ds, provider_of.get((c, ds), "cache"), first, last, rows)
-                    )
-        result.coverage = final_cov
-        done_ev = {
-            "job_id": job_id,
-            "status": "done",
-            "progress": 1.0,
-            "total": total,
-            "done_count": total,
-            "failed_count": result.failed_count,
-            "stage": "done",
-            "message": "建缓存完成",
-            "coverage": [asdict(e) for e in final_cov],
-            "degraded": result.degraded,
-            "ts": datetime.now().isoformat(timespec="seconds"),
-        }
-        result.events.append(done_ev)
-        on_progress(done_ev)
+        emit("done", total, "建缓存完成")
         return result

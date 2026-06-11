@@ -180,8 +180,10 @@ def test_cache_build_sse_stream(tmp_path, monkeypatch):
     assert events, "should stream at least one event"
     assert events[-1]["status"] == "done"
     assert events[-1]["done_count"] == 2
-    # done 事件必须回传 coverage(否则 api data_coverage 永空 → 设置页误判未建缓存)。
-    cov = events[-1]["coverage"]
-    assert isinstance(cov, list) and len(cov) >= 1
-    assert all({"stock_code", "dataset", "rows", "first_date", "last_date"} <= set(c) for c in cov)
-    assert {c["stock_code"] for c in cov} == {"600519.SH", "000001.SZ"}
+    # coverage 逐股增量回传(否则 api data_coverage 永空 → 设置页误判未建缓存)。
+    all_cov = [c for ev in events for c in ev.get("coverage", [])]
+    assert all_cov, "应至少回传一条覆盖度"
+    assert all(
+        {"stock_code", "dataset", "rows", "first_date", "last_date"} <= set(c) for c in all_cov
+    )
+    assert {c["stock_code"] for c in all_cov} == {"600519.SH", "000001.SZ"}
