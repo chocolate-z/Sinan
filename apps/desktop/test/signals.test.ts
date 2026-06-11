@@ -2,6 +2,8 @@ import { describe, it, expect } from 'vitest';
 import {
   actionClass,
   actionLabel,
+  blockNote,
+  blockRule,
   factorEntries,
   groupSignals,
   isBlocked,
@@ -34,6 +36,18 @@ describe('signals 展示逻辑', () => {
     expect(reasonLabel('market_filter')).toBe('大盘择时·空仓');
     expect(reasonLabel('rank_out')).toBe('超出持仓上限');
     expect(reasonLabel(null)).toBe('—');
+  });
+
+  it('拦截规则 / 说明 两列由 reason 派生(规则=短标签,说明=解释,互不相同)', () => {
+    expect(blockRule('rank_out')).toBe('持仓上限');
+    expect(blockRule('market_filter')).toBe('大盘择时');
+    expect(blockNote('rank_out')).toContain('持仓数上限');
+    expect(blockNote('market_filter')).toContain('择时');
+    // 两列不再重复同一个 reasonLabel(修复「第4/5列都显示 reason」)
+    expect(blockRule('rank_out')).not.toBe(blockNote('rank_out'));
+    // 未知 reason 兜底回退到 reasonLabel,不抛错
+    expect(blockRule('manual')).toBe(reasonLabel('manual'));
+    expect(blockNote(null)).toBe('—');
   });
 
   it('方向用系统色,不用盈亏色', () => {

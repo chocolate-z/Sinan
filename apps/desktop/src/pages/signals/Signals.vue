@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref } from 'vue';
 import { useTradingStore } from '../../stores/trading';
-import { actionLabel, factorEntries, reasonLabel } from '../../lib/signals';
+import { actionLabel, blockNote, blockRule, factorEntries, reasonLabel } from '../../lib/signals';
 import { useAppStore } from '../../stores/app';
 import { fmtSigned } from '../../lib/format';
 import PageHero from '../../ui/PageHero.vue';
@@ -219,11 +219,9 @@ function scorePct(score: number): string {
                 <span v-else class="cap dim">—</span>
               </td>
               <td>
-                <span class="badge badge-warn"
-                  ><span class="dot" />{{ reasonLabel(s.reason) }}</span
-                >
+                <span class="badge badge-warn"><span class="dot" />{{ blockRule(s.reason) }}</span>
               </td>
-              <td class="reason">{{ reasonLabel(s.reason) }}</td>
+              <td class="reason">{{ blockNote(s.reason) }}</td>
             </tr>
           </tbody>
         </table>

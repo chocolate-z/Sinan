@@ -42,6 +42,32 @@ export function reasonLabel(r?: string | null): string {
   return REASONS[r] ?? r;
 }
 
+/**
+ * 拦截信号「拦截规则 / 说明」两列(由真实 reason 派生:规则=短标签,说明=该规则的解释)。
+ * 只描述真实风控规则,不伪造实例级数字(红线#3)。被拦截组实际 reason ∈ {rank_out,
+ * market_filter}(见 engine runner.run_eod),其余项兜底防御。
+ */
+const BLOCK_INFO: Record<string, { rule: string; note: string }> = {
+  rank_out: {
+    rule: '持仓上限',
+    note: '综合分达标,但按分数排序超出持仓数上限,未进入买入候选',
+  },
+  market_filter: {
+    rule: '大盘择时',
+    note: '大盘指数跌破择时均线,空仓避险 —— 买入信号全部拦截',
+  },
+  stop_loss: { rule: '止损', note: '触发个股止损线,纪律强制卖出' },
+  take_profit: { rule: '止盈', note: '触达个股止盈线,纪律了结' },
+};
+export function blockRule(reason?: string | null): string {
+  if (!reason) return '—';
+  return BLOCK_INFO[reason]?.rule ?? reasonLabel(reason);
+}
+export function blockNote(reason?: string | null): string {
+  if (!reason) return '—';
+  return BLOCK_INFO[reason]?.note ?? reasonLabel(reason);
+}
+
 /** 方向 → 状态色 class(系统色,不用盈亏色:买入蓝 / 卖出橙 / 持有灰)。 */
 export function actionClass(a: SignalAction): string {
   return a === 'buy' ? 'status-info' : a === 'sell' ? 'status-warn' : '';
