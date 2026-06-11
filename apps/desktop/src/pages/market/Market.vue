@@ -1,396 +1,332 @@
 <script setup lang="ts">
+// 行情 · 板块视角(全市场快照):全A涨跌广度 + 行业板块卡网格 + 涨跌排行 + 下钻抽屉
+// (板块→成分股→个股日K)。数据全来自 api 全市场快照(engine 按 PIT 聚合);缺数据诚实空。
+// 注:个股叶子用日K(Candles);北向「主力净流入」需 moneyflow(无),v1 不展示资金流向卡。
 import { computed, onMounted, ref } from 'vue';
 import { api } from '../../api/client';
 import { useAppStore } from '../../stores/app';
-import { formatPnl, pnlClass } from '../../lib/pnl';
-import { fmt, fmtInt } from '../../lib/format';
-import { capEnabled, quoteChange, type KBar, type QuoteRow } from '../../lib/market';
+import { fmt } from '../../lib/format';
 import PageHero from '../../ui/PageHero.vue';
+import Sparkline from '../../ui/charts/Sparkline.vue';
 import Candles from '../../ui/charts/Candles.vue';
 import Icon from '../../shell/Icon.vue';
 
 const app = useAppStore();
 
-const codesInput = ref('600519.SH,000001.SZ,000300.SH');
-const quotes = ref<QuoteRow[]>([]);
-const quotesDegraded = ref(false);
-const selected = ref<string | null>(null);
-const bars = ref<KBar[]>([]);
-const pricesDegraded = ref(false);
-const adjust = ref<'qfq' | 'none'>('qfq');
-// 周期:本地 ref。后端暂无周/月聚合,非「日K」时诚实标注「待接入」,不伪造数据。
-type Timeframe = 'day' | 'week' | 'month';
-const timeframe = ref<Timeframe>('day');
-const tfLabel: Record<Timeframe, string> = { day: '日K', week: '周K', month: '月K' };
-const loadingQuotes = ref(false);
-const loadingPrices = ref(false);
-const error = ref<string | null>(null);
-// 表内文本过滤(仅在已加载报价中检索,不触发数据源)。
-const query = ref('');
-
-function parseCodes(): string[] {
-  return codesInput.value
-    .split(/[,\s]+/)
-    .map((c) => c.trim().toUpperCase())
-    .filter(Boolean);
+interface Sector {
+  name: string;
+  chg: number;
+  count: number;
+  up: number;
+  down: number;
+  lead: string;
+  lead_chg: number;
+  spark: number[];
+}
+interface Breadth {
+  total: number;
+  up: number;
+  down: number;
+  flat: number;
+  avg_chg: number;
 }
 
-async function loadQuotes() {
-  const codes = parseCodes();
-  if (!codes.length) return;
-  loadingQuotes.value = true;
+const loading = ref(false);
+const error = ref<string | null>(null);
+const asof = ref<string | null>(null);
+const breadth = ref<Breadth | null>(null);
+const sectors = ref<Sector[]>([]);
+const sort = ref<'desc' | 'asc'>('desc'); // 涨幅优先 / 跌幅优先
+
+// 下钻抽屉:板块 → 成分股 → 个股日K
+const openSector = ref<Sector | null>(null);
+const constituents = ref<any[]>([]);
+const loadingCons = ref(false);
+const selStock = ref<{ stock_code: string; name?: string | null } | null>(null);
+const bars = ref<any[]>([]);
+const loadingK = ref(false);
+
+async function loadSnapshot() {
+  loading.value = true;
   error.value = null;
   try {
-    const res = await api.quotes(codes);
-    quotes.value = res.quotes ?? [];
-    quotesDegraded.value = Boolean(res.degraded);
-    if (quotes.value.length && (!selected.value || !codes.includes(selected.value))) {
-      selectCode(quotes.value[0].stock_code);
-    }
+    const r = await api.marketSnapshot();
+    asof.value = r?.asof ?? null;
+    breadth.value = r?.breadth ?? null;
+    sectors.value = r?.sectors ?? [];
   } catch (e) {
     error.value = String(e);
-    quotes.value = [];
+    breadth.value = null;
+    sectors.value = [];
   } finally {
-    loadingQuotes.value = false;
+    loading.value = false;
   }
 }
 
-async function loadPrices(code: string) {
-  loadingPrices.value = true;
-  try {
-    const res = await api.prices(code, { adjust: adjust.value, limit: 250 });
-    bars.value = res.rows ?? [];
-    pricesDegraded.value = Boolean(res.degraded);
-  } catch (e) {
-    bars.value = [];
-    pricesDegraded.value = false;
-    error.value = String(e);
-  } finally {
-    loadingPrices.value = false;
-  }
-}
-
-function selectCode(code: string) {
-  selected.value = code;
-  loadPrices(code);
-}
-
-function changeAdjust(a: 'qfq' | 'none') {
-  if (adjust.value === a) return;
-  adjust.value = a;
-  if (selected.value) loadPrices(selected.value);
-}
-
-function changeTimeframe(t: Timeframe) {
-  // 仅切换本地标注;周/月聚合后端未接入,不重取/不伪造数据。
-  timeframe.value = t;
-}
-
-// ── 涨跌展示(盈亏色)──────────────────────────────────────────────────────
-function chgClass(q: QuoteRow): string {
-  const c = quoteChange(q.price, q.prev_close);
-  return c.abs == null ? 'pnl-flat' : pnlClass(c.abs);
-}
-function chgAbs(q: QuoteRow): string {
-  const c = quoteChange(q.price, q.prev_close);
-  return c.abs == null ? '—' : formatPnl(c.abs);
-}
-function chgPct(q: QuoteRow): string {
-  const c = quoteChange(q.price, q.prev_close);
-  return c.pct == null ? '—' : `${c.pct >= 0 ? '+' : ''}${(c.pct * 100).toFixed(2)}%`;
-}
-function priceTxt(q: QuoteRow): string {
-  return q.price == null ? '—' : q.price.toFixed(2);
-}
-
-// 表内过滤:按代码/名称模糊匹配(已加载报价之内)。
-const visibleQuotes = computed(() => {
-  const k = query.value.trim().toUpperCase();
-  if (!k) return quotes.value;
-  return quotes.value.filter(
-    (q) => q.stock_code.toUpperCase().includes(k) || (q.name ?? '').toUpperCase().includes(k),
-  );
+const sortedSectors = computed(() => {
+  const s = [...sectors.value];
+  s.sort((a, b) => (sort.value === 'desc' ? b.chg - a.chg : a.chg - b.chg));
+  return s;
 });
-
-// 当前选中标的的报价行 + 涨跌(供右侧个股头)。
-const cur = computed<QuoteRow | null>(
-  () => quotes.value.find((q) => q.stock_code === selected.value) ?? null,
-);
-const selectedName = computed(() => cur.value?.name ?? selected.value ?? '');
-const curChg = computed(() =>
-  cur.value ? quoteChange(cur.value.price, cur.value.prev_close) : null,
-);
-const curChgClass = computed(() =>
-  curChg.value?.abs == null ? 'pnl-flat' : pnlClass(curChg.value.abs),
+const maxAbsChg = computed(() =>
+  sectors.value.reduce((m, s) => Math.max(m, Math.abs(s.chg)), 0.01),
 );
 
-// K 线数据(供 <Candles>);最新一根用于关键指标。
+function sparkColor(chg: number): string {
+  return chg >= 0 ? 'var(--pnl-up)' : 'var(--pnl-down)';
+}
+function pctTxt(v: number | null | undefined): string {
+  return v == null ? '—' : `${v >= 0 ? '+' : ''}${v.toFixed(2)}%`;
+}
+
+async function openDrill(sec: Sector) {
+  openSector.value = sec;
+  selStock.value = null;
+  bars.value = [];
+  constituents.value = [];
+  loadingCons.value = true;
+  try {
+    const r = await api.marketSector(sec.name);
+    constituents.value = r?.constituents ?? [];
+  } catch {
+    constituents.value = [];
+  } finally {
+    loadingCons.value = false;
+  }
+}
+function closeDrill() {
+  openSector.value = null;
+  selStock.value = null;
+}
+async function pickStock(s: { stock_code: string; name?: string | null }) {
+  selStock.value = s;
+  loadingK.value = true;
+  bars.value = [];
+  try {
+    const r = await api.prices(s.stock_code, { adjust: 'qfq', limit: 120 });
+    bars.value = r?.rows ?? [];
+  } catch {
+    bars.value = [];
+  } finally {
+    loadingK.value = false;
+  }
+}
 const candleData = computed(() =>
   bars.value.map((b) => ({ o: b.open, h: b.high, l: b.low, c: b.close, v: b.volume ?? 0 })),
 );
-const lastBar = computed<KBar | null>(() => bars.value[bars.value.length - 1] ?? null);
-
-// MA 现值:取末根所在窗口的简单均价(数据足够才有值,否则 null → 图例不显示数字)。
-function lastMA(period: number): number | null {
-  const closes = bars.value.map((b) => b.close);
-  if (closes.length < period) return null;
-  let s = 0;
-  for (let i = closes.length - period; i < closes.length; i++) s += closes[i];
-  return s / period;
-}
-const ma5 = computed(() => lastMA(5));
-const ma10 = computed(() => lastMA(10));
-const ma20 = computed(() => lastMA(20));
-
-const northboundOn = computed(() => capEnabled(app.providers, app.activeProvider, 'NORTHBOUND'));
-const fundamentalOn = computed(() => capEnabled(app.providers, app.activeProvider, 'FUNDAMENTAL'));
 
 onMounted(() => {
-  if (app.onboardingDone) loadQuotes();
+  if (app.onboardingDone) loadSnapshot();
 });
 </script>
 
 <template>
-  <PageHero title="行情" sub="沪深A股 · 自选与全市场报价 · 实时价「现价 vs 昨收」">
+  <PageHero title="行情" sub="沪深A股 · 行业板块视角 · 收盘后全市场快照">
     <template #right>
-      <span class="mono src-tag">{{ app.activeProvider ?? '未配置数据源' }}</span>
-      <button class="btn btn-secondary btn-sm" :disabled="loadingQuotes" @click="loadQuotes">
-        <Icon name="refresh" :size="13" /> {{ loadingQuotes ? '刷新中…' : '刷新报价' }}
+      <span v-if="asof" class="mono src-tag">{{ asof }} 收盘</span>
+      <button class="btn btn-secondary btn-sm" :disabled="loading" @click="loadSnapshot">
+        <Icon name="refresh" :size="13" /> {{ loading ? '刷新中…' : '刷新' }}
       </button>
     </template>
   </PageHero>
 
   <div class="page-body">
     <p v-if="error" class="banner banner-err">{{ error }}</p>
-    <p v-if="quotesDegraded" class="banner banner-warn">
-      部分标的暂无实时报价(实时源不可达或非交易时段)。
-    </p>
 
-    <div class="split">
-      <!-- 左:可搜索报价表 -->
-      <div class="card quotes">
-        <div class="quotes-head">
-          <div class="search-wrap">
-            <span class="search-ico"><Icon name="search" :size="14" /></span>
-            <input v-model="query" class="input input-search" placeholder="搜索代码 / 名称" />
-          </div>
-          <input
-            v-model="codesInput"
-            class="input mono codes-field"
-            placeholder="600519.SH,000001.SZ"
-            @keyup.enter="loadQuotes"
-          />
+    <!-- 全 A 涨跌广度(替代大盘指数条;真实) -->
+    <div v-if="breadth" class="breadth card">
+      <div class="bd-cell">
+        <div class="bd-k">全 A 平均涨跌</div>
+        <div class="bd-v mono" :class="app.pnlClass(breadth.avg_chg)">
+          {{ pctTxt(breadth.avg_chg) }}
         </div>
-        <div class="quotes-body">
-          <table v-if="visibleQuotes.length" class="dt dt-compact">
-            <thead>
-              <tr>
-                <th>代码 / 名称</th>
-                <th class="num">现价</th>
-                <th class="num">涨跌幅</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr
-                v-for="q in visibleQuotes"
-                :key="q.stock_code"
-                :class="{ sel: q.stock_code === selected }"
-                @click="selectCode(q.stock_code)"
-              >
-                <td>
-                  <div class="qname">
-                    <span class="nm">{{ q.name ?? '—' }}</span>
-                    <span class="cd mono">{{ q.stock_code }}</span>
-                  </div>
-                </td>
-                <td class="num" :class="chgClass(q)">{{ priceTxt(q) }}</td>
-                <td class="num" :class="chgClass(q)">{{ chgPct(q) }}</td>
-              </tr>
-            </tbody>
-          </table>
-          <div v-else-if="quotes.length" class="empty">
-            <div class="empty-icon"><Icon name="search" :size="20" /></div>
-            <div class="empty-title">无匹配标的</div>
-            <div class="empty-desc">没有与「{{ query }}」匹配的代码或名称。</div>
+      </div>
+      <div class="bd-cell">
+        <div class="bd-k">上涨</div>
+        <div class="bd-v mono" :class="app.pnlClass(1)">{{ breadth.up }}</div>
+      </div>
+      <div class="bd-cell">
+        <div class="bd-k">下跌</div>
+        <div class="bd-v mono" :class="app.pnlClass(-1)">{{ breadth.down }}</div>
+      </div>
+      <div class="bd-cell">
+        <div class="bd-k">平盘</div>
+        <div class="bd-v mono">{{ breadth.flat }}</div>
+      </div>
+      <div class="bd-bar">
+        <div class="bd-up" :style="{ width: (breadth.up / breadth.total) * 100 + '%' }" />
+        <div class="bd-flat" :style="{ width: (breadth.flat / breadth.total) * 100 + '%' }" />
+        <div class="bd-down" :style="{ width: (breadth.down / breadth.total) * 100 + '%' }" />
+      </div>
+      <span class="bd-total mono">{{ breadth.total }} 只</span>
+    </div>
+
+    <div v-if="sectors.length" class="cols">
+      <!-- 左:板块卡网格 -->
+      <div class="sectors-col">
+        <div class="sectors-head">
+          <div class="sec-label">行业板块</div>
+          <div class="segmented">
+            <button :class="{ on: sort === 'desc' }" @click="sort = 'desc'">涨幅</button>
+            <button :class="{ on: sort === 'asc' }" @click="sort = 'asc'">跌幅</button>
           </div>
-          <div v-else class="empty">
-            <div class="empty-icon"><Icon name="market" :size="20" /></div>
-            <div class="empty-title">尚无报价</div>
-            <div class="empty-desc">在右上输入自选代码并「刷新报价」即可查看实时行情。</div>
-          </div>
+        </div>
+        <div class="sector-grid">
+          <button
+            v-for="s in sortedSectors"
+            :key="s.name"
+            class="card sector-card"
+            @click="openDrill(s)"
+          >
+            <div class="sc-top">
+              <div class="sc-name">{{ s.name }}</div>
+              <div class="sc-chg mono" :class="app.pnlClass(s.chg)">{{ pctTxt(s.chg) }}</div>
+            </div>
+            <Sparkline
+              v-if="s.spark.length >= 2"
+              :values="s.spark"
+              :width="206"
+              :height="28"
+              :color="sparkColor(s.chg)"
+            />
+            <div v-else class="sc-nospark" />
+            <div class="sc-foot">
+              <span class="sc-lead">领涨 {{ s.lead }}</span>
+              <span class="sc-ud mono">
+                <span :class="app.pnlClass(1)">{{ s.up }}</span>
+                <span class="sc-sep">/</span>
+                <span :class="app.pnlClass(-1)">{{ s.down }}</span>
+              </span>
+            </div>
+          </button>
         </div>
       </div>
 
-      <!-- 右:个股头 + 指标 + K 线 -->
-      <div class="card detail">
-        <template v-if="selected">
-          <div class="detail-head">
-            <div class="dh-left">
-              <div class="dh-name">
-                <span class="nm">{{ selectedName }}</span>
-                <span class="cd mono">{{ selected }}</span>
-              </div>
-              <div class="dh-quote">
-                <span class="price mono" :class="curChgClass">{{ cur ? priceTxt(cur) : '—' }}</span>
-                <span class="chg mono" :class="curChgClass">
-                  {{ cur ? chgAbs(cur) : '—' }} {{ cur ? chgPct(cur) : '—' }}
-                </span>
-              </div>
-            </div>
-            <div class="dh-controls">
-              <div class="segmented tf-seg">
-                <button :class="{ on: timeframe === 'day' }" @click="changeTimeframe('day')">
-                  日K
-                </button>
-                <button :class="{ on: timeframe === 'week' }" @click="changeTimeframe('week')">
-                  周K
-                </button>
-                <button :class="{ on: timeframe === 'month' }" @click="changeTimeframe('month')">
-                  月K
-                </button>
-              </div>
-              <div class="segmented adjust-seg">
-                <button :class="{ on: adjust === 'qfq' }" @click="changeAdjust('qfq')">
-                  前复权
-                </button>
-                <button class="disabled" disabled title="当前数据源不支持后复权">后复权</button>
-                <button :class="{ on: adjust === 'none' }" @click="changeAdjust('none')">
-                  不复权
-                </button>
-              </div>
-            </div>
+      <!-- 右:板块涨跌排行 -->
+      <div class="card rank-card">
+        <div class="card-head">
+          <div>
+            <h3 class="card-title">板块涨跌排行</h3>
+            <span class="card-sub">今日 · 行业等权</span>
           </div>
-
-          <!-- 关键指标:取最新一根日 K(真实数据;缺则空状态省略) -->
-          <div v-if="lastBar" class="metrics">
-            <div class="metric">
-              <div class="mk">今开</div>
-              <div class="mv mono">{{ fmt(lastBar.open) }}</div>
-            </div>
-            <div class="metric">
-              <div class="mk">最高</div>
-              <div class="mv mono pnl-up">{{ fmt(lastBar.high) }}</div>
-            </div>
-            <div class="metric">
-              <div class="mk">最低</div>
-              <div class="mv mono pnl-down">{{ fmt(lastBar.low) }}</div>
-            </div>
-            <div class="metric">
-              <div class="mk">成交量</div>
-              <div class="mv mono">
-                {{ lastBar.volume != null ? fmtInt(lastBar.volume) : '—' }}
+          <span class="ch-tag"><i style="background: var(--pnl-up)" />PnL</span>
+        </div>
+        <div class="rank-list">
+          <button
+            v-for="(s, i) in [...sectors].sort((a, b) => b.chg - a.chg)"
+            :key="s.name"
+            class="rank-row"
+            @click="openDrill(s)"
+          >
+            <span class="rank-n mono" :class="{ top: i < 3 }">{{ i + 1 }}</span>
+            <div class="rank-main">
+              <div class="rank-r1">
+                <span class="rank-name">{{ s.name }}</span>
+                <span class="rank-chg mono" :class="app.pnlClass(s.chg)">{{ pctTxt(s.chg) }}</span>
+              </div>
+              <div class="rank-bar">
+                <div
+                  class="rank-fill"
+                  :style="{
+                    width: Math.min(100, (Math.abs(s.chg) / maxAbsChg) * 100) + '%',
+                    background: sparkColor(s.chg),
+                  }"
+                />
               </div>
             </div>
-            <div class="metric">
-              <div class="mk">成交额</div>
-              <div class="mv mono">{{ lastBar.amount != null ? fmtInt(lastBar.amount) : '—' }}</div>
-            </div>
-            <!-- 市盈率属财务能力位:数据源未接入 → 诚实置灰显示「—」,不用收盘顶替 -->
-            <div class="metric">
-              <div class="mk">市盈率(TTM)</div>
-              <div
-                class="mv mono pe-empty"
-                title="当前数据源不支持财务数据,切换 Tushare Pro 可启用"
-              >
-                —
-              </div>
-            </div>
-          </div>
+          </button>
+        </div>
+        <p class="rank-note cap">资金流向待北向数据接入(主力净流入需 moneyflow,本数据源未授权)。</p>
+      </div>
+    </div>
 
-          <div class="ma-legend">
-            <span class="lg"
-              ><i style="background: #e0b34a" />MA5<em v-if="ma5 != null" class="mono">{{
-                fmt(ma5)
-              }}</em></span
-            >
-            <span class="lg"
-              ><i style="background: #5aa9e6" />MA10<em v-if="ma10 != null" class="mono">{{
-                fmt(ma10)
-              }}</em></span
-            >
-            <span class="lg"
-              ><i style="background: #b07ce0" />MA20<em v-if="ma20 != null" class="mono">{{
-                fmt(ma20)
-              }}</em></span
-            >
-            <span class="cap seg-note"
-              >{{ adjust === 'qfq' ? '前复权' : '不复权' }} · {{ tfLabel[timeframe] }} · 最近
-              {{ bars.length }} 根</span
-            >
-          </div>
-
-          <p v-if="pricesDegraded" class="banner banner-warn inset">
-            复权因子缺失,展示原始价(切换 Tushare Pro 可前复权)。
-          </p>
-
-          <div class="chart-wrap">
-            <div v-if="timeframe !== 'day'" class="empty">
-              <div class="empty-icon"><Icon name="db" :size="20" /></div>
-              <div class="empty-title">{{ tfLabel[timeframe] }} 待接入</div>
-              <div class="empty-desc">
-                后端暂仅提供日频数据,周/月聚合接入后此处展示对应周期 K 线(不伪造)。
-              </div>
-            </div>
-            <div v-else-if="loadingPrices" class="empty">
-              <div class="empty-title">加载 K 线…</div>
-            </div>
-            <Candles v-else-if="bars.length" :data="candleData" :height="360" :ma="[5, 10, 20]" />
-            <div v-else class="empty">
-              <div class="empty-icon"><Icon name="db" :size="20" /></div>
-              <div class="empty-title">本地无「{{ selected }}」的行情缓存</div>
-              <div class="empty-desc">
-                到「设置 → 数据源」建立本地缓存后即可查看 K 线(可断点续传)。
-              </div>
-            </div>
-          </div>
-
-          <!-- 扩展数据:免费源北向/财务置灰(诚实告知,不造假) -->
-          <div class="ext-grid">
-            <div class="ext" :class="{ off: !northboundOn }">
-              <div class="ext-h">
-                北向资金
-                <span v-if="!northboundOn" class="badge badge-idle"
-                  ><Icon name="lock" :size="11" /> 未启用</span
-                >
-              </div>
-              <p class="ext-p">
-                {{
-                  northboundOn
-                    ? '当前数据源支持北向持股;持股占比趋势将随估值页接入。'
-                    : '当前数据源不支持北向数据,切换 Tushare Pro 可启用。'
-                }}
-              </p>
-            </div>
-            <div class="ext" :class="{ off: !fundamentalOn }">
-              <div class="ext-h">
-                基本面 PE / PB / ROE
-                <span v-if="!fundamentalOn" class="badge badge-idle"
-                  ><Icon name="lock" :size="11" /> 未启用</span
-                >
-              </div>
-              <p class="ext-p">
-                {{
-                  fundamentalOn
-                    ? '当前数据源支持财务/估值;PE/PB/ROE 将随估值页接入。'
-                    : '当前数据源不支持财务数据,切换 Tushare Pro 可启用。'
-                }}
-              </p>
-            </div>
-          </div>
-        </template>
-
-        <div v-else class="empty detail-empty">
-          <div class="empty-icon"><Icon name="market" :size="20" /></div>
-          <div class="empty-title">选择标的查看 K 线</div>
-          <div class="empty-desc">在左侧报价表选中一只标的,查看日 K 走势与关键指标。</div>
+    <!-- 诚实空 -->
+    <div v-else-if="!loading" class="card">
+      <div class="empty">
+        <div class="empty-icon"><Icon name="market" :size="20" /></div>
+        <div class="empty-title">暂无全市场快照</div>
+        <div class="empty-desc">
+          需先到「设置 → 数据源」建立本地缓存(含日线 + 行业);建好后这里按行业聚合展示板块视角。
         </div>
       </div>
     </div>
 
     <p class="disclaimer">
-      行情仅供研究参考,非投资建议。实时价来自第三方公开源,可能延迟或缺失;K
-      线走本地缓存,前复权随最新日动态生成。
+      板块视角按本地缓存的日线 + 个股行业聚合(收盘价口径);仅供研究,非投资建议。个股行业取自数据源
+      基础分类,申万一级与北向资金流向为后续增强。
     </p>
+
+    <!-- 下钻抽屉:板块 → 成分股 → 个股日K -->
+    <template v-if="openSector">
+      <div class="drawer-scrim" @click="closeDrill" />
+      <aside class="drawer card">
+        <div class="drawer-head">
+          <button v-if="selStock" class="dh-back" title="返回成分股" @click="selStock = null">
+            <Icon name="chevR" :size="16" style="transform: rotate(180deg)" />
+          </button>
+          <div class="dh-title">
+            <template v-if="selStock">
+              <span class="dh-name">{{ selStock.name || selStock.stock_code }}</span>
+              <span class="dh-code mono">{{ selStock.stock_code }}</span>
+            </template>
+            <template v-else>
+              <span class="dh-name">{{ openSector.name }}</span>
+              <span class="dh-code mono" :class="app.pnlClass(openSector.chg)">{{
+                pctTxt(openSector.chg)
+              }}</span>
+              <span class="dh-sub">{{ constituents.length || openSector.count }} 只成分股</span>
+            </template>
+          </div>
+          <button class="dh-close" title="关闭" @click="closeDrill">
+            <Icon name="alert" :size="14" style="display: none" />✕
+          </button>
+        </div>
+
+        <div class="drawer-body">
+          <!-- 个股日K -->
+          <template v-if="selStock">
+            <div v-if="loadingK" class="empty"><div class="empty-title">加载 K 线…</div></div>
+            <Candles v-else-if="bars.length" :data="candleData" :height="320" :ma="[5, 10, 20]" />
+            <div v-else class="empty">
+              <div class="empty-icon"><Icon name="db" :size="20" /></div>
+              <div class="empty-title">本地无该股日线缓存</div>
+              <div class="empty-desc">到「设置 → 数据源」建立缓存后查看日K。</div>
+            </div>
+          </template>
+          <!-- 成分股列表 -->
+          <template v-else>
+            <div v-if="loadingCons" class="empty"><div class="empty-title">加载成分股…</div></div>
+            <table v-else-if="constituents.length" class="dt dt-compact">
+              <thead>
+                <tr>
+                  <th>名称 / 代码</th>
+                  <th class="num">现价</th>
+                  <th class="num">涨跌幅</th>
+                  <th class="num">换手</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="c in constituents" :key="c.stock_code" @click="pickStock(c)">
+                  <td>
+                    <div class="cons-name">
+                      <span class="nm">{{ c.name || c.stock_code }}</span>
+                      <span class="cd mono">{{ c.stock_code }}</span>
+                    </div>
+                  </td>
+                  <td class="num">{{ c.price == null ? '—' : fmt(c.price) }}</td>
+                  <td class="num" :class="app.pnlClass(c.chg)">{{ pctTxt(c.chg) }}</td>
+                  <td class="num c2">{{ c.turnover == null ? '—' : c.turnover + '%' }}</td>
+                </tr>
+              </tbody>
+            </table>
+            <div v-else class="empty">
+              <div class="empty-title">该板块暂无成分股数据</div>
+            </div>
+            <p class="drawer-hint cap">点击任意成分股查看日K走势</p>
+          </template>
+        </div>
+      </aside>
+    </template>
   </div>
 </template>
 
@@ -400,261 +336,310 @@ onMounted(() => {
   display: flex;
   flex-direction: column;
   gap: 20px;
+  position: relative;
 }
-
-/* 顶栏右侧数据源标签 */
 .src-tag {
   font-size: var(--fs-sub);
   color: var(--text-3);
 }
-
-/* 提示横幅(系统状态色,与盈亏色解耦) */
 .banner {
   margin: 0;
   padding: 9px 14px;
   border-radius: var(--r-md);
   font-size: var(--fs-sub);
-  border: 0.5px solid transparent;
 }
 .banner-err {
   color: var(--status-err);
   background: var(--status-err-bg);
-  border-color: var(--status-err);
-}
-.banner-warn {
-  color: var(--status-warn);
-  background: var(--status-warn-bg);
-  border-color: var(--status-warn);
-}
-.banner.inset {
-  margin: 0 16px;
+  border: 0.5px solid var(--status-err);
 }
 
-/* 左报价 / 右明细 两栏 */
-.split {
+/* 全A广度条 */
+.breadth {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  padding: 14px 20px;
+}
+.bd-cell {
+  flex: none;
+}
+.bd-k {
+  font-size: var(--fs-cap);
+  color: var(--text-3);
+  margin-bottom: 3px;
+}
+.bd-v {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text-1);
+}
+.bd-bar {
+  flex: 1;
+  height: 8px;
+  border-radius: 4px;
+  overflow: hidden;
+  display: flex;
+  background: var(--bg-input);
+}
+.bd-up {
+  background: var(--pnl-up);
+}
+.bd-flat {
+  background: var(--text-3);
+  opacity: 0.4;
+}
+.bd-down {
+  background: var(--pnl-down);
+}
+.bd-total {
+  flex: none;
+  font-size: var(--fs-cap);
+  color: var(--text-3);
+}
+
+/* 两栏:板块网格 + 排行 */
+.cols {
   display: grid;
-  grid-template-columns: 352px minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr) 360px;
   gap: 20px;
   align-items: start;
 }
-
-/* ── 左:可搜索报价表 ── */
-.quotes {
+.sectors-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 14px;
+}
+.sector-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(238px, 1fr));
+  gap: 14px;
+}
+.sector-card {
+  text-align: left;
+  cursor: pointer;
+  padding: 16px;
   display: flex;
   flex-direction: column;
+  gap: 12px;
+}
+.sector-card:hover {
+  border-color: var(--border-strong);
+}
+.sc-top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+}
+.sc-name {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-1);
+}
+.sc-chg {
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+.sc-nospark {
+  height: 28px;
+}
+.sc-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-top: 11px;
+  border-top: 0.5px solid var(--border-faint);
+}
+.sc-lead {
+  font-size: 10.5px;
+  color: var(--text-3);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sc-ud {
+  font-size: 12px;
+  flex: none;
+}
+.sc-sep {
+  color: var(--text-3);
+  margin: 0 3px;
+}
+
+/* 排行 */
+.rank-list {
+  padding: 6px 8px 0;
+}
+.rank-row {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  width: 100%;
+  padding: 8px 10px;
+  border-radius: var(--r-sm);
+  cursor: pointer;
+  text-align: left;
+}
+.rank-row:hover {
+  background: var(--bg-elevated);
+}
+.rank-n {
+  width: 18px;
+  text-align: center;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-3);
+  flex: none;
+}
+.rank-n.top {
+  color: var(--accent);
+}
+.rank-main {
+  flex: 1;
+  min-width: 0;
+}
+.rank-r1 {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 5px;
+}
+.rank-name {
+  font-size: 12.5px;
+  color: var(--text-1);
+  font-weight: 500;
+}
+.rank-chg {
+  font-size: 12.5px;
+  font-weight: 600;
+}
+.rank-bar {
+  height: 4px;
+  border-radius: 2px;
+  background: var(--bg-input);
   overflow: hidden;
 }
-.quotes-head {
+.rank-fill {
+  height: 100%;
+  border-radius: 2px;
+  opacity: 0.85;
+}
+.rank-note {
+  padding: 12px 16px;
+  color: var(--text-3);
+}
+
+/* 下钻抽屉 */
+.drawer-scrim {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.4);
+  z-index: 60;
+}
+.drawer {
+  position: fixed;
+  top: var(--titlebar-h);
+  right: 0;
+  bottom: var(--statusbar-h);
+  width: 560px;
+  max-width: 90vw;
+  z-index: 61;
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  padding: 14px 16px;
-  border-bottom: 0.5px solid var(--border-faint);
+  border-radius: 0;
+  animation: drawer-in 160ms var(--ease-out);
 }
-.search-wrap {
-  position: relative;
+@keyframes drawer-in {
+  from {
+    transform: translateX(20px);
+    opacity: 0.6;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
 }
-.search-ico {
-  position: absolute;
-  left: 9px;
-  top: 50%;
-  transform: translateY(-50%);
-  color: var(--text-3);
-  display: inline-flex;
-  pointer-events: none;
+.drawer-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 18px;
+  border-bottom: 0.5px solid var(--border);
 }
-.codes-field {
-  font-size: var(--fs-cap);
+.dh-back,
+.dh-close {
+  width: 30px;
+  height: 30px;
+  border-radius: var(--r-sm);
+  border: none;
+  background: transparent;
   color: var(--text-2);
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+  flex: none;
 }
-.quotes-body {
-  max-height: 620px;
+.dh-back:hover,
+.dh-close:hover {
+  background: var(--bg-elevated);
+  color: var(--text-1);
+}
+.dh-title {
+  flex: 1;
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  min-width: 0;
+}
+.dh-name {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-1);
+}
+.dh-code {
+  font-size: 12px;
+  color: var(--text-3);
+}
+.dh-sub {
+  font-size: 11.5px;
+  color: var(--text-3);
+}
+.drawer-body {
+  flex: 1;
   overflow: auto;
+  padding: 12px 0;
 }
-.qname {
+.cons-name {
   display: flex;
   flex-direction: column;
   gap: 1px;
 }
-.qname .nm {
-  color: var(--text-1);
+.cons-name .nm {
   font-weight: 500;
+  color: var(--text-1);
   font-size: 12.5px;
 }
-.qname .cd {
+.cons-name .cd {
   font-size: 10.5px;
   color: var(--text-3);
 }
-
-/* ── 右:个股明细 ── */
-.detail {
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-}
-.detail-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  flex-wrap: wrap;
-  padding: 16px 24px;
-  border-bottom: 0.5px solid var(--border-faint);
-}
-.dh-controls {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-/* 不支持的复权项:诚实置灰、不可点 */
-.segmented button.disabled {
-  opacity: 0.4;
-  cursor: not-allowed;
-}
-.dh-left {
-  display: flex;
-  align-items: baseline;
-  gap: 18px;
-  flex-wrap: wrap;
-}
-.dh-name {
-  display: flex;
-  align-items: baseline;
-  gap: 9px;
-}
-.dh-name .nm {
-  font-size: 19px;
-  font-weight: 600;
-  color: var(--text-1);
-  letter-spacing: -0.01em;
-}
-.dh-name .cd {
-  font-size: 12px;
-  color: var(--text-3);
-}
-.dh-quote {
-  display: flex;
-  align-items: baseline;
-  gap: 12px;
-}
-.dh-quote .price {
-  font-size: 26px;
-  font-weight: 600;
-  line-height: 1;
-  letter-spacing: -0.01em;
-}
-.dh-quote .chg {
-  font-size: 14px;
-  font-weight: 500;
-}
-
-/* 关键指标网格 */
-.metrics {
-  display: grid;
-  grid-template-columns: repeat(6, 1fr);
-  border-bottom: 0.5px solid var(--border-faint);
-}
-.metric {
-  padding: 12px 18px;
-  border-right: 0.5px solid var(--border-faint);
-}
-.metric:last-child {
-  border-right: none;
-}
-.mk {
-  font-size: var(--fs-cap);
-  color: var(--text-3);
-  margin-bottom: 4px;
-}
-.mv {
-  font-size: 13px;
-  color: var(--text-1);
-  font-weight: 500;
-}
-/* 财务缺位:中性灰占位,不参与盈亏色 */
-.mv.pe-empty {
-  color: var(--text-3);
-}
-
-/* MA 图例 */
-.ma-legend {
-  display: flex;
-  align-items: center;
-  gap: 18px;
-  padding: 12px 22px 4px;
-}
-.ma-legend .lg {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 11.5px;
+.c2 {
   color: var(--text-2);
 }
-.ma-legend .lg i {
-  width: 12px;
-  height: 2px;
-  border-radius: 1px;
+.drawer-hint {
+  padding: 12px 16px;
+  color: var(--text-3);
 }
-.ma-legend .lg em {
-  font-style: normal;
-  color: var(--text-1);
-  font-size: 11.5px;
-}
-.seg-note {
-  margin-left: auto;
-}
-
-/* 图表容器 */
-.chart-wrap {
-  padding: 4px 16px 16px;
-  min-height: 200px;
-}
-
-/* 扩展数据(诚实空状态) */
-.ext-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 16px;
-  padding: 4px 22px 22px;
-}
-.ext {
-  border: 0.5px solid var(--border);
-  border-radius: var(--r-md);
-  background: var(--bg-panel-2);
-  padding: 16px;
-}
-.ext.off {
-  opacity: 0.7;
-}
-.ext-h {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-weight: 600;
-  font-size: var(--fs-body);
-  color: var(--text-1);
-  margin-bottom: 6px;
-}
-.ext-h .badge {
-  height: 19px;
-  padding: 0 7px;
-  font-size: var(--fs-cap);
-}
-.ext-p {
-  margin: 0;
-  font-size: var(--fs-sub);
-  color: var(--text-2);
-  line-height: 1.5;
-}
-
-.detail-empty {
-  flex: 1;
-}
-
 .disclaimer {
   margin: 4px 0 0;
   color: var(--text-3);
   font-size: var(--fs-cap);
+}
+@media (max-width: 1080px) {
+  .cols {
+    grid-template-columns: 1fr;
+  }
 }
 </style>
