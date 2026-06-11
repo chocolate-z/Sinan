@@ -50,6 +50,13 @@ def partition_file(cache_root: Path, dataset: str, board: str, year: str | int) 
     return partition_dir(cache_root, dataset, board, year) / "part.parquet"
 
 
+def stock_file(cache_root: Path, dataset: str, board: str, year: str | int, code: str) -> Path:
+    """分股文件:board=<b>/year=<y>/<code>.parquet。每股各占一文件,写入只动自身小文件
+    (O(stock)),根除「共享 part.parquet 越写越大、写第 K 只重写含前 K 只的大文件」的 O(N²)。
+    旧 part.parquet 仍可与之共存(读端按主键去重兼容)。"""
+    return partition_dir(cache_root, dataset, board, year) / f"{code}.parquet"
+
+
 def glob_for(cache_root: Path, dataset: str) -> str:
     """DuckDB read_parquet 的 glob(hive 分区)。"""
     return str(dataset_dir(cache_root, dataset) / "**" / "*.parquet")

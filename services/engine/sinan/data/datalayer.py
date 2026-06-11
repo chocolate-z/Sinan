@@ -51,10 +51,18 @@ class DataLayer:
             placeholders = ", ".join(["?"] * len(codes))
             code_filter = f" WHERE stock_code IN ({placeholders})"
             params = list(codes)
+        # 分股文件与旧共享 part.parquet 共存可能让同一主键出现重复行 → 物化时按主键去重(留一条),
+        # 杜绝同 (stock_code, 日期) 重复进入横截面/asof。财务类不在此去重:其 PIT 需保留同 end_date
+        # 的多条 ann_date 供 asof 取「<=T 的最新一期」(去重会破坏 ann_date 逻辑)。
+        dedup = ""
+        if dataset not in layout.FINANCIAL_PIT:
+            keys = ", ".join(layout.DATASET_KEYS[dataset])
+            dedup = f" QUALIFY row_number() OVER (PARTITION BY {keys} ORDER BY {keys}) = 1"
         # 物化时按 codes 过滤(分区裁剪,只读该股票池的分区),后续 asof 不再带 code 过滤。
         self._con.execute(
             f"CREATE TEMP TABLE {name} AS "
-            f"SELECT * FROM read_parquet('{glob}', hive_partitioning=1, union_by_name=1){code_filter}",
+            f"SELECT * FROM read_parquet('{glob}', hive_partitioning=1, union_by_name=1)"
+            f"{code_filter}{dedup}",
             params,
         )
         self._materialized[key] = name

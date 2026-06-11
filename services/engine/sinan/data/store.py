@@ -60,12 +60,14 @@ def write_dataset(cache_root: Path, dataset: str, df: pl.DataFrame) -> int:
         pl.col(date_col).cast(pl.Utf8).str.slice(0, 4).alias("_year"),
     )
     written = 0
-    for (board, year), part in df.group_by(["_board", "_year"]):
+    # 按 (board, year, stock_code) 分组 → 每股各占一文件,写入只读/重写自身小文件(O(stock)),
+    # 根除「共享 part.parquet 越写越大」的 O(N²)。
+    for (board, year, code), part in df.group_by(["_board", "_year", "stock_code"]):
         part = part.drop(["_board", "_year"])
-        target = layout.partition_file(cache_root, dataset, str(board), str(year))
+        target = layout.stock_file(cache_root, dataset, str(board), str(year), str(code))
         target.parent.mkdir(parents=True, exist_ok=True)
         existing = _safe_read_parquet(target) if target.exists() else None
-        # existing 为 None:不存在,或损坏 → 直接以新数据重写该分区(自愈损坏文件)。
+        # existing 为 None:不存在,或损坏 → 直接以新数据重写(自愈损坏文件)。
         combined = (
             pl.concat([existing, part], how="diagonal_relaxed") if existing is not None else part
         )
@@ -80,15 +82,15 @@ def coverage_for(
     cache_root: Path, dataset: str, stock_code: str
 ) -> tuple[str | None, str | None, int]:
     """返回某股某 dataset 的 (first_date, last_date, rows),供 data_coverage 台账与增量锚点。"""
-    if not layout.has_any(cache_root, dataset):
-        return None, None, 0
     date_col = layout.ASOF_DATE_COL[dataset]
     board = board_of(stock_code)
     d = layout.dataset_dir(Path(cache_root), dataset) / f"board={board}"
     if not d.exists():
         return None, None, 0
+    # 只读该股自己的分股文件 <code>.parquet(O(stock));旧共享 part.parquet 不计入此台账,
+    # 其数据仍由 DataLayer 读端去重消费,但重建时该股按分股文件重抓 → 迁移到干净布局。
     frames = [
-        f for p in d.rglob("*.parquet") if (f := _safe_read_parquet(p)) is not None
+        f for p in d.rglob(f"{stock_code}.parquet") if (f := _safe_read_parquet(p)) is not None
     ]  # 跳过损坏分区
     if not frames:
         return None, None, 0
