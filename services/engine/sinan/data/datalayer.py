@@ -101,6 +101,38 @@ class DataLayer:
             )
         return self._con.execute(sql, params).pl()
 
+    def window(
+        self,
+        dataset: str,
+        start: str,
+        end: str,
+        *,
+        fields: Sequence[str] | None = None,
+        codes: Sequence[str] | None = None,
+    ) -> pl.DataFrame:
+        """区间 [start, end] 的行(行情快照的板块 Sparkline 用,只取最近 N 日,避免拉全历史)。"""
+        src = self._source(dataset, codes)
+        if src is None:
+            return pl.DataFrame()
+        date_col = layout.ASOF_DATE_COL[dataset]
+        cols = "*" if not fields else ", ".join(fields)
+        return self._con.execute(
+            f"SELECT {cols} FROM {src} WHERE {date_col} BETWEEN ? AND ? "
+            f"ORDER BY stock_code, {date_col}",
+            [start, end],
+        ).pl()
+
+    def latest_dates(self, dataset: str, n: int = 2, codes: Sequence[str] | None = None) -> list[str]:
+        """该数据集最近 n 个不同交易日(降序)。行情快照用(取最新日+昨日算当日涨跌)。"""
+        src = self._source(dataset, codes)
+        if src is None:
+            return []
+        date_col = layout.ASOF_DATE_COL[dataset]
+        rows = self._con.execute(
+            f"SELECT DISTINCT {date_col} FROM {src} ORDER BY {date_col} DESC LIMIT ?", [int(n)]
+        ).fetchall()
+        return [r[0] for r in rows]
+
     def latest_asof(
         self,
         dataset: str,

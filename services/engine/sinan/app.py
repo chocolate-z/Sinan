@@ -212,6 +212,57 @@ def stocks_names(req: StockNamesReq) -> dict:
     return {"names": {r["stock_code"]: r["name"] for r in out.iter_rows(named=True)}}
 
 
+# ── 行情页全市场快照(板块视角)────────────────────────────────────────────
+def _industry_meta(provider: str, token: Optional[str]) -> dict:
+    """code → {name, industry}(行情页板块聚合用,复用 stock_list 进程内 memo)。"""
+    df = _STOCK_LIST_CACHE.get(provider)
+    if df is None:
+        try:
+            df = _make_provider(provider, token).stock_list()
+        except Exception:  # noqa: BLE001 — 无 token/网络 → 诚实空
+            df = None
+        if df is not None and not df.is_empty():
+            _STOCK_LIST_CACHE[provider] = df
+    if df is None or df.is_empty():
+        return {}
+    return {
+        r["stock_code"]: {"name": r.get("name"), "industry": r.get("industry")}
+        for r in df.iter_rows(named=True)
+    }
+
+
+class MarketSnapshotReq(BaseModel):
+    provider: str
+    token: Optional[str] = None
+    spark_days: int = 20
+
+
+@app.post("/engine/market/snapshot", dependencies=[Depends(require_internal)])
+def market_snapshot_ep(req: MarketSnapshotReq) -> dict:
+    """全 A 广度 + 板块卡(真实板块视角)。无缓存/无行业 → 诚实空。"""
+    from .data import DataLayer
+    from .factors.market import market_snapshot
+
+    meta = _industry_meta(req.provider, req.token)
+    return market_snapshot(DataLayer(config.cache_dir()), meta, spark_days=req.spark_days)
+
+
+class MarketSectorReq(BaseModel):
+    provider: str
+    token: Optional[str] = None
+    industry: str
+
+
+@app.post("/engine/market/sector", dependencies=[Depends(require_internal)])
+def market_sector_ep(req: MarketSectorReq) -> dict:
+    """板块成分股(现价/当日涨跌/换手)。无数据 → 诚实空。"""
+    from .data import DataLayer
+    from .factors.market import sector_constituents
+
+    meta = _industry_meta(req.provider, req.token)
+    return sector_constituents(DataLayer(config.cache_dir()), meta, req.industry)
+
+
 # ── 盘后:出信号 + 模拟盘撮合记账(run_eod)────────────────────────────────
 class PaperPosition(BaseModel):
     code: str

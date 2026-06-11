@@ -141,14 +141,23 @@ class TushareProvider(IDataProvider):
 
     # ── 能力方法 ──────────────────────────────────────────────────────────
     def stock_list(self) -> pl.DataFrame:
-        df = self._call("stock_basic", {"list_status": "L"}, "ts_code,name,list_date")
+        # industry = stock_basic 自带行业分类(行情页板块视角的可靠来源,一次调用覆盖全市场)。
+        df = self._call("stock_basic", {"list_status": "L"}, "ts_code,name,industry,list_date")
         if df.is_empty():
-            return pl.DataFrame(schema={"stock_code": pl.Utf8, "name": pl.Utf8, "board": pl.Utf8, "list_date": pl.Utf8})
+            return pl.DataFrame(
+                schema={
+                    "stock_code": pl.Utf8,
+                    "name": pl.Utf8,
+                    "board": pl.Utf8,
+                    "industry": pl.Utf8,
+                    "list_date": pl.Utf8,
+                }
+            )
         return df.with_columns(
             pl.col("ts_code").map_elements(normalize_code, return_dtype=pl.Utf8).alias("stock_code"),
             pl.col("ts_code").map_elements(board_of, return_dtype=pl.Utf8).alias("board"),
             pl.col("list_date").map_elements(_fmt_out, return_dtype=pl.Utf8).alias("list_date"),
-        ).select("stock_code", "name", "board", "list_date")
+        ).select("stock_code", "name", "board", "industry", "list_date")
 
     def daily_bars(self, code: str, start: str, end: str) -> pl.DataFrame:
         df = self._call(
