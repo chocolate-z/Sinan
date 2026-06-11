@@ -442,3 +442,19 @@ labels.py   build_forward_return_labels(hfq[T+h]/hfq[T]-1,前向,尾 h 日 null)
 - 个股当日涨跌:**`COLS_PRICE` 无 pre_close** → 取 price asof 每股最后 2 个 close 算 chg(物化后内存查询快);daily_basic 是否有 pct_chg 待确认。
 - 宇宙=price 缓存 distinct stock_code(3486);最新日=max trade_date;北向已缓存。
 - 实施序:契约 `market_snapshot`/`market_sector` → engine `factors/market.py`(全A广度+板块聚合) → api 代理 → 前端按 `market.jsx` 整页重写(下钻叶子日K复用 `/prices`+`Candles.vue`)。旧行情页保留到最后一刀切换。守红线#1/#3/#6。
+
+### 11.7 发布冲刺(本大会话续:性能/建缓存/真bug/信号可读/行情页里程碑,~13 commits,CI 全绿)
+
+用户拍板发布前顺序「① 性能 → ② 行情页 → ③ 真实进度% → ④ 打包 → ⑤ 多专家UX评审」。本轮做完 ①②:
+
+- **`7fcccf8` ① 性能(质检/训练)**:DataLayer 每实例物化数据集到 duckdb 临时表 → 逐日 asof 由「重扫 parquet」降为内存查询(分钟→秒)。WHERE/QUALIFY/ORDER 不变,PIT 不受影响,158 测试过。
+- **`d743907` 建缓存 O(N²)→O(N)**(用户验机报「太慢 + 建缓存失败」,根因):`write_dataset` 把每股写进**共享 board×year 分区文件**(读整文件+重写)→ O(N²) 写 + coverage_for O(N²) 读;超大分区内存重写很可能是「失败」根因。修:**分股文件 `<code>.parquet`**(只动自身小文件 O(stock))+ coverage_for 只 glob 该股文件 + **DataLayer 物化对非财务按主键去重**(旧 part.parquet 与新分股文件安全共存,财务 PIT 不动)。实测写入线性(~7ms/股);新增迁移共存去重测试。⚠️ engine 改动需重启 `pnpm dev`;用户可直接重建缓存(分股布局快速重抓,旧数据读端兼容不丢)。
+- **`371241d` 信号加名称+板块**:engine `/engine/stocks/names`(复用 stock_list memo)+ api 富集 signals 名称(单例缓存);前端 `boardLabel` 派生**交易所板块**(沪/深主板·创业板·科创板·北交所,纯前端)。⚠️ 名称是 api 改动需重启。
+- **`a4c356b` 运行进度计时跨导航不重置**:RunningBar 开始时间搬进 store(`startedAt`)+`:since` 投影(原本组件本地计时,切走切回重挂归零=「每次进来 0 秒」bug)。
+- **`0b79fd7` 日志滚动落卡内**:AppShell `.body-inner` 改 `height:100%`+flex 列;日志 `.events-card` flex 填充、`.dt-wrap` 内部滚动(原 max-height 魔法数太贴窗口仍整页滚)。其余页超高仍整页滚(已验)。
+- **`880b766` 持仓现价富集**:api `PortfolioController.enrich()` 用 engine.quotes 算 现价/市值/浮动盈亏/当日盈亏(原本只返手录股数+成本,全「—」)。⚠️ api 改动需重启。
+- **`c96d045`+`44064ab`+`d9c932c` 🔴 行情页里程碑(板块视角,3 刀)**:engine `factors/market.py`(全A广度+按行业聚合板块卡:涨跌/家数/领涨/近N日 Sparkline + 成分股)+ DataLayer `latest_dates`/`window` + provider stock_list 加 industry + `/engine/market/{snapshot,sector}`(slice1,test_market.py);契约 `market_snapshot`/`market_sector` + api 代理 + 前端 api(slice2);前端 Market.vue **整页重写**为板块视角(全A广度条 + 板块卡网格 Segmented排序 + 涨跌排行 + 下钻抽屉→成分表→个股日K Candles)(slice3,注入数据实测全渲染)。**行业=stock_basic.industry**(可靠 v1,一次调用覆盖全市场);**申万一级**(更干净 28 类,需申万成分 API+积分)与**北向资金流向**(需 moneyflow)为 v1 后续增强。⚠️ 整条需重启 `pnpm dev`(engine+api)走真实数据。
+
+**发布剩余(③④⑤)**:③ 真实进度%(回测/训练接 jobs+SSE 流式,现仅「已用时」)、④ M6 打包(冻结 sidecar 出安装包)、⑤ 多专家视角 UX 评审(Workflow,发布前质量关)。lib/market 随行情页重写已不被 Market.vue 使用(其纯函数 + market.test.ts 仍在,轻度可清理)。约 ~340 测试 CI 绿。
+
+**⚠️ 必读**:本轮多处 engine/api 后端改动(性能/建缓存/持仓/信号名称/行情页)**需重启 `pnpm dev`(重编 engine+api)才在桌面端生效**;纯前端(进度/日志/板块列/板块视图)HMR 即时。token 让用户引导页输入,绝不贴对话。
