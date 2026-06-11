@@ -75,6 +75,16 @@ export class JobsService {
 
   async runCacheBuild(jobId: string, params: any): Promise<void> {
     this.repo.jobUpdate(jobId, { status: 'running', started_at: new Date().toISOString() });
+    const _dsets = Array.isArray(params?.datasets) ? params.datasets.join('/') : '—';
+    const _uni = params?.universe?.codes
+      ? `${params.universe.codes.length} 只(快速模式)`
+      : '全市场';
+    this.repo.logInsert({
+      level: 'info',
+      source: 'cache',
+      job_id: jobId,
+      message: `建缓存开始 · ${_uni} · 数据集 ${_dsets}`,
+    });
     // 收集 BYO token(仅内存,转发 engine,绝不落库/日志)。
     // 历史源(tushare)需 token;实时源免 token。active 决定主历史源。
     const active =
@@ -108,6 +118,24 @@ export class JobsService {
         }
         if (Array.isArray(ev.coverage) && ev.coverage.length) {
           this.repo.coverageUpsert(ev.coverage);
+          // 逐股日志:缓存了哪只股、覆盖到哪天、多少行(用户要的可观测性)。
+          const code = ev.coverage[0].stock_code;
+          let first: string | null = null;
+          let last: string | null = null;
+          let rows = 0;
+          const dsets: string[] = [];
+          for (const c of ev.coverage) {
+            if (c.first_date && (!first || c.first_date < first)) first = c.first_date;
+            if (c.last_date && (!last || c.last_date > last)) last = c.last_date;
+            rows += c.rows || 0;
+            dsets.push(c.dataset);
+          }
+          this.repo.logInsert({
+            level: 'info',
+            source: 'cache',
+            job_id: jobId,
+            message: `缓存 ${code} · ${first ?? '—'}~${last ?? '—'} · ${dsets.join('/')} · ${rows} 行`,
+          });
         }
         if (Array.isArray(ev.degraded)) {
           for (const d of ev.degraded)
@@ -131,6 +159,12 @@ export class JobsService {
       status: finalStatus,
       progress: finalStatus === 'done' ? 1 : undefined,
       finished_at: new Date().toISOString(),
+    });
+    this.repo.logInsert({
+      level: finalStatus === 'failed' ? 'error' : 'info',
+      source: 'cache',
+      job_id: jobId,
+      message: `建缓存${finalStatus === 'done' ? '完成' : finalStatus === 'canceled' ? '已取消' : '失败'}`,
     });
     this.bus.emit(jobId, { job_id: jobId, status: finalStatus, ts: new Date().toISOString() });
     this.bus.complete(jobId);

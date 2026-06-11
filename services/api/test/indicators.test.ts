@@ -30,6 +30,12 @@ test('GET /indicators/quality 代理 engine 因子质检(真实 IC/分层)', asy
     assert.equal(mom.ic_mean, 0.061);
     assert.equal(mom.deciles.length, 3);
     assert.ok(body.degraded.length >= 1);
+
+    // 可观测性:质检写入统一日志(开始 + 完成)
+    const logs = await fastify.inject({ method: 'GET', url: '/api/v1/logs' });
+    const msgs = logs.json().map((l: { message: string }) => l.message);
+    assert.ok(msgs.some((m: string) => m.includes('因子质检开始')));
+    assert.ok(msgs.some((m: string) => m.includes('因子质检完成')));
   } finally {
     await app.close();
   }

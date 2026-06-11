@@ -37,8 +37,15 @@ export class IndicatorsController {
     @Query('n_deciles') nDeciles?: string,
   ): Promise<any> {
     if (!start || !end) throw new BadRequestException('start / end 必填');
+    const t0 = Date.now();
+    this.repo.logInsert({
+      level: 'info',
+      source: 'indicators',
+      message: `因子质检开始 · ${start}~${end}`,
+    });
+    let result: any;
     try {
-      return await this.engine.factorQuality({
+      result = await this.engine.factorQuality({
         start,
         end,
         label_horizon: labelHorizon ? Number(labelHorizon) : undefined,
@@ -46,12 +53,26 @@ export class IndicatorsController {
         custom: this.repo.customFactorsForQuality(), // 启用的自定义因子与内置并列计算
       });
     } catch (e) {
-      if (e instanceof EngineError && e.status === 400) {
-        const detail = typeof e.detail === 'string' ? e.detail : JSON.stringify(e.detail);
-        throw new BadRequestException(detail);
-      }
+      const detail =
+        e instanceof EngineError
+          ? typeof e.detail === 'string'
+            ? e.detail
+            : JSON.stringify(e.detail)
+          : String(e);
+      this.repo.logInsert({
+        level: 'error',
+        source: 'indicators',
+        message: `因子质检失败 · ${detail}`,
+      });
+      if (e instanceof EngineError && e.status === 400) throw new BadRequestException(detail);
       throw e;
     }
+    this.repo.logInsert({
+      level: 'info',
+      source: 'indicators',
+      message: `因子质检完成 · ${result.factors?.length ?? 0} 因子 · ${result.n_dates ?? '?'} 日 · ${((Date.now() - t0) / 1000).toFixed(1)}s`,
+    });
+    return result;
   }
 
   @Post('indicators/validate')

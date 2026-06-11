@@ -45,6 +45,12 @@ export class ModelsController {
     if (!body?.train_start || !body?.train_end) {
       throw new BadRequestException('train_start / train_end 必填');
     }
+    const t0 = Date.now();
+    this.repo.logInsert({
+      level: 'info',
+      source: 'train',
+      message: `模型训练开始 · ${body.train_start}~${body.train_end} · horizon ${body.label_horizon ?? 5} · 大区间逐日特征面板,可能需数分钟`,
+    });
     let result: any;
     try {
       result = await this.engine.train({
@@ -64,8 +70,14 @@ export class ModelsController {
         device: body.device,
       });
     } catch (e) {
+      const detail =
+        e instanceof EngineError
+          ? typeof e.detail === 'string'
+            ? e.detail
+            : JSON.stringify(e.detail)
+          : String(e);
+      this.repo.logInsert({ level: 'error', source: 'train', message: `模型训练失败 · ${detail}` });
       if (e instanceof EngineError) {
-        const detail = typeof e.detail === 'string' ? e.detail : JSON.stringify(e.detail);
         if (e.status === 422) throw new UnprocessableEntityException(detail); // purge<label_horizon 被拒
         if (e.status === 400) throw new BadRequestException(detail);
       }
@@ -75,6 +87,11 @@ export class ModelsController {
       { strategy_id: body.strategy_id ?? null, name: body.name ?? null },
       result,
     );
+    this.repo.logInsert({
+      level: 'info',
+      source: 'train',
+      message: `模型训练完成 · ${result.n_folds} 折 · ${result.n_samples} 样本 · 样本外IC ${result.ic_oos} · ${((Date.now() - t0) / 1000).toFixed(1)}s`,
+    });
     return { id, ...result };
   }
 

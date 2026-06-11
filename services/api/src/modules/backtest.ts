@@ -107,6 +107,12 @@ export class BacktestController {
       effectiveTrainEnd = body.train_end;
     }
 
+    const t0 = Date.now();
+    this.repo.logInsert({
+      level: 'info',
+      source: 'backtest',
+      message: `回测开始 · ${body.backtest_start}~${body.backtest_end} · 口径 ${resolvedScoring}`,
+    });
     let result: any;
     try {
       result = await this.engine.backtest({
@@ -122,13 +128,24 @@ export class BacktestController {
         custom,
       });
     } catch (e) {
+      const detail =
+        e instanceof EngineError
+          ? typeof e.detail === 'string'
+            ? e.detail
+            : JSON.stringify(e.detail)
+          : String(e);
+      this.repo.logInsert({ level: 'error', source: 'backtest', message: `回测失败 · ${detail}` });
       if (e instanceof EngineError) {
-        const detail = typeof e.detail === 'string' ? e.detail : JSON.stringify(e.detail);
         if (e.status === 422) throw new UnprocessableEntityException(detail); // 非诚实样本外被拒
         if (e.status === 400) throw new BadRequestException(detail);
       }
       throw e;
     }
+    this.repo.logInsert({
+      level: 'info',
+      source: 'backtest',
+      message: `回测完成 · ${result.n_days} 日 · ${result.n_trades} 笔 · ${((Date.now() - t0) / 1000).toFixed(1)}s`,
+    });
     const id = this.repo.insertBacktest(
       {
         strategy_id: body.strategy_id ?? null,

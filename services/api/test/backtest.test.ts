@@ -150,6 +150,12 @@ test('POST /backtests 落库,GET 列表/详情可查(含 nav_curve + metrics)', 
     // 逐日明细:资产拆解 + 持仓快照
     assert.equal(got.nav_curve[1].cash, 600_000);
     assert.equal(got.nav_curve[1].positions[0].code, '600519.SH');
+
+    // 可观测性:回测写入统一日志(开始 + 完成)
+    r = await fastify.inject({ method: 'GET', url: '/api/v1/logs' });
+    const msgs = r.json().map((l: { message: string }) => l.message);
+    assert.ok(msgs.some((m: string) => m.includes('回测开始')));
+    assert.ok(msgs.some((m: string) => m.includes('回测完成')));
   } finally {
     await app.close();
   }
