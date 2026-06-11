@@ -19,6 +19,7 @@ interface ModelsState {
   selectedId: string | null;
   detail: any | null;
   training: boolean;
+  startedAt: number; // 训练开始 epoch ms(跨导航留存,供 RunningBar 真实计时)
   error: string | null;
 }
 
@@ -37,6 +38,7 @@ export const useModelsStore = defineStore('models', {
     selectedId: null,
     detail: null,
     training: false,
+    startedAt: 0,
     error: null,
   }),
   actions: {
@@ -61,6 +63,7 @@ export const useModelsStore = defineStore('models', {
       const f = this.form;
       if (!f.train_start || !f.train_end) return;
       this.training = true;
+      this.startedAt = Date.now();
       this.error = null;
       try {
         const created = await api.trainModel({ ...f });

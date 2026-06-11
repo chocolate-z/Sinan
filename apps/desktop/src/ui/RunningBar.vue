@@ -3,12 +3,15 @@
 // 真实进度 % / ETA 需后端在 walk-forward / 逐日循环里流式发进度(jobs+SSE,如建缓存),留作后端跟进。
 import { computed, onBeforeUnmount, ref, watch } from 'vue';
 
-const props = withDefaults(defineProps<{ active: boolean; label?: string }>(), {
+// since:任务真实开始时间(epoch ms,来自 store,跨导航留存)。传了就用它算已用时 ——
+// 这样切走再切回(组件重挂)也接着真实计时,而非每次重置为 0。未传则回退到本地开始时间。
+const props = withDefaults(defineProps<{ active: boolean; label?: string; since?: number }>(), {
   label: '运行中',
+  since: 0,
 });
 
-const elapsed = ref(0);
-let startedAt = 0;
+const now = ref(Date.now());
+let localStart = 0;
 let timer: number | undefined;
 
 function stop() {
@@ -20,11 +23,11 @@ watch(
   () => props.active,
   (a) => {
     if (a) {
-      startedAt = Date.now();
-      elapsed.value = 0;
+      localStart = Date.now();
+      now.value = Date.now();
       stop();
       timer = window.setInterval(() => {
-        elapsed.value = Math.floor((Date.now() - startedAt) / 1000);
+        now.value = Date.now();
       }, 1000);
     } else {
       stop();
@@ -34,6 +37,10 @@ watch(
 );
 onBeforeUnmount(stop);
 
+const elapsed = computed(() => {
+  const start = props.since && props.since > 0 ? props.since : localStart;
+  return Math.max(0, Math.floor((now.value - start) / 1000));
+});
 const elapsedText = computed(() => {
   const s = elapsed.value;
   const m = Math.floor(s / 60);

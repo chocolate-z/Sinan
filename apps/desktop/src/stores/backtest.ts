@@ -18,6 +18,7 @@ export interface BacktestForm {
 interface BacktestState {
   form: BacktestForm;
   running: boolean;
+  startedAt: number; // 本次回测开始的 epoch ms(跨导航留存,供 RunningBar 真实计时)
   error: string | null;
   result: any | null;
   history: any[];
@@ -37,6 +38,7 @@ export const useBacktestStore = defineStore('backtest', {
       model_id: '',
     },
     running: false,
+    startedAt: 0,
     error: null,
     result: null,
     history: [],
@@ -73,6 +75,7 @@ export const useBacktestStore = defineStore('backtest', {
       if (!this.canRun) return;
       const f = this.form;
       this.running = true;
+      this.startedAt = Date.now();
       this.error = null;
       try {
         const body: Record<string, unknown> = {

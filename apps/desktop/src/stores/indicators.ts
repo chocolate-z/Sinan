@@ -14,6 +14,7 @@ interface IndicatorsState {
   report: any | null;
   selectedName: string | null;
   loading: boolean;
+  startedAt: number; // 质检开始 epoch ms(跨导航留存,供 RunningBar 真实计时)
   error: string | null;
   // 自定义因子 DSL 编辑器
   expr: string;
@@ -37,6 +38,7 @@ export const useIndicatorsStore = defineStore('indicators', {
     report: null,
     selectedName: null,
     loading: false,
+    startedAt: 0,
     error: null,
     expr: 'zscore(-pe_ttm) + rank(roe)',
     factorName: '',
@@ -107,6 +109,7 @@ export const useIndicatorsStore = defineStore('indicators', {
     async run() {
       if (!this.form.start || !this.form.end) return;
       this.loading = true;
+      this.startedAt = Date.now();
       this.error = null;
       try {
         this.report = await api.indicatorsQuality({ ...this.form });
