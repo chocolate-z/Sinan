@@ -1,25 +1,111 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue';
-import { useTradingStore } from '../../stores/trading';
+import { useTradingStore, type Holding } from '../../stores/trading';
 import { useAppStore } from '../../stores/app';
 import { formatPnl } from '../../lib/pnl';
 import { fmt, fmtInt, fmtPct } from '../../lib/format';
 import PageHero from '../../ui/PageHero.vue';
 import Icon from '../../shell/Icon.vue';
+import Modal from '../../ui/Modal.vue';
+import StockSearch from '../../ui/StockSearch.vue';
 
 const trading = useTradingStore();
 const app = useAppStore();
 const tab = ref<'personal' | 'model'>('personal');
 
-const form = reactive({ stock_code: '', stock_name: '', shares: 0, avg_cost: 0 });
+// 建仓 / 加仓 / 减仓 弹窗
+type DialogMode = 'create' | 'add' | 'reduce';
+const dialog = reactive({
+  open: false,
+  mode: 'create' as DialogMode,
+  code: '',
+  name: '',
+  shares: 0,
+  price: 0,
+  curShares: 0, // 现有股数 / 成本(加减仓预览 + 校验)
+  curCost: 0,
+});
+const submitting = ref(false);
+const dialogError = ref<string | null>(null);
 
-async function addPersonal() {
-  if (!form.stock_code || !form.shares || !form.avg_cost) return;
-  await trading.addPersonal({ ...form });
-  form.stock_code = '';
-  form.stock_name = '';
-  form.shares = 0;
-  form.avg_cost = 0;
+const dialogTitle = computed(() =>
+  dialog.mode === 'create'
+    ? '建仓'
+    : `${dialog.mode === 'add' ? '加仓' : '减仓'} · ${dialog.name || dialog.code}`,
+);
+// 加仓后的移动加权均价预览(口径与服务端 personalAdjust 一致)
+const previewCost = computed<number | null>(() => {
+  if (dialog.mode !== 'add' || !(dialog.shares > 0) || !(dialog.price > 0)) return null;
+  const total = dialog.curShares + dialog.shares;
+  return total > 0
+    ? (dialog.curShares * dialog.curCost + dialog.shares * dialog.price) / total
+    : null;
+});
+
+function openCreate() {
+  Object.assign(dialog, {
+    open: true,
+    mode: 'create',
+    code: '',
+    name: '',
+    shares: 0,
+    price: 0,
+    curShares: 0,
+    curCost: 0,
+  });
+  dialogError.value = null;
+}
+function openAdjust(h: Holding, mode: 'add' | 'reduce') {
+  Object.assign(dialog, {
+    open: true,
+    mode,
+    code: h.stock_code,
+    name: h.stock_name || '',
+    shares: 0,
+    price: h.current_price ?? h.avg_cost ?? 0,
+    curShares: h.shares,
+    curCost: h.avg_cost,
+  });
+  dialogError.value = null;
+}
+function onPick(s: { code: string; name: string }) {
+  dialog.code = s.code;
+  dialog.name = s.name;
+}
+async function submitDialog() {
+  dialogError.value = null;
+  if (!dialog.code) {
+    dialogError.value = '请先选择股票';
+    return;
+  }
+  if (!(dialog.shares > 0)) {
+    dialogError.value = '股数必须 > 0';
+    return;
+  }
+  if (dialog.mode !== 'reduce' && !(dialog.price > 0)) {
+    dialogError.value = '价格 / 成本必须 > 0';
+    return;
+  }
+  if (dialog.mode === 'reduce' && dialog.shares > dialog.curShares) {
+    dialogError.value = `最多可减 ${dialog.curShares} 股`;
+    return;
+  }
+  submitting.value = true;
+  try {
+    await trading.addPersonal({
+      stock_code: dialog.code,
+      stock_name: dialog.name || undefined,
+      shares: dialog.shares,
+      price: dialog.price,
+      op: dialog.mode === 'reduce' ? 'reduce' : 'add',
+    });
+    dialog.open = false;
+  } catch (e) {
+    const d = (e as { detail?: unknown })?.detail;
+    dialogError.value = d && typeof d === 'object' ? JSON.stringify(d) : String(d ?? e);
+  } finally {
+    submitting.value = false;
+  }
 }
 
 onMounted(() => {
@@ -180,18 +266,10 @@ function weightOf(h: { market_value?: number | null }): number | null {
           >
             <Icon name="refresh" :size="14" /> 刷新
           </button>
+          <button v-else class="btn btn-primary btn-sm" @click="openCreate">
+            <Icon name="plus" :size="14" /> 建仓
+          </button>
         </div>
-      </div>
-
-      <!-- 个人:增仓表单 -->
-      <div v-if="tab === 'personal'" class="add-bar">
-        <input v-model="form.stock_code" class="input" placeholder="代码 如 600519.SH" />
-        <input v-model="form.stock_name" class="input" placeholder="名称(选填)" />
-        <input v-model.number="form.shares" class="input" type="number" placeholder="股数" />
-        <input v-model.number="form.avg_cost" class="input" type="number" placeholder="成本价" />
-        <button class="btn btn-primary btn-sm" @click="addPersonal">
-          <Icon name="plus" :size="14" /> 建仓/加仓
-        </button>
       </div>
 
       <table v-if="holdings.length" class="dt">
@@ -206,7 +284,7 @@ function weightOf(h: { market_value?: number | null }): number | null {
             <th class="num">浮动盈亏</th>
             <th class="num">盈亏比例</th>
             <th class="num" style="width: 120px">占比</th>
-            <th v-if="tab === 'personal'" class="num" style="width: 64px"></th>
+            <th v-if="tab === 'personal'" class="num" style="width: 116px"></th>
           </tr>
         </thead>
         <tbody>
@@ -248,9 +326,17 @@ function weightOf(h: { market_value?: number | null }): number | null {
               <span v-else class="c3">—</span>
             </td>
             <td v-if="tab === 'personal'" class="num">
-              <button class="btn btn-ghost btn-sm" @click="trading.removePersonal(h.stock_code)">
-                删除
-              </button>
+              <div class="row-actions">
+                <button class="act-btn" title="加仓" @click="openAdjust(h, 'add')">加</button>
+                <button class="act-btn" title="减仓" @click="openAdjust(h, 'reduce')">减</button>
+                <button
+                  class="act-btn danger"
+                  title="删除"
+                  @click="trading.removePersonal(h.stock_code)"
+                >
+                  删
+                </button>
+              </div>
             </td>
           </tr>
         </tbody>
@@ -291,9 +377,12 @@ function weightOf(h: { market_value?: number | null }): number | null {
           {{
             tab === 'model'
               ? '启用某模型并盘后跑一轮后,这里出现自动持仓(纸面验证,不下达真实委托)。'
-              : '在上方录入你的真实持仓即可跟踪当日收益与浮盈;不会自动下单,数据仅存本机。'
+              : '点击右上「建仓」录入你的真实持仓即可跟踪当日收益与浮盈;不会自动下单,数据仅存本机。'
           }}
         </div>
+        <button v-if="tab === 'personal'" class="btn btn-primary btn-sm" @click="openCreate">
+          <Icon name="plus" :size="14" /> 建仓
+        </button>
       </div>
     </div>
 
@@ -301,6 +390,69 @@ function weightOf(h: { market_value?: number | null }): number | null {
       个人与模型两套账本完全独立;仅供研究,非投资建议;模拟盘不进行任何自动真实下单。估值采用收盘价,当日盈亏来自实时源「现价
       vs 昨收」。
     </p>
+
+    <!-- 建仓 / 加仓 / 减仓 弹窗 -->
+    <Modal v-model="dialog.open" :title="dialogTitle" :width="420">
+      <div class="dlg">
+        <div v-if="dialog.mode === 'create'" class="dlg-field">
+          <label class="field-label">股票(代码或名称)</label>
+          <StockSearch @select="onPick" />
+          <p v-if="dialog.code" class="dlg-picked mono">
+            已选:{{ dialog.name }} · {{ dialog.code }}
+          </p>
+        </div>
+        <div v-else class="dlg-field">
+          <label class="field-label">标的</label>
+          <div class="dlg-stock mono">
+            {{ dialog.name || dialog.code }} · {{ dialog.code }}
+            <span class="dlg-cur"
+              >现 {{ fmtInt(dialog.curShares) }} 股 @ {{ fmt(dialog.curCost) }}</span
+            >
+          </div>
+        </div>
+
+        <div class="dlg-row">
+          <div class="dlg-field">
+            <label class="field-label">{{ dialog.mode === 'reduce' ? '减少股数' : '股数' }}</label>
+            <input
+              v-model.number="dialog.shares"
+              class="input mono"
+              type="number"
+              min="0"
+              step="100"
+            />
+          </div>
+          <div class="dlg-field">
+            <label class="field-label">{{
+              dialog.mode === 'create'
+                ? '成本价'
+                : dialog.mode === 'add'
+                  ? '加仓价'
+                  : '成交价(选填)'
+            }}</label>
+            <input
+              v-model.number="dialog.price"
+              class="input mono"
+              type="number"
+              min="0"
+              step="0.01"
+            />
+          </div>
+        </div>
+
+        <p v-if="previewCost != null" class="dlg-preview">
+          加仓后均价 ≈ <b class="mono">{{ fmt(previewCost) }}</b>
+          <span class="dlg-cur">(现 {{ fmt(dialog.curCost) }})</span>
+        </p>
+        <p v-if="dialogError" class="dlg-err"><Icon name="alert" :size="13" /> {{ dialogError }}</p>
+      </div>
+      <template #footer>
+        <button class="btn btn-secondary" @click="dialog.open = false">取消</button>
+        <button class="btn btn-primary" :disabled="submitting" @click="submitDialog">
+          {{ submitting ? '提交中…' : '确定' }}
+        </button>
+      </template>
+    </Modal>
   </div>
 </template>
 
@@ -361,20 +513,92 @@ function weightOf(h: { market_value?: number | null }): number | null {
   border-radius: 2px;
 }
 
-/* 增仓表单 */
-.add-bar {
+/* 行内 加/减/删 操作 */
+.row-actions {
+  display: inline-flex;
+  gap: 5px;
+  justify-content: flex-end;
+}
+.act-btn {
+  width: 26px;
+  height: 24px;
+  border: 0.5px solid var(--border);
+  border-radius: var(--r-sm);
+  background: var(--bg-input);
+  color: var(--text-2);
+  font-size: 12px;
+  cursor: pointer;
+  transition:
+    background var(--t-fast) var(--ease),
+    color var(--t-fast) var(--ease),
+    border-color var(--t-fast) var(--ease);
+}
+.act-btn:hover {
+  background: var(--accent-bg);
+  color: var(--accent);
+  border-color: var(--accent);
+}
+.act-btn.danger:hover {
+  background: var(--status-err-bg);
+  color: var(--status-err);
+  border-color: var(--status-err);
+}
+
+/* 建仓 / 加减仓 弹窗 */
+.dlg {
   display: flex;
-  gap: 8px;
+  flex-direction: column;
+  gap: 14px;
+}
+.dlg-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+.dlg-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.dlg-field .input {
+  width: 100%;
+}
+.dlg-picked {
+  margin: 0;
+  font-size: 11.5px;
+  color: var(--accent);
+}
+.dlg-stock {
+  display: flex;
   align-items: center;
-  padding: 14px 16px;
-  border-bottom: 0.5px solid var(--border);
+  justify-content: space-between;
+  gap: 10px;
+  padding: 9px 12px;
+  border-radius: var(--r-md);
+  background: var(--bg-input);
+  border: 0.5px solid var(--border);
+  font-size: 13px;
+  color: var(--text-1);
 }
-.add-bar .input {
-  flex: 1 1 130px;
-  min-width: 0;
+.dlg-cur {
+  font-size: 11px;
+  color: var(--text-3);
 }
-.add-bar .btn {
-  flex: none;
+.dlg-preview {
+  margin: 0;
+  font-size: 12.5px;
+  color: var(--text-2);
+}
+.dlg-preview b {
+  color: var(--accent);
+}
+.dlg-err {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  font-size: var(--fs-sub);
+  color: var(--status-err);
 }
 
 /* 表格内单元 */

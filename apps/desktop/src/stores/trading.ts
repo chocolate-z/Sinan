@@ -2,7 +2,7 @@ import { defineStore } from 'pinia';
 import { api } from '../api/client';
 import { groupSignals, type SignalRow } from '../lib/signals';
 
-interface Holding {
+export interface Holding {
   stock_code: string;
   stock_name?: string | null;
   shares: number;
@@ -102,7 +102,9 @@ export const useTradingStore = defineStore('trading', {
       stock_code: string;
       stock_name?: string;
       shares: number;
-      avg_cost: number;
+      avg_cost?: number;
+      price?: number;
+      op?: 'set' | 'add' | 'reduce';
       note?: string;
     }) {
       this.personalHoldings = await api.addPersonalHolding(input);
