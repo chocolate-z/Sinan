@@ -215,12 +215,14 @@ onBeforeUnmount(() => {
 
 <template>
   <div class="dp">
-    <button
+    <div
       ref="trigger"
-      type="button"
+      role="button"
+      tabindex="0"
       class="dp-trigger input"
       :class="{ empty: !modelValue, on: open, 'has-val': !!modelValue }"
       @click="toggle"
+      @keydown.enter="toggle"
     >
       <span class="dp-val mono">{{ modelValue || placeholder }}</span>
       <span class="dp-icons">
@@ -248,7 +250,7 @@ onBeforeUnmount(() => {
           </svg>
         </span>
       </span>
-    </button>
+    </div>
 
     <Teleport to="body">
       <div v-if="open" ref="panel" class="dp-panel" :style="panelStyle">
@@ -414,8 +416,11 @@ onBeforeUnmount(() => {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  flex-wrap: nowrap;
   gap: 8px;
   width: 100%;
+  height: 30px; /* 显式锁高 + box-sizing,不靠 .input,杜绝任何元素/webview 撑高成竖排 */
+  box-sizing: border-box;
   cursor: pointer;
   text-align: left;
   transition:
