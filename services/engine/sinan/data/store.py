@@ -1,10 +1,13 @@
 """列式缓存写入(仅 engine 写)。按 board+year 分区 upsert,按主键去重。
 
 去重是「断点续传不产生重复行」红线的存储层保障:重复写入同一 (key) 取最后一条。
+健壮性:① 原子写(临时文件 + rename)—— 写入中断不会留下损坏的半截 parquet;
+        ② 安全读 —— 已存在的损坏/0 字节 parquet(历史中断残留)不再让整个建缓存崩。
 """
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 import polars as pl
@@ -16,6 +19,29 @@ from . import layout
 def _year_of(date_str: str) -> str:
     s = str(date_str)
     return s[:4]
+
+
+def _safe_read_parquet(p: Path) -> pl.DataFrame | None:
+    """读 parquet;损坏 / 0 字节(写入中断残留)→ 删除该文件并返回 None。
+
+    删除是自愈关键:损坏文件无法恢复,删掉后 ① 建缓存重抓该缺口重写;② DuckDB 数据层
+    的 glob(训练/质检/回测读取)不再命中它而崩。不删则它会反复让整个流程报错。
+    """
+    try:
+        return pl.read_parquet(p)
+    except Exception:  # noqa: BLE001 — 损坏文件:删除自愈
+        try:
+            p.unlink()
+        except OSError:
+            pass
+        return None
+
+
+def _atomic_write_parquet(df: pl.DataFrame, target: Path) -> None:
+    """原子写:先写 .tmp 再 os.replace,避免中断留下损坏分区(本次报错根因)。"""
+    tmp = target.parent / (target.name + ".tmp")
+    df.write_parquet(tmp)
+    os.replace(tmp, target)  # 同盘原子替换(Windows/Posix 均可)
 
 
 def write_dataset(cache_root: Path, dataset: str, df: pl.DataFrame) -> int:
@@ -38,19 +64,21 @@ def write_dataset(cache_root: Path, dataset: str, df: pl.DataFrame) -> int:
         part = part.drop(["_board", "_year"])
         target = layout.partition_file(cache_root, dataset, str(board), str(year))
         target.parent.mkdir(parents=True, exist_ok=True)
-        if target.exists():
-            existing = pl.read_parquet(target)
-            combined = pl.concat([existing, part], how="diagonal_relaxed")
-        else:
-            combined = part
+        existing = _safe_read_parquet(target) if target.exists() else None
+        # existing 为 None:不存在,或损坏 → 直接以新数据重写该分区(自愈损坏文件)。
+        combined = (
+            pl.concat([existing, part], how="diagonal_relaxed") if existing is not None else part
+        )
         # 按主键去重,保留最后一条(同键以新数据覆盖)。
         combined = combined.unique(subset=key_cols, keep="last").sort(key_cols)
-        combined.write_parquet(target)
+        _atomic_write_parquet(combined, target)
         written += part.height
     return written
 
 
-def coverage_for(cache_root: Path, dataset: str, stock_code: str) -> tuple[str | None, str | None, int]:
+def coverage_for(
+    cache_root: Path, dataset: str, stock_code: str
+) -> tuple[str | None, str | None, int]:
     """返回某股某 dataset 的 (first_date, last_date, rows),供 data_coverage 台账与增量锚点。"""
     if not layout.has_any(cache_root, dataset):
         return None, None, 0
@@ -59,7 +87,9 @@ def coverage_for(cache_root: Path, dataset: str, stock_code: str) -> tuple[str |
     d = layout.dataset_dir(Path(cache_root), dataset) / f"board={board}"
     if not d.exists():
         return None, None, 0
-    frames = [pl.read_parquet(p) for p in d.rglob("*.parquet")]
+    frames = [
+        f for p in d.rglob("*.parquet") if (f := _safe_read_parquet(p)) is not None
+    ]  # 跳过损坏分区
     if not frames:
         return None, None, 0
     df = pl.concat(frames, how="diagonal_relaxed").filter(pl.col("stock_code") == stock_code)
