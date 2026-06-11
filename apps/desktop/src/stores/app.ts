@@ -11,6 +11,13 @@ interface ProviderInfo {
   status: string;
 }
 
+interface Coverage {
+  stock_count?: number;
+  total_rows?: number;
+  first_date?: string | null;
+  last_date?: string | null;
+}
+
 interface AppState {
   onboardingDone: boolean;
   step: string;
@@ -21,6 +28,7 @@ interface AppState {
   engineHealth: boolean;
   providers: ProviderInfo[];
   activeProvider: string | null;
+  coverage: Coverage | null;
   ready: boolean;
 }
 
@@ -35,6 +43,7 @@ export const useAppStore = defineStore('app', {
     engineHealth: false,
     providers: [],
     activeProvider: null,
+    coverage: null,
     ready: false,
   }),
   getters: {
@@ -88,9 +97,21 @@ export const useAppStore = defineStore('app', {
         this.providers = [];
       }
     },
+    /** 本地缓存覆盖(只读展示:状态栏「缓存 N 条」、设置页覆盖)。无缓存时为 null,诚实留空。 */
+    async refreshCoverage() {
+      try {
+        this.coverage = (await api.coverage()) as Coverage;
+      } catch {
+        this.coverage = null;
+      }
+    },
     async bootstrap() {
       await this.refreshHealth();
-      await Promise.all([this.refreshOnboarding(), this.refreshProviders()]);
+      await Promise.all([
+        this.refreshOnboarding(),
+        this.refreshProviders(),
+        this.refreshCoverage(),
+      ]);
       this.ready = true;
     },
   },

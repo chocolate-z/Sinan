@@ -394,7 +394,7 @@ onMounted(refresh);
 }
 .prov-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  grid-template-columns: repeat(4, 1fr);
   gap: 10px;
   margin-bottom: 18px;
 }
@@ -484,7 +484,7 @@ onMounted(refresh);
 }
 .probe-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  grid-template-columns: repeat(3, 1fr);
   gap: 11px 32px;
 }
 .probe-item {

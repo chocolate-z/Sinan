@@ -1,7 +1,25 @@
 <script setup lang="ts">
+import { onBeforeUnmount, onMounted, ref } from 'vue';
 import { useAppStore } from '../stores/app';
+import { fmtInt } from '../lib/format';
 
 const app = useAppStore();
+
+// 实时时钟(本机时间,HH:MM:SS,每秒更新)。
+const clock = ref('');
+let timer: number | undefined;
+function tick() {
+  const d = new Date();
+  const p = (n: number) => String(n).padStart(2, '0');
+  clock.value = `${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
+}
+onMounted(() => {
+  tick();
+  timer = window.setInterval(tick, 1000);
+});
+onBeforeUnmount(() => {
+  if (timer) window.clearInterval(timer);
+});
 </script>
 
 <template>
@@ -22,9 +40,13 @@ const app = useAppStore();
         <span>数据源</span>
         <span class="mono sb-val">{{ app.activeProvider ?? '未配置' }}</span>
       </span>
+      <span v-if="app.coverage?.total_rows" class="mono sb-cache">
+        缓存 {{ fmtInt(app.coverage.total_rows) }} 条
+      </span>
     </div>
     <div class="sb-right">
-      <span>本工具仅供量化研究与策略验证,不构成任何投资建议</span>
+      <span class="sb-disclaimer">本工具仅供量化研究与策略验证,不构成任何投资建议</span>
+      <span class="mono sb-clock">{{ clock }}</span>
     </div>
   </footer>
 </template>
@@ -75,5 +97,16 @@ const app = useAppStore();
 }
 .sb-val {
   color: var(--text-2);
+}
+.sb-cache {
+  color: var(--text-3);
+}
+.sb-right {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+.sb-clock {
+  color: var(--text-3);
 }
 </style>

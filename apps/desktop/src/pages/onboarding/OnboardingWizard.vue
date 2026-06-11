@@ -167,7 +167,7 @@ const buildPct = computed(() => Math.round(build.progress * 100));
       <header class="brand">
         <div class="brand-logo"><Logo :size="30" /></div>
         <h1 class="brand-title">欢迎使用 司南 Sinan</h1>
-        <p class="brand-sub">诚实、纪律化、可解释的本机量化研究工具</p>
+        <p class="brand-sub">诚实、纪律化、可解释的本地量化研究工具</p>
       </header>
 
       <!-- 步骤进度条:编号圆点 + 连接线,当前步 accent,已过步打勾 -->
@@ -450,9 +450,10 @@ const buildPct = computed(() => Math.round(build.progress * 100));
   display: grid;
   place-items: center;
   margin-bottom: var(--sp-4);
-  background: var(--bg-panel);
-  border: 0.5px solid var(--border);
-  box-shadow: var(--hi-edge), var(--shadow-card);
+  /* 紫渐变软底 + 描边 + accent 发光:贴设计「品牌发光」,同时保留四色花朵 logo。 */
+  background: var(--accent-grad-soft);
+  border: 0.5px solid var(--accent);
+  box-shadow: var(--accent-glow);
 }
 .brand-title {
   margin: 0;
