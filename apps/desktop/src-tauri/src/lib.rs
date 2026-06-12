@@ -123,6 +123,13 @@ fn spawn(spec: &SidecarSpec) -> std::io::Result<Child> {
     if let Some(cwd) = &spec.cwd {
         cmd.current_dir(cwd);
     }
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        // CREATE_NO_WINDOW:生产壳是 GUI(无控制台),控制台子进程(engine/api)默认会各弹一个
+        // 黑色控制台窗口。dev 从终端跑时句柄继承不变,sidecar 日志照常打到终端。
+        cmd.creation_flags(0x0800_0000);
+    }
     cmd.spawn()
 }
 
