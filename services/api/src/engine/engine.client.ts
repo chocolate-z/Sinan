@@ -98,6 +98,7 @@ export interface TrainRequest {
   top_quantile?: number;
   train_threads?: string;
   device?: string;
+  feature_workers?: number | null; // 特征面板多核数;省略/null → engine 'auto'(min(核-1,4));1=串行
 }
 
 export interface FactorQualityRequest {
@@ -153,10 +154,10 @@ export interface EngineClient {
   prices(req: PricesRequest): Promise<PricesResult>;
   /** 回测(逐日撮合 + 硬守卫 + 含成本)。守卫违反抛 EngineError(422)。 */
   backtest(req: BacktestRequest): Promise<any>;
-  /** 训练(walk-forward + 样本内外 IC)。purge<label_horizon 抛 EngineError(422)。 */
-  train(req: TrainRequest): Promise<any>;
-  /** 因子质检(真实 IC/ICIR/覆盖度 + IC 时序 + 十分位分层)。无缓存/区间过短抛 EngineError(400)。 */
-  factorQuality(req: FactorQualityRequest): Promise<any>;
+  /** 训练(walk-forward + 样本内外 IC)。SSE 流式:onEvent 收特征/逐折进度;purge<label_horizon 抛 EngineError(422)。 */
+  train(req: TrainRequest, onEvent?: (ev: any) => void): Promise<any>;
+  /** 因子质检(真实 IC/ICIR/覆盖度 + IC 时序 + 十分位分层)。SSE 流式:onEvent 收逐因子进度;无缓存/区间过短抛 EngineError(400)。 */
+  factorQuality(req: FactorQualityRequest, onEvent?: (ev: any) => void): Promise<any>;
   /** 自定义因子 DSL 校验(白名单 + 回看算子,结构上防未来函数)。返回 ok/errors/fields/functions。 */
   indicatorsValidate(expr: string): Promise<any>;
 }
@@ -212,6 +213,108 @@ export class HttpEngineClient implements EngineClient {
             } catch (e) {
               reject(e);
             }
+          });
+        },
+      );
+      req.on('error', reject);
+      // 故意不调 req.setTimeout —— 长计算不应被杀。
+      req.write(data);
+      req.end();
+    });
+  }
+
+  /**
+   * 长耗时计算的 **SSE 流式** 版(训练/质检)——同样走 node:http 绝不设超时。
+   * 引擎逐进度吐 `data: {...}\n\n`:进度事件回调给 onEvent;末尾 `{stage:'done', result}` resolve;
+   * `{stage:'error', status, detail}` → EngineError(转发 422/400)。
+   * 相比一次性 slowPost:① 持续数据流保活长连接,根治 4 小时空闲被对端重置(ECONNRESET);
+   * ② 进度可观测(api 据此写统一日志)。预检失败(非 2xx,如无缓存 400)按普通错误读 body 抛 EngineError。
+   */
+  private slowPostStream(
+    path: string,
+    payload: unknown,
+    onEvent?: (ev: any) => void,
+  ): Promise<unknown> {
+    const data = JSON.stringify(payload ?? {});
+    const u = new URL(`${config.engineBaseUrl()}${path}`);
+    const headers = { ...this.headers(), 'content-length': String(Buffer.byteLength(data)) };
+    return new Promise((resolve, reject) => {
+      const req = http.request(
+        {
+          hostname: u.hostname,
+          port: u.port,
+          path: `${u.pathname}${u.search}`,
+          method: 'POST',
+          headers,
+        },
+        (res) => {
+          const status = res.statusCode ?? 0;
+          res.setEncoding('utf8');
+          // 预检失败:开流前抛的非 2xx(如本地无缓存 400)。读 body → EngineError,语义同 slowPost。
+          if (status < 200 || status >= 300) {
+            let buf = '';
+            res.on('data', (c) => (buf += c));
+            res.on('end', () => {
+              let detail: unknown;
+              try {
+                detail = (JSON.parse(buf) as { detail?: unknown }).detail;
+              } catch {
+                detail = buf;
+              }
+              reject(new EngineError(status, detail));
+            });
+            return;
+          }
+          // 2xx → SSE:逐 `data:` 块解析。
+          let buf = '';
+          let settled = false;
+          let finalResult: unknown = undefined;
+          let gotDone = false;
+          res.on('data', (chunk) => {
+            buf += chunk;
+            let nl: number;
+            while ((nl = buf.indexOf('\n\n')) >= 0) {
+              const block = buf.slice(0, nl);
+              buf = buf.slice(nl + 2);
+              const line = block.split('\n').find((l) => l.startsWith('data: '));
+              if (!line) continue;
+              let ev: any;
+              try {
+                ev = JSON.parse(line.slice(6));
+              } catch {
+                continue;
+              }
+              if (ev?.stage === 'error') {
+                settled = true;
+                req.destroy();
+                reject(new EngineError(typeof ev.status === 'number' ? ev.status : 500, ev.detail));
+                return;
+              }
+              if (ev?.stage === 'done') {
+                gotDone = true;
+                finalResult = ev.result;
+                continue;
+              }
+              if (onEvent) {
+                try {
+                  onEvent(ev);
+                } catch {
+                  /* 进度回调异常绝不影响主流程 */
+                }
+              }
+            }
+          });
+          res.on('end', () => {
+            if (settled) return;
+            settled = true;
+            if (gotDone) resolve(finalResult);
+            // 流意外中断却没收到 done/error(对端重置/进程死)→ 诚实报错,不静默当成功。
+            else reject(new Error('engine stream ended without a result'));
+          });
+          res.on('error', (e) => {
+            if (settled) return;
+            settled = true;
+            reject(e);
           });
         },
       );
@@ -333,12 +436,14 @@ export class HttpEngineClient implements EngineClient {
     return this.slowPost('/engine/backtest', req); // 无超时:逐日撮合回测可达数分钟
   }
 
-  async train(req: TrainRequest): Promise<any> {
-    return this.slowPost('/engine/train', req); // 无超时:walk-forward 训练逐日特征面板,大区间数分钟
+  async train(req: TrainRequest, onEvent?: (ev: any) => void): Promise<any> {
+    // SSE 流式:特征面板 + 逐折 IC 进度 → onEvent;无超时,持续数据流保活长连接。
+    return this.slowPostStream('/engine/train', req, onEvent);
   }
 
-  async factorQuality(req: FactorQualityRequest): Promise<any> {
-    return this.slowPost('/engine/factors/quality', req); // 无超时:逐日 IC 计算可达数分钟
+  async factorQuality(req: FactorQualityRequest, onEvent?: (ev: any) => void): Promise<any> {
+    // SSE 流式:特征面板 + 逐因子 IC 进度 → onEvent;无超时。
+    return this.slowPostStream('/engine/factors/quality', req, onEvent);
   }
 
   async indicatorsValidate(expr: string): Promise<any> {

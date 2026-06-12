@@ -21,6 +21,10 @@ class Factor:
     direction: int  # +1 或 -1
     required_caps: Capability
     fn: Callable[[FactorContext], pl.DataFrame]
+    # 时序回看(交易日数):该因子经 ctx.history 需要的最大历史窗口。0=只用 latest 截面(无需历史);
+    # None=未知/需全历史(自定义 DSL 因子可写任意窗口)。build_feature_panel 据此决定逐日窗口:
+    # 全部已知 → 取 max 裁剪历史(提速);任一 None → 不裁剪(保正确,绝不少取致静默降级,红线#3)。
+    lookback: int | None = 0
 
     def compute(self, ctx: FactorContext) -> pl.DataFrame:
         df = self.fn(ctx)
@@ -97,9 +101,10 @@ def _north_chg5(ctx: FactorContext) -> pl.DataFrame:
 
 
 DEFAULT_FACTORS: list[Factor] = [
-    Factor("ep", "value", +1, Capability.DAILY_BASIC, _ep),
-    Factor("bp", "value", +1, Capability.DAILY_BASIC, _bp),
-    Factor("roe", "quality", +1, Capability.FUNDAMENTAL, _roe),
-    Factor("mom20", "momentum", +1, Capability.DAILY_OHLCV, _mom20),
-    Factor("north_chg5", "northbound", +1, Capability.NORTHBOUND, _north_chg5),
+    # ep/bp/roe 只用 latest 截面(无需历史窗口)→ lookback=0;mom20 需 20 日前收盘、north_chg5 需 5 日前。
+    Factor("ep", "value", +1, Capability.DAILY_BASIC, _ep, lookback=0),
+    Factor("bp", "value", +1, Capability.DAILY_BASIC, _bp, lookback=0),
+    Factor("roe", "quality", +1, Capability.FUNDAMENTAL, _roe, lookback=0),
+    Factor("mom20", "momentum", +1, Capability.DAILY_OHLCV, _mom20, lookback=20),
+    Factor("north_chg5", "northbound", +1, Capability.NORTHBOUND, _north_chg5, lookback=5),
 ]

@@ -87,6 +87,49 @@ def test_feature_panel_no_future_function(tmp_path):
     assert p_full.equals(p_trunc), "特征面板受到了 >T 未来数据影响 —— 未来函数!"
 
 
+def test_feature_panel_windowed_equals_unbounded(tmp_path):
+    """提速正确性:有界回看(默认窗口)与无界(lookback=None)特征面板逐值相等。
+
+    40 天 > 窗口(mom20 回看 20 + 缓冲 5 + 1 = 26 行)→ 窗口真的截断了全历史,
+    真正考验「只取最近 N 行」不改 mom20/north 等时序因子的值(它们只用 last + shift(k))。"""
+    from dataclasses import replace
+
+    from sinan.factors.library import DEFAULT_FACTORS
+
+    dates = _dates(40)
+    cache = tmp_path / "c"
+    _write(cache, _frames(dates))
+
+    windowed = build_feature_panel(DataLayer(cache), CODES, dates).panel.sort(["date", "stock_code"])
+    unbounded_factors = [replace(f, lookback=None) for f in DEFAULT_FACTORS]
+    unbounded = build_feature_panel(
+        DataLayer(cache), CODES, dates, unbounded_factors
+    ).panel.sort(["date", "stock_code"])
+    assert windowed.equals(unbounded), "窗口裁剪改变了特征值 —— 提速破坏了正确性!"
+
+
+def test_feature_panel_parallel_equals_sequential(tmp_path):
+    """提速正确性②:多核并行(进程池按日期分块)与串行特征面板逐值相等。
+
+    直调 _build_panel_parallel(绕过 build_feature_panel 的「失败退串行」兜底),确保真的跑了并行路径
+    —— 否则兜底会让测试在并行悄悄失效时仍假绿。每日彼此独立,并行只是分核,PIT 不变。"""
+    from sinan.factors.library import DEFAULT_FACTORS
+    from sinan.training.features import _build_panel_parallel
+
+    dates = _dates(45)
+    cache = tmp_path / "c"
+    _write(cache, _frames(dates))
+    uniq = sorted(set(dates))
+
+    seq = build_feature_panel(DataLayer(cache), CODES, dates, workers=1).panel.sort(
+        ["date", "stock_code"]
+    )
+    par = _build_panel_parallel(
+        DataLayer(cache), CODES, uniq, list(DEFAULT_FACTORS), workers=2
+    ).panel.sort(["date", "stock_code"])
+    assert par.equals(seq), "并行结果与串行不一致 —— 多核破坏了正确性!"
+
+
 def test_feature_panel_shape_and_degrade(tmp_path):
     dates = _dates(30)
     cache = tmp_path / "c"

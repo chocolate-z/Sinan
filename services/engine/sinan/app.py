@@ -419,44 +419,85 @@ class TrainReq(BaseModel):
     top_quantile: float = 0.2
     train_threads: str = "auto"
     device: str = "auto"
+    # 特征面板多核:None→'auto'(min(核-1,4))利用多核;1=串行。每 worker 复制一份缓存到内存。
+    feature_workers: Optional[int] = None
+
+
+def _sse_compute(compute) -> StreamingResponse:
+    """把同步长计算(训练/质检)包装成 SSE 流式:worker 线程跑 compute(emit),逐进度事件推前端,
+    末尾推 {stage:'done', result:...} 或 {stage:'error', status, detail}。
+
+    动机:大区间训练/质检逐日特征面板可达数分钟乃至更久;原本一次性返回 JSON 的长连接 4 小时零字节
+    流动,被对端/系统空闲重置(ECONNRESET)且全程无进度。流式持续吐进度既给可见反馈、又保活连接。
+    域错误(HTTPException)如实带 status 走 error 事件(api 据此转发 422/400);其余 → 500。"""
+    q: "queue.Queue[Optional[dict]]" = queue.Queue()
+
+    def worker() -> None:
+        try:
+            result = compute(q.put)
+            q.put({"stage": "done", "result": result})
+        except HTTPException as e:
+            q.put({"stage": "error", "status": e.status_code, "detail": e.detail})
+        except Exception as e:  # noqa: BLE001 — 失败也要诚实推给前端,不静默
+            q.put({"stage": "error", "status": 500, "detail": str(e)})
+        finally:
+            q.put(None)
+
+    threading.Thread(target=worker, daemon=True).start()
+
+    def stream():
+        while True:
+            ev = q.get()
+            if ev is None:
+                break
+            yield f"data: {json.dumps(ev, ensure_ascii=False)}\n\n"
+
+    return StreamingResponse(stream(), media_type="text/event-stream")
 
 
 @app.post("/engine/train", dependencies=[Depends(require_internal)])
-def train(req: TrainReq) -> dict:
+def train(req: TrainReq) -> StreamingResponse:
+    """walk-forward 训练(SSE 流式:特征面板进度 + 逐折 IS/OOS IC + done/error)。"""
     from .training import TrainGuardError, run_train
 
     dl = DataLayer(config.cache_dir())
     pdf = dl.asof("price", "99999999", fields=["stock_code", "trade_date"])
     if pdf.is_empty():
+        # 预检失败:在开流前抛,返回非 2xx(api 按普通错误处理)。
         raise HTTPException(status_code=400, detail="本地无行情缓存,先建缓存再训练")
     trading_dates = sorted(set(pdf["trade_date"].to_list()))
     codes = req.codes or sorted(set(pdf["stock_code"].to_list()))
 
-    try:
-        res = run_train(
-            dl,
-            codes=codes,
-            trading_dates=trading_dates,
-            train_start=req.train_start,
-            train_end=req.train_end,
-            label_horizon=req.label_horizon,
-            purge=req.purge,
-            embargo=req.embargo,
-            train_span=req.train_span,
-            test_span=req.test_span,
-            model_type=req.model_type,
-            alpha=req.alpha,
-            l1_ratio=req.l1_ratio,
-            top_quantile=req.top_quantile,
-            train_threads=req.train_threads,
-            device=req.device,
-        )
-    except TrainGuardError as e:
-        # 422:违反 purge>=label_horizon 硬守卫(红线#1)。
-        raise HTTPException(status_code=422, detail=str(e))
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
-    return res.to_dict()
+    def compute(emit):
+        try:
+            res = run_train(
+                dl,
+                codes=codes,
+                trading_dates=trading_dates,
+                train_start=req.train_start,
+                train_end=req.train_end,
+                label_horizon=req.label_horizon,
+                purge=req.purge,
+                embargo=req.embargo,
+                train_span=req.train_span,
+                test_span=req.test_span,
+                model_type=req.model_type,
+                alpha=req.alpha,
+                l1_ratio=req.l1_ratio,
+                top_quantile=req.top_quantile,
+                train_threads=req.train_threads,
+                device=req.device,
+                on_progress=emit,
+                feature_workers="auto" if req.feature_workers is None else req.feature_workers,
+            )
+        except TrainGuardError as e:
+            # 422:违反 purge>=label_horizon 硬守卫(红线#1)。
+            raise HTTPException(status_code=422, detail=str(e))
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+        return res.to_dict()
+
+    return _sse_compute(compute)
 
 
 # ── 因子质检(M4):逐因子真实 IC/ICIR/覆盖度 + IC 时序 + 十分位分层 ──────────
@@ -467,10 +508,12 @@ class FactorQualityReq(BaseModel):
     n_deciles: int = 10
     codes: Optional[list[str]] = None
     custom: Optional[list[dict]] = None  # 自定义 DSL 因子 [{name, expr, group?}]
+    feature_workers: Optional[int] = None  # None→'auto' 多核;1=串行(自定义因子在场自动退串行)
 
 
 @app.post("/engine/factors/quality", dependencies=[Depends(require_internal)])
-def factors_quality(req: FactorQualityReq) -> dict:
+def factors_quality(req: FactorQualityReq) -> StreamingResponse:
+    """因子质检(SSE 流式:特征面板进度 + 逐因子 IC/ICIR/覆盖 + done/error)。"""
     from dataclasses import asdict
 
     from .factors.quality import factor_quality
@@ -484,18 +527,29 @@ def factors_quality(req: FactorQualityReq) -> dict:
     if len(dates) < req.n_deciles:
         raise HTTPException(status_code=400, detail="评估区间交易日不足(需 >= n_deciles)")
     codes = req.codes or sorted(set(pdf["stock_code"].to_list()))
-    results, degraded = factor_quality(
-        dl, codes, dates, custom=req.custom, label_horizon=req.label_horizon, n_deciles=req.n_deciles
-    )
-    return {
-        "start": req.start,
-        "end": req.end,
-        "label_horizon": req.label_horizon,
-        "n_dates": len(dates),
-        "n_codes": len(codes),
-        "factors": [asdict(r) for r in results],
-        "degraded": degraded,
-    }
+
+    def compute(emit):
+        results, degraded = factor_quality(
+            dl,
+            codes,
+            dates,
+            custom=req.custom,
+            label_horizon=req.label_horizon,
+            n_deciles=req.n_deciles,
+            on_progress=emit,
+            feature_workers="auto" if req.feature_workers is None else req.feature_workers,
+        )
+        return {
+            "start": req.start,
+            "end": req.end,
+            "label_horizon": req.label_horizon,
+            "n_dates": len(dates),
+            "n_codes": len(codes),
+            "factors": [asdict(r) for r in results],
+            "degraded": degraded,
+        }
+
+    return _sse_compute(compute)
 
 
 # ── 缓存覆盖 ────────────────────────────────────────────────────────────

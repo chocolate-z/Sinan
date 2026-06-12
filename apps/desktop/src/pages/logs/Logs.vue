@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue';
+import { onMounted, onUnmounted, ref } from 'vue';
 import { api } from '../../api/client';
 import PageHero from '../../ui/PageHero.vue';
 import Icon from '../../shell/Icon.vue';
@@ -24,7 +24,33 @@ async function load() {
   }
 }
 
-onMounted(load);
+// 自动轮询:长任务(建缓存/训练/质检)逐条写日志,本页默认每 3s 拉新 → 实时看进度
+// (训练逐折 IS/OOS IC「提升/下降」、质检逐因子 IC)。切走即停,不占后台。
+const AUTO_MS = 3000;
+const autoRefresh = ref(true);
+let timer: ReturnType<typeof setInterval> | null = null;
+function startAuto() {
+  if (timer) return;
+  timer = setInterval(() => {
+    if (autoRefresh.value) void load();
+  }, AUTO_MS);
+}
+function stopAuto() {
+  if (timer) {
+    clearInterval(timer);
+    timer = null;
+  }
+}
+function toggleAuto() {
+  autoRefresh.value = !autoRefresh.value;
+  if (autoRefresh.value) void load();
+}
+
+onMounted(() => {
+  void load();
+  startAuto();
+});
+onUnmounted(stopAuto);
 
 // 日志级别 → 系统状态徽章(红线#1:级别属系统状态通道,绝不用盈亏色)。
 // badge-ok(发光蓝)只留给真正「成功/正常」事件,普通 info/debug 用 badge-idle(中性灰、无发光)避免噪音。
@@ -39,6 +65,14 @@ function levelBadge(level: string): string {
 <template>
   <PageHero title="日志" sub="运行记录 · 任务/调度/连接的系统事件">
     <template #right>
+      <button
+        class="btn btn-sm"
+        :class="autoRefresh ? 'btn-primary' : 'btn-secondary'"
+        :title="autoRefresh ? '自动刷新中(每 3 秒)· 点击暂停' : '已暂停 · 点击开启自动刷新'"
+        @click="toggleAuto"
+      >
+        <Icon name="refresh" :size="14" /> {{ autoRefresh ? '自动刷新' : '手动' }}
+      </button>
       <button class="btn btn-secondary btn-sm" @click="load">
         <Icon name="refresh" :size="14" /> 刷新
       </button>

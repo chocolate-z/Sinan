@@ -12,7 +12,7 @@ from sinan.factors.custom import custom_factor
 from sinan.factors.quality import factor_quality
 
 # 复用 M3 训练测试的动量信号合成盘(每股固定漂移 → mom20 与前向收益同序)。
-from tests.test_training_train import CODES, _dates, _signal_frames, _write
+from tests.test_training_train import CODES, _dates, _signal_frames, _write, sse_events
 
 
 def test_factor_quality_momentum_and_degrade(tmp_path):
@@ -78,16 +78,25 @@ def test_factors_quality_route(tmp_path, monkeypatch):
 
     r = client.post(
         "/engine/factors/quality",
-        json={"start": dates[0], "end": dates[-1], "label_horizon": 5, "n_deciles": 3},
+        json={"start": dates[0], "end": dates[-1], "label_horizon": 5, "n_deciles": 3,
+              "feature_workers": 1},  # 测试串行;并行等价性由 test_training_data 直测
     )
     assert r.status_code == 200, r.text
-    body = r.json()
+    events = sse_events(r)
+    stages = {e["stage"] for e in events}
+    assert "features" in stages and "factor" in stages  # 可见进度(逐因子 IC)
+    done = events[-1]
+    assert done["stage"] == "done"
+    body = done["result"]
     assert body["n_dates"] > 0
     mom = next(f for f in body["factors"] if f["name"] == "mom20")
     assert mom["ic_mean"] > 0.3
     assert "deciles" in mom and len(mom["deciles"]) == 3
+    # 逐因子事件如实带 IC/ICIR/覆盖。
+    mom_ev = next(e for e in events if e["stage"] == "factor" and e["name"] == "mom20")
+    assert mom_ev["ic_mean"] > 0.3 and "icir" in mom_ev and "coverage" in mom_ev
 
-    # 区间过短(交易日 < n_deciles)→ 400。
+    # 区间过短(交易日 < n_deciles)→ 预检 400(开流前抛,非流式)。
     bad = client.post(
         "/engine/factors/quality",
         json={"start": dates[0], "end": dates[1], "n_deciles": 10},

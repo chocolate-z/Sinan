@@ -141,16 +141,54 @@ class DataLayer:
         fields: Sequence[str] | None = None,
         codes: Sequence[str] | None = None,
     ) -> pl.DataFrame:
-        """每只股票取 asof 可见的最新一行(因子取数常用)。"""
+        """每只股票取 asof 可见的最新一行(因子取数常用)。
+
+        非财务类直接在 SQL 里用 QUALIFY 每股取 ≤asof 的最新一行(只返 ~股票数 行),
+        替代旧的「取全历史(O(天数×股票))再 polars group_by.last」——逐日特征面板里这一步
+        随区间长度 O(N²) 累积,是训练/质检的主耗时之一。结果与旧实现逐值相等(主键去重无并列日)。
+        财务类:asof 已按 ann_date 取每股最新一期,直接复用。"""
+        if dataset in layout.FINANCIAL_PIT:
+            return self.asof(dataset, asof_date, fields=fields, codes=codes)
+        src = self._source(dataset, codes)
+        if src is None:
+            return pl.DataFrame()
         date_col = layout.ASOF_DATE_COL[dataset]
-        # 排序需要日期列;若调用方未请求,临时补取,返回前去掉。
-        req = fields
-        drop_date = False
-        if fields is not None and date_col not in fields:
-            req = [*fields, date_col]
-            drop_date = True
-        df = self.asof(dataset, asof_date, fields=req, codes=codes)
-        if df.is_empty() or dataset in layout.FINANCIAL_PIT:
-            return df.drop(date_col) if drop_date and date_col in df.columns else df
-        out = df.sort(date_col).group_by("stock_code", maintain_order=True).last()
-        return out.drop(date_col) if drop_date else out
+        cols = "*" if not fields else ", ".join(fields)
+        # QUALIFY 的窗口 ORDER BY 可引用表中列(date_col),无需把它选进结果。
+        sql = (
+            f"SELECT {cols} FROM {src} "
+            f"WHERE {date_col} <= ? "
+            f"QUALIFY row_number() OVER (PARTITION BY stock_code ORDER BY {date_col} DESC) = 1"
+        )
+        return self._con.execute(sql, [asof_date]).pl()
+
+    def recent_asof(
+        self,
+        dataset: str,
+        asof_date: str,
+        n: int,
+        *,
+        fields: Sequence[str] | None = None,
+        codes: Sequence[str] | None = None,
+    ) -> pl.DataFrame:
+        """每只股票取 ≤asof 的最近 n 行(升序返回),供时序因子(动量/北向变动)。
+
+        关键提速:时序因子只需最近窗口(mom20 需 21 行、north 需 6 行),却原走 history() 重扫
+        「≤asof 全历史再排序」→ 逐日 O(全历史)。改为每股只取最近 n 行(QUALIFY row_number≤n,
+        在物化表上高效),把逐日 O(N) 降为 O(n)。PIT 不变:仍只见 ≤asof;n 须 ≥ 因子最大回看+1,
+        否则会少取行致 shift 出 null —— 由 build_feature_panel 按因子声明的 lookback 保证(自定义
+        回看未知则不裁剪)。财务类 PIT 语义特殊(取最新一期),不做窗口裁剪。"""
+        if dataset in layout.FINANCIAL_PIT:
+            return self.asof(dataset, asof_date, fields=fields, codes=codes)
+        src = self._source(dataset, codes)
+        if src is None:
+            return pl.DataFrame()
+        date_col = layout.ASOF_DATE_COL[dataset]
+        cols = "*" if not fields else ", ".join(fields)
+        sql = (
+            f"SELECT {cols} FROM {src} "
+            f"WHERE {date_col} <= ? "
+            f"QUALIFY row_number() OVER (PARTITION BY stock_code ORDER BY {date_col} DESC) <= ? "
+            f"ORDER BY stock_code, {date_col}"
+        )
+        return self._con.execute(sql, [asof_date, int(n)]).pl()

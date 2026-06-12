@@ -29,6 +29,30 @@ export class IndicatorsController {
     @Inject(ENGINE_CLIENT) private readonly engine: EngineClient,
   ) {}
 
+  /** 把质检 SSE 进度事件落统一日志:特征面板进度 + 逐因子 IC/ICIR/覆盖度。 */
+  private logQualityProgress(ev: any): void {
+    if (ev?.stage === 'features') {
+      this.repo.logInsert({
+        level: 'info',
+        source: 'indicators',
+        message: `质检·特征面板 ${ev.done}/${ev.total} 日(${ev.date})`,
+      });
+    } else if (ev?.stage === 'scoring') {
+      this.repo.logInsert({
+        level: 'info',
+        source: 'indicators',
+        message: `质检·特征面板就绪,开始逐因子算 IC(${ev.n_factors} 因子)`,
+      });
+    } else if (ev?.stage === 'factor') {
+      const cov = typeof ev.coverage === 'number' ? `${(ev.coverage * 100).toFixed(0)}%` : '—';
+      this.repo.logInsert({
+        level: 'info',
+        source: 'indicators',
+        message: `质检·因子 ${ev.name} · IC ${ev.ic_mean} · ICIR ${ev.icir} · 覆盖 ${cov}`,
+      });
+    }
+  }
+
   @Get('indicators/quality')
   async quality(
     @Query('start') start?: string,
@@ -45,13 +69,16 @@ export class IndicatorsController {
     });
     let result: any;
     try {
-      result = await this.engine.factorQuality({
-        start,
-        end,
-        label_horizon: labelHorizon ? Number(labelHorizon) : undefined,
-        n_deciles: nDeciles ? Number(nDeciles) : undefined,
-        custom: this.repo.customFactorsForQuality(), // 启用的自定义因子与内置并列计算
-      });
+      result = await this.engine.factorQuality(
+        {
+          start,
+          end,
+          label_horizon: labelHorizon ? Number(labelHorizon) : undefined,
+          n_deciles: nDeciles ? Number(nDeciles) : undefined,
+          custom: this.repo.customFactorsForQuality(), // 启用的自定义因子与内置并列计算
+        },
+        (ev) => this.logQualityProgress(ev), // SSE 流式:特征面板 + 逐因子 IC 实时写日志
+      );
     } catch (e) {
       const detail =
         e instanceof EngineError

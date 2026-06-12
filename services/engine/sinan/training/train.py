@@ -14,7 +14,7 @@ ElasticNet 在已标准化(per-截面 winsor+zscore)的因子上拟合;模型 = 
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field
-from typing import Sequence
+from typing import Callable, Optional, Sequence
 
 import numpy as np
 import polars as pl
@@ -118,6 +118,8 @@ def run_train(
     top_quantile: float = 0.2,
     train_threads: str | int = "auto",
     device: str = "auto",
+    on_progress: Optional[Callable[[dict], None]] = None,
+    feature_workers: int | str | None = 1,
 ) -> TrainResult:
     if model_type != "elasticnet":
         raise ValueError(f"M3 v1 仅支持 model_type=elasticnet,收到 {model_type}")
@@ -139,7 +141,9 @@ def run_train(
         raise ValueError("训练区间交易日不足(至少 2 日)")
 
     # 特征面板(仅训练日,asof PIT)+ 前向标签(全历史,内部用未来价但严不混入特征)。
-    fp = build_feature_panel(data, codes, train_dates)
+    fp = build_feature_panel(
+        data, codes, train_dates, on_progress=on_progress, workers=feature_workers
+    )
     labels = build_forward_return_labels(data, codes, label_horizon)
     samples = fp.panel.join(labels, on=["date", "stock_code"], how="left")
 
@@ -164,6 +168,15 @@ def run_train(
             f"(train_span={train_span}/test_span={test_span});请扩大区间或缩小 span。"
         )
 
+    def _emit(ev: dict) -> None:
+        if on_progress:
+            try:
+                on_progress(ev)
+            except Exception:  # noqa: BLE001 — 进度上报绝不影响训练
+                pass
+
+    _emit({"stage": "folds", "n_folds": len(folds), "message": "特征面板就绪,开始 walk-forward 逐折训练"})
+
     ic_is_series: list[float] = []
     ic_oos_series: list[float] = []
     oos_layered: list[tuple[str, float]] = []
@@ -184,12 +197,26 @@ def run_train(
         ic_is_series.extend(is_ics)
         ic_oos_series.extend(oos_ics)
         oos_layered.extend(_top_quantile_returns(te, model, usable, top_quantile))
+        fold_ic_is = round(sum(is_ics) / len(is_ics), 4) if is_ics else 0.0
+        fold_ic_oos = round(sum(oos_ics) / len(oos_ics), 4) if oos_ics else 0.0
         fold_metrics.append(
             {
                 "index": fold.index,
                 "n_train": tr.height,
                 "n_test": te.height,
-                "ic_oos": round(sum(oos_ics) / len(oos_ics), 4) if oos_ics else 0.0,
+                "ic_oos": fold_ic_oos,
+            }
+        )
+        # 逐折回传:样本内/外 IC —— 用户可在日志里看 OOS IC 随折数「提升/下降」。
+        _emit(
+            {
+                "stage": "fold",
+                "index": fold.index,
+                "n_folds": len(folds),
+                "n_train": tr.height,
+                "n_test": te.height,
+                "ic_is": fold_ic_is,
+                "ic_oos": fold_ic_oos,
             }
         )
 

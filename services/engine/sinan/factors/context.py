@@ -15,20 +15,40 @@ from ..data import DataLayer
 
 
 class FactorContext:
-    def __init__(self, data: DataLayer, asof_date: str, codes: Sequence[str]) -> None:
+    def __init__(
+        self,
+        data: DataLayer,
+        asof_date: str,
+        codes: Sequence[str],
+        *,
+        lookback: int | None = None,
+    ) -> None:
         self.data = data
         self.asof = asof_date
         self.codes = list(codes)
+        # 时序因子 history() 的窗口(每股保留最近 lookback+1 行)。None=不裁剪(取全历史)。
+        # 仅当所有在用因子的回看已知且足够时才设(由 build_feature_panel 派生),否则 None 保正确。
+        self.lookback = lookback
         self._cache: dict[tuple, pl.DataFrame] = {}
 
     def _key(self, kind: str, dataset: str, fields: Sequence[str] | None) -> tuple:
         return (kind, dataset, tuple(fields) if fields else None)
 
     def history(self, dataset: str, fields: Sequence[str] | None = None) -> pl.DataFrame:
-        """asof 可见的全部历史行(trade_date<=asof),供时序因子(动量/北向变动)。"""
+        """asof 可见的历史行(trade_date<=asof),供时序因子(动量/北向变动)。
+
+        lookback 设定时只取每股最近 lookback+1 行(足够算最大回看的因子),把逐日 O(全历史)
+        降为 O(窗口);未设(自定义因子在场等)则取全历史。两者对回看 ≤lookback 的因子逐值相等。"""
         key = self._key("history", dataset, fields)
         if key not in self._cache:
-            self._cache[key] = self.data.asof(dataset, self.asof, fields=fields, codes=self.codes)
+            if self.lookback is None:
+                self._cache[key] = self.data.asof(
+                    dataset, self.asof, fields=fields, codes=self.codes
+                )
+            else:
+                self._cache[key] = self.data.recent_asof(
+                    dataset, self.asof, self.lookback + 1, fields=fields, codes=self.codes
+                )
         return self._cache[key]
 
     def latest(self, dataset: str, fields: Sequence[str] | None = None) -> pl.DataFrame:

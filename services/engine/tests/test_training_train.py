@@ -6,6 +6,8 @@
 - 红线#3 诚实:样本内外 IC 并列返回;其余因子无信息时权重≈0(不夸大)。
 """
 
+import json
+
 import polars as pl
 import pytest
 from fastapi.testclient import TestClient
@@ -16,6 +18,11 @@ from sinan.data import DataLayer, store
 from sinan.training import TrainGuardError, build_feature_panel, run_train
 
 CODES = ["600519.SH", "000001.SZ", "600036.SH", "000333.SZ", "601318.SH", "600000.SH"]
+
+
+def sse_events(resp) -> list[dict]:
+    """解析 SSE 响应为事件列表(TestClient 把流式响应整体缓冲进 .text)。训练/质检共用。"""
+    return [json.loads(line[6:]) for line in resp.text.splitlines() if line.startswith("data: ")]
 
 
 def _dates(n: int):
@@ -174,22 +181,32 @@ def test_train_route_guard_and_success(tmp_path, monkeypatch):
     _write(tmp_path / "cache", _signal_frames(dates))  # config.cache_dir() == SINAN_DATA_DIR/cache
     client = TestClient(appmod.app)
 
-    # 422:purge < label_horizon。
+    # 守卫:purge < label_horizon → SSE 流内 error 事件携带 status 422(api 据此转发 422)。
     bad = client.post(
         "/engine/train",
         json={"train_start": dates[0], "train_end": dates[-1], "label_horizon": 5, "purge": 1,
               "train_span": 30, "test_span": 15},
     )
-    assert bad.status_code == 422
+    assert bad.status_code == 200, bad.text  # SSE 始终 200,错误走事件
+    err = sse_events(bad)[-1]
+    assert err["stage"] == "error" and err["status"] == 422
 
-    # 200:正常训练,返回样本外 IC 与模型。
+    # 200:正常训练 → 流式进度(特征面板 + 逐折 IC)+ 末尾 done 事件携带结果。
+    # feature_workers=1:测试串行(并行等价性另由 test_training_data 直测,避免 pytest 里起进程池)。
     ok = client.post(
         "/engine/train",
         json={"train_start": dates[0], "train_end": dates[-1], "label_horizon": 5, "purge": 5,
-              "train_span": 30, "test_span": 15},
+              "train_span": 30, "test_span": 15, "feature_workers": 1},
     )
     assert ok.status_code == 200, ok.text
-    body = ok.json()
+    events = sse_events(ok)
+    stages = {e["stage"] for e in events}
+    assert "features" in stages and "fold" in stages  # 可见进度(用户要的「提升/下降」)
+    fold_evs = [e for e in events if e["stage"] == "fold"]
+    assert all("ic_is" in e and "ic_oos" in e for e in fold_evs)  # 逐折样本内/外 IC
+    done = events[-1]
+    assert done["stage"] == "done"
+    body = done["result"]
     assert body["ic_oos"] > 0.5
     assert body["model"]["type"] == "elasticnet"
     assert body["oos_clean"] is True

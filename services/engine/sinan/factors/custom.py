@@ -64,5 +64,12 @@ def custom_factor(name: str, expr_str: str, group: str = "custom", direction: in
             return _EMPTY
 
     return Factor(
-        name=name, group=group, direction=direction, required_caps=Capability.DAILY_OHLCV, fn=fn
+        name=name,
+        group=group,
+        direction=direction,
+        required_caps=Capability.DAILY_OHLCV,
+        fn=fn,
+        # 自定义 DSL 可写任意回看窗口(ma/delay/ts_std 的 n 未知)→ lookback=None:
+        # 只要有自定义因子在场,build_feature_panel 即不裁剪历史(保正确,不冒静默降级风险)。
+        lookback=None,
     )

@@ -9,7 +9,7 @@ build_forward_return_labels(前向收益)+ metrics.rank_ic/icir。
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Sequence
+from typing import Callable, Optional, Sequence
 
 import polars as pl
 
@@ -41,8 +41,22 @@ def factor_quality(
     custom: Sequence[dict] | None = None,
     label_horizon: int = 5,
     n_deciles: int = 10,
+    on_progress: Optional[Callable[[dict], None]] = None,
+    feature_workers: int | str | None = 1,
 ) -> tuple[list[FactorQuality], list[str]]:
-    """逐因子质量报告。dates 为评估区间交易日(升序)。custom = 自定义 DSL 因子 [{name,expr,group?}]。"""
+    """逐因子质量报告。dates 为评估区间交易日(升序)。custom = 自定义 DSL 因子 [{name,expr,group?}]。
+
+    on_progress(可选):SSE 流式进度回调。特征面板逐日构建是主耗时(透传给 build_feature_panel),
+    随后逐因子算 IC 时再各推一条 {stage:'factor', name, ic_mean, icir, coverage};用户可在日志里
+    实时看每个因子的有效性。回调异常被吞,绝不影响计算。
+    """
+    def _emit(ev: dict) -> None:
+        if on_progress:
+            try:
+                on_progress(ev)
+            except Exception:  # noqa: BLE001 — 进度上报绝不影响质检
+                pass
+
     all_factors = list(factors)
     custom_degraded: list[str] = []
     for c in custom or []:
@@ -51,13 +65,17 @@ def factor_quality(
         except Exception as e:  # noqa: BLE001 表达式无效 → 跳过并如实记录(不静默)
             custom_degraded.append(f"{c.get('name', '?')}:表达式无效({e})")
 
-    fp = build_feature_panel(data, codes, dates, all_factors)
+    # 多核仅在无自定义因子时生效(自定义 fn 是不可 pickle 的闭包;build_feature_panel 自动判别退回串行)。
+    fp = build_feature_panel(
+        data, codes, dates, all_factors, on_progress=on_progress, workers=feature_workers
+    )
     labels = build_forward_return_labels(data, codes, label_horizon)
     samples = fp.panel.join(labels, on=["date", "stock_code"], how="left")
     uniq = sorted(set(dates))
+    _emit({"stage": "scoring", "n_factors": len(all_factors), "message": "特征面板就绪,开始逐因子算 IC"})
 
     results: list[FactorQuality] = []
-    for f, col in zip(all_factors, fp.feature_cols):
+    for fi, (f, col) in enumerate(zip(all_factors, fp.feature_cols)):
         ic_series: list[float] = []
         decile_acc: list[list[float]] = [[] for _ in range(n_deciles)]
         for d in uniq:
@@ -91,6 +109,18 @@ def factor_quality(
                 ic_series=[round(v, 4) for v in ic_series],
                 deciles=deciles,
             )
+        )
+        _emit(
+            {
+                "stage": "factor",
+                "index": fi,
+                "n_factors": len(all_factors),
+                "name": f.name,
+                "group": f.group,
+                "ic_mean": ic_mean,
+                "icir": icir,
+                "coverage": coverage,
+            }
         )
 
     degraded = [

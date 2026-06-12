@@ -29,6 +29,7 @@ interface TrainInput {
   top_quantile?: number;
   train_threads?: string;
   device?: string;
+  feature_workers?: number | null;
   strategy_id?: string;
   name?: string;
 }
@@ -39,6 +40,29 @@ export class ModelsController {
     private readonly repo: Repository,
     @Inject(ENGINE_CLIENT) private readonly engine: EngineClient,
   ) {}
+
+  /** 把训练 SSE 进度事件落统一日志(日志页=可观测面):特征面板进度 + 逐折样本内/外 IC。 */
+  private logTrainProgress(ev: any): void {
+    if (ev?.stage === 'features') {
+      this.repo.logInsert({
+        level: 'info',
+        source: 'train',
+        message: `训练·特征面板 ${ev.done}/${ev.total} 日(${ev.date})`,
+      });
+    } else if (ev?.stage === 'folds') {
+      this.repo.logInsert({
+        level: 'info',
+        source: 'train',
+        message: `训练·特征面板就绪,开始 ${ev.n_folds} 折 walk-forward`,
+      });
+    } else if (ev?.stage === 'fold') {
+      this.repo.logInsert({
+        level: 'info',
+        source: 'train',
+        message: `训练·第 ${ev.index + 1}/${ev.n_folds} 折 · 训练${ev.n_train}/测试${ev.n_test} 样本 · 样本内 IC ${ev.ic_is} · 样本外 IC ${ev.ic_oos}`,
+      });
+    }
+  }
 
   @Post('models/train')
   async train(@Body() body: TrainInput): Promise<any> {
@@ -53,22 +77,26 @@ export class ModelsController {
     });
     let result: any;
     try {
-      result = await this.engine.train({
-        train_start: body.train_start,
-        train_end: body.train_end,
-        label_horizon: body.label_horizon,
-        purge: body.purge,
-        embargo: body.embargo,
-        train_span: body.train_span,
-        test_span: body.test_span,
-        codes: body.codes,
-        model_type: body.model_type,
-        alpha: body.alpha,
-        l1_ratio: body.l1_ratio,
-        top_quantile: body.top_quantile,
-        train_threads: body.train_threads,
-        device: body.device,
-      });
+      result = await this.engine.train(
+        {
+          train_start: body.train_start,
+          train_end: body.train_end,
+          label_horizon: body.label_horizon,
+          purge: body.purge,
+          embargo: body.embargo,
+          train_span: body.train_span,
+          test_span: body.test_span,
+          codes: body.codes, // 股票池(空/省略 → engine 用全 A);缩小可大幅加速
+          model_type: body.model_type,
+          alpha: body.alpha,
+          l1_ratio: body.l1_ratio,
+          top_quantile: body.top_quantile,
+          train_threads: body.train_threads,
+          device: body.device,
+          feature_workers: body.feature_workers, // 特征面板多核数(省略 → engine 'auto')
+        },
+        (ev) => this.logTrainProgress(ev), // SSE 流式:特征面板 + 逐折 IC 实时写日志
+      );
     } catch (e) {
       const detail =
         e instanceof EngineError

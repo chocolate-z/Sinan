@@ -7,12 +7,20 @@
 
 红线#1(无未来函数):特征仅经 DataLayer.asof(只见 <=T),T 日特征不依赖任何 date>T 的数据
 (由 data.asof 黄金测试守护)。本模块绝不读取未来价 —— 前向收益是 labels.py 的职责,两者严禁混用。
+
+提速(逐日全市场 asof 是大区间训练/质检主耗时):
+- ① 有界回看:各因子声明 lookback,逐日 history 只取每股最近窗口(见 FactorContext.lookback),
+  把逐日 O(全历史) 降为 O(窗口)。自定义 DSL 因子回看未知 → 不裁剪,保正确(红线#3)。
+- ② 多核并行:workers>1 时按日期分块进程池并行(每日独立,PIT 不变);仅在因子全可裁剪
+  (无自定义闭包 → 可 pickle)时启用,否则串行。两者叠加。
 """
 
 from __future__ import annotations
 
+import os
+from concurrent.futures import ProcessPoolExecutor, as_completed
 from dataclasses import dataclass, field
-from typing import Sequence
+from typing import Callable, Optional, Sequence
 
 import polars as pl
 
@@ -20,6 +28,14 @@ from ..data import DataLayer
 from ..factors import FactorContext
 from ..factors.library import DEFAULT_FACTORS, Factor
 from ..factors.score import compute_factor_matrix
+
+# 历史窗口缓冲:取 max(因子回看)+缓冲行,纯安全冗余(多取旧行绝不改因子值,少取才会致静默降级)。
+_LOOKBACK_BUFFER = 5
+# 并行分块的目标天数/块:块数 = ceil(天数/此值),经进程池排队;块越多进度心跳越密,
+# 同进程跨块复用物化(_WORKER_DL)不重复加载。
+_PAR_CHUNK_DAYS = 30
+# 低于此天数不并行(进程启动 + 每 worker 物化的固定开销会盖过收益)。
+_PAR_MIN_DAYS = 40
 
 
 @dataclass
@@ -30,30 +46,43 @@ class FeaturePanel:
     n_dates: int = 0
 
 
-def build_feature_panel(
+def _empty_panel(feature_cols: list[str]) -> pl.DataFrame:
+    return pl.DataFrame(
+        schema={"date": pl.Utf8, "stock_code": pl.Utf8, **{c: pl.Float64 for c in feature_cols}}
+    )
+
+
+def _resolve_lookback(factors: list[Factor]) -> int | None:
+    """逐日历史窗口:全部因子回看已知 → max+缓冲(裁剪提速);任一未知(自定义 DSL)→ None 不裁剪。"""
+    lbs = [f.lookback for f in factors]
+    if any(lb is None for lb in lbs):
+        return None
+    return max(lbs, default=0) + _LOOKBACK_BUFFER
+
+
+def _build_panel_sequential(
     data: DataLayer,
     codes: Sequence[str],
-    dates: Sequence[str],
-    factors: list[Factor] = DEFAULT_FACTORS,
+    uniq_dates: list[str],
+    factors: list[Factor],
+    *,
+    on_progress: Optional[Callable[[dict], None]] = None,
 ) -> FeaturePanel:
-    """构造 date×code 特征长表。dates 为升序交易日;codes 为股票池。
-
-    返回的 panel 每行 = 某日某股的标准化因子向量;某因子当日无有效数据则该列 null。
-    """
+    """串行构造特征面板(单进程逐日)。uniq_dates 须已去重升序。"""
     feature_cols = [f"f_{f.name}" for f in factors]
-    uniq_dates = sorted(set(dates))
     frames: list[pl.DataFrame] = []
     degraded_days: dict[str, int] = {}
+    total = len(uniq_dates)
+    step = max(1, total // 20)  # 约 20 次心跳,避免长跑刷屏日志
+    ctx_lookback = _resolve_lookback(factors)
 
-    for d in uniq_dates:
-        ctx = FactorContext(data, d, codes)
+    for i, d in enumerate(uniq_dates):
+        ctx = FactorContext(data, d, codes, lookback=ctx_lookback)
         matrix, effective, _degraded = compute_factor_matrix(ctx, factors)
         # 补齐缺失(降级)列为 null,保证各日列集一致可纵向堆叠。
         missing = [c for c in feature_cols if c not in matrix.columns]
         if missing:
-            matrix = matrix.with_columns(
-                [pl.lit(None, dtype=pl.Float64).alias(c) for c in missing]
-            )
+            matrix = matrix.with_columns([pl.lit(None, dtype=pl.Float64).alias(c) for c in missing])
         matrix = matrix.with_columns(pl.lit(d).alias("date")).select(
             ["date", "stock_code", *feature_cols]
         )
@@ -61,21 +90,127 @@ def build_feature_panel(
         for f in factors:
             if f.name not in effective:
                 degraded_days[f.name] = degraded_days.get(f.name, 0) + 1
+        if on_progress and (i % step == 0 or i == total - 1):
+            try:
+                on_progress({"stage": "features", "done": i + 1, "total": total, "date": d})
+            except Exception:  # noqa: BLE001 — 进度上报绝不影响计算
+                pass
 
-    if not frames:
-        panel = pl.DataFrame(
-            schema={
-                "date": pl.Utf8,
-                "stock_code": pl.Utf8,
-                **{c: pl.Float64 for c in feature_cols},
-            }
-        )
-    else:
-        panel = pl.concat(frames, how="vertical")
-
+    panel = pl.concat(frames, how="vertical") if frames else _empty_panel(feature_cols)
     return FeaturePanel(
-        panel=panel,
-        feature_cols=feature_cols,
-        degraded_days=degraded_days,
-        n_dates=len(uniq_dates),
+        panel=panel, feature_cols=feature_cols, degraded_days=degraded_days, n_dates=total
     )
+
+
+# 进程内 DataLayer 缓存:同一 worker 进程跨多个日期块复用物化(避免每块重物化整个数据集)。
+_WORKER_DL: dict = {}
+
+
+def _worker_panel(cache_root: str, codes: list[str], dates_chunk: list[str], factors: list[Factor]):
+    """子进程:在本进程自有的 DataLayer 上串行算一段日期的特征面板。返回可 pickle 的 (panel, degraded)。
+
+    每日彼此独立、全经 asof(只见 <=T),PIT 不变(由黄金测试守护);并行只是把独立日子分给多核。"""
+    dl = _WORKER_DL.get(cache_root)
+    if dl is None:
+        dl = DataLayer(cache_root)
+        _WORKER_DL[cache_root] = dl
+    fp = _build_panel_sequential(dl, codes, dates_chunk, factors)
+    return fp.panel, fp.degraded_days
+
+
+def _build_panel_parallel(
+    data: DataLayer,
+    codes: Sequence[str],
+    uniq_dates: list[str],
+    factors: list[Factor],
+    *,
+    workers: int,
+    on_progress: Optional[Callable[[dict], None]] = None,
+) -> FeaturePanel:
+    """多核:按日期分块进程池并行,各块在独立进程算后合并。仅供 workers>1 且因子可 pickle 时。"""
+    feature_cols = [f"f_{f.name}" for f in factors]
+    cache_root = str(data.cache_root)
+    n = len(uniq_dates)
+    chunk_size = max(1, min((n + workers - 1) // workers, _PAR_CHUNK_DAYS))
+    chunks = [uniq_dates[i : i + chunk_size] for i in range(0, n, chunk_size)]
+    frames: list[Optional[pl.DataFrame]] = [None] * len(chunks)
+    degraded_days: dict[str, int] = {}
+    codes_l = list(codes)
+    days_done = 0
+
+    with ProcessPoolExecutor(max_workers=workers) as ex:
+        futs = {
+            ex.submit(_worker_panel, cache_root, codes_l, ch, factors): i
+            for i, ch in enumerate(chunks)
+        }
+        for fut in as_completed(futs):
+            i = futs[fut]
+            panel, dd = fut.result()  # 子进程异常在此抛出 → 上层 _sse_compute 捕获为 error 事件
+            frames[i] = panel
+            for k, v in dd.items():
+                degraded_days[k] = degraded_days.get(k, 0) + v
+            days_done += len(chunks[i])
+            if on_progress:
+                try:
+                    # 复用「features」事件形状(done/total 为天数),api 日志「X/Y 日」对串/并行一致。
+                    on_progress(
+                        {"stage": "features", "done": days_done, "total": n, "date": chunks[i][-1]}
+                    )
+                except Exception:  # noqa: BLE001
+                    pass
+
+    present = [f for f in frames if f is not None]
+    panel = pl.concat(present, how="vertical") if present else _empty_panel(feature_cols)
+    return FeaturePanel(
+        panel=panel, feature_cols=feature_cols, degraded_days=degraded_days, n_dates=n
+    )
+
+
+def _resolve_workers(workers: int | str | None) -> int:
+    """workers='auto' → min(核数-1, 4)。保守上限控内存:每 worker 各自物化一份缓存到 duckdb,
+    全 A 训练下 N×内存;4 个兼顾提速与内存安全,用户可显式调高。并行失败会自动退回串行(1×内存)。"""
+    if workers in (None, 0, 1):
+        return 1
+    if workers == "auto":
+        return max(1, min((os.cpu_count() or 2) - 1, 4))
+    try:
+        return max(1, int(workers))
+    except (TypeError, ValueError):
+        return 1
+
+
+def build_feature_panel(
+    data: DataLayer,
+    codes: Sequence[str],
+    dates: Sequence[str],
+    factors: list[Factor] = DEFAULT_FACTORS,
+    *,
+    on_progress: Optional[Callable[[dict], None]] = None,
+    workers: int | str | None = 1,
+) -> FeaturePanel:
+    """构造 date×code 特征长表。dates 为升序交易日;codes 为股票池。
+
+    返回的 panel 每行 = 某日某股的标准化因子向量;某因子当日无有效数据则该列 null。
+
+    on_progress(可选):进度回调(SSE 流式用),既给前端可见进度、又靠持续数据流避免长连接
+    空闲被重置(ECONNRESET)。回调异常被吞,绝不影响计算。
+    workers:>1(或 'auto')时按日期分块进程池并行(利用多核);仅在因子全可 pickle(无自定义闭包)
+    且日数足够时生效,否则自动退回串行。并行与串行结果逐值相等(每日独立、PIT 不变)。
+    """
+    uniq_dates = sorted(set(dates))
+    n_workers = _resolve_workers(workers)
+    # 并行条件:多 worker + 日数足够(摊掉进程启动/物化固定开销)+ 因子可 pickle(无自定义闭包,
+    # 以 lookback 已知为代理 —— 自定义因子 lookback=None 且其 fn 是不可 pickle 的闭包)。
+    can_parallel = (
+        n_workers > 1
+        and len(uniq_dates) >= _PAR_MIN_DAYS
+        and all(f.lookback is not None for f in factors)
+    )
+    if can_parallel:
+        try:
+            return _build_panel_parallel(
+                data, codes, uniq_dates, factors, workers=n_workers, on_progress=on_progress
+            )
+        except Exception:  # noqa: BLE001 — 进程池异常(如环境不支持 spawn)诚实退回串行,绝不让提速变成崩溃
+            pass
+    return _build_panel_sequential(data, codes, uniq_dates, factors, on_progress=on_progress)
