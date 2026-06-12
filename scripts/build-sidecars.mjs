@@ -23,8 +23,9 @@ import esbuild from 'esbuild';
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const isWin = process.platform === 'win32';
 const r = (...p) => resolve(ROOT, ...p);
-// PY 可被 SINAN_PYTHON 覆盖(CI 用 setup-python 的 `python`;本地用 .venv)。
-const PY = process.env.SINAN_PYTHON || r(isWin ? '.venv/Scripts/python.exe' : '.venv/bin/python');
+// PY 可被 SINAN_PYTHON 覆盖(CI 用 setup-python 的 `python`,是 PATH 命令名而非文件路径;本地用 .venv)。
+const PY_OVERRIDE = process.env.SINAN_PYTHON;
+const PY = PY_OVERRIDE || r(isWin ? '.venv/Scripts/python.exe' : '.venv/bin/python');
 const SIDECARS = r('apps/desktop/src-tauri/sidecars');
 
 function run(label, cmd, args, cwd) {
@@ -97,7 +98,9 @@ cpSync(platDir, resolve(SIDECARS, `api/node_modules/${PLATFORM_PKG}`), {
 });
 
 // ── 4) 引擎 PyInstaller one-dir ───────────────────────────────────────────
-if (!existsSync(PY)) {
+// 存在性检查只对本地 .venv 默认路径做;显式 SINAN_PYTHON 覆盖(常是 PATH 命令名如 'python',
+// existsSync 按文件路径查必 false)由调用方负责可用性 —— 否则 CI 误判「未找到 venv python」退出。
+if (!PY_OVERRIDE && !existsSync(PY)) {
   console.error(
     `✗ 未找到 venv python: ${PY}(先建 venv + pip install -e services/engine 与 pyinstaller)`,
   );
