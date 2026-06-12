@@ -458,3 +458,22 @@ labels.py   build_forward_return_labels(hfq[T+h]/hfq[T]-1,前向,尾 h 日 null)
 **发布剩余(③④⑤)**:③ 真实进度%(回测/训练接 jobs+SSE 流式,现仅「已用时」)、④ M6 打包(冻结 sidecar 出安装包)、⑤ 多专家视角 UX 评审(Workflow,发布前质量关)。lib/market 随行情页重写已不被 Market.vue 使用(其纯函数 + market.test.ts 仍在,轻度可清理)。约 ~340 测试 CI 绿。
 
 **⚠️ 必读**:本轮多处 engine/api 后端改动(性能/建缓存/持仓/信号名称/行情页)**需重启 `pnpm dev`(重编 engine+api)才在桌面端生效**;纯前端(进度/日志/板块列/板块视图)HMR 即时。token 让用户引导页输入,绝不贴对话。
+
+### 11.8 训练/质检 SSE 流式进度(发布项③)+ 行情页空 meta 崩溃修复 + 凭据指纹诚实化
+
+用户验机报三件真 bug:训练/质检 `ECONNRESET` 失败且全程零反馈想看「提升/下降」明细;引导测试连接「已配置/已连接」却「未配置 token/连接异常」自相矛盾(=重建带入指纹问题);行情页 500。
+
+- **行情页空 meta 崩溃(诚实降级,先修)**:`factors/market.py` `_meta_frame({})` 用空列表建 DataFrame → `stock_code` 推断成 `Null` → 与左侧 `str` join 抛 `SchemaError` 500。根因:有价格缓存但本会话无 token → `_industry_meta` 拿不到 stock_list 行业映射。修=给 `_meta_frame` 显式 `schema=Utf8`(空时列也 str)→ 左 join 保留全行、全A广度照算、板块诚实空。+2 回归测试(有行情+空 meta / 成分股空 meta)。
+- **训练/质检 SSE 流式进度(发布项③,核心)**:`build_feature_panel`/`run_train`/`factor_quality` 加可选 `on_progress` 回调(回调异常被吞,绝不影响计算);`/engine/train`、`/engine/factors/quality` 由一次性 JSON 改 **`StreamingResponse`**(新 `_sse_compute` 包装器:worker 线程跑 compute(emit),逐进度事件推流,末尾 `{stage:'done',result}` 或 `{stage:'error',status,detail}`;守卫 422 / ValueError 400 走 error 事件 status,预检失败如无缓存仍开流前抛 400)。事件:特征面板 `day X/N` · 训练逐折 `IS/OOS IC` · 质检逐因子 `IC/ICIR/覆盖`。api `engine.client.ts` 加 `slowPostStream`(node:http 无超时,解析 SSE,done→resolve(result)/error→EngineError;流意外断无 done→诚实报错不当成功);`models.ts`/`indicators.ts` 把进度事件**边收边写统一日志**。**双重收益**:① 持续数据流保活长连接,根治 4h 空闲被对端重置的 `ECONNRESET`;② 日志页变实时训练控制台(满足「看提升/下降」)。`models_train`/`indicators_quality` 对前端**返回 JSON 形状不变**(流式仅 api↔engine 内部)→ 前端页面零改动;且 api 服务端跑完即落库/落日志,**前端连接即便中断模型仍保存**。前端 `Logs.vue` 加**自动轮询(默认 3s,切走即停)**→ 进度逐条实时显现。
+- **凭据指纹诚实化(修矛盾)**:dev `SINAN_SECRET_STORE=memory` token 重启即丢,但指纹落 SQLite 持久 → `info()` 只看 DB 指纹报「已配置」,实际 `getToken` 为 null。修=`CredentialService.info()` **交叉校验密钥库真有 token**:DB 有指纹但 `store.get` 取不到 → 诚实报 `configured:false`(引导提示重输,不再「已配置·无需重输」却测试失败)。+1 回归测试(模拟重启:指纹在/token 丢→info 报未配置)。⚠️ 仅诚实化 UI;**dev 下 token 仍重启不持久**(根治需把 dev 切真实钥匙串/文件加密存,有破 `pnpm dev` 风险,留给用户拍板)。
+- 全绿:engine pytest 164 · api node:test 57 · 前端 vitest 71 + typecheck 干净。⚠️ engine+api 后端改动**需重启 `pnpm dev`** 才在桌面端生效;Logs.vue 自动轮询 HMR 即时。
+
+**训练提速(用户报「太慢/利用 CPU」,①+②叠加 ~4–8×,实测 400股×1000天 234s→58s=4.1×)**:瓶颈实测=逐日特征面板,非单核——真因是逐日「重扫 ≤asof 全历史再排序」随区间 O(N²) 累积 + 逐日×逐因子固定开销。
+
+- **① 有界取数(算法,PIT 安全、结果不变)**:`DataLayer.latest_asof` 改 **SQL QUALIFY 每股直取最新一行**(替代「取全历史再 polars group_by.last」,只返 ~股数 行);新增 **`recent_asof`**(每股 ≤asof 最近 n 行,QUALIFY row_number≤n)。`Factor` 加 `lookback` 字段(ep/bp/roe=0、mom20=20、north=5;自定义 DSL=None);`FactorContext(lookback=)` → `history()` 走 recent_asof 只取最近窗口;`build_feature_panel` 派生 `ctx_lookback=任一None→None(自定义在场不裁剪保正确,红线#3)否则 max+5`。黄金测试:窗口 == 无界逐值相等。单核 ~1.5–1.8×(随股数增大)。
+- **② 多核并行(进程池按日期分块)**:`build_feature_panel(workers=)`:workers>1 且因子全可 pickle(无自定义闭包,以 lookback≠None 为代理)且日数≥40 → 按 30 天/块 `ProcessPoolExecutor` 并行,**进程内 `_WORKER_DL` 缓存复用物化**(同 worker 跨块不重物化),per-chunk 回传「features」进度(复用串行事件形状,api 日志一致)。`'auto'=min(核-1,4)`(每 worker 各物化一份缓存 → N×内存,4 控内存;用户可调高)。**并行失败/spawn 不支持/内存不足 BrokenProcessPool → except 自动退串行(1×内存,correctness 不丢)**。`run_train`/`factor_quality`/engine 端点加 `feature_workers`(默认 None→`'auto'`,**默认开多核**;路由测试显式传 1 保串行)。黄金测试:直调 `_build_panel_parallel` == 串行(绕过兜底确保真跑并行)。
+- 提速无需 api/前端改动(engine 默认 auto)。⚠️ **M6 打包**:PyInstaller 冻结 sidecar 用 ProcessPoolExecutor 需 `multiprocessing.freeze_support()`,否则子进程递归启动——打包时务必加。自定义因子质检暂不并行(闭包不可 pickle)、不裁剪窗口(回看未知保正确),留 v2(可从 DSL 推导 max 窗口 + 传 specs 重建)。
+
+- **训练页股票池 + 并行核数控件 = DONE**:`Models.vue` 训练表单加 ① **股票池**(`StockSearch` 篮子 + chips,默认空=全 A;指定后 codes 下发 → 训练量随股票数线性下降,单项最大提速杠杆)② **并行核数** select(自动/1/2/4/8 → `feature_workers`)。贯穿:`stores/models.ts TrainForm`(+codes/codeNames/feature_workers,`train()` 剔除 display-only codeNames、空 codes 省略)→ api `models.ts`(透传 codes+feature_workers)→ engine.client `TrainRequest.feature_workers`。新增 `icons.ts` 的 `x` 图标。api 57 + 前端 vitest 71 + 双 typecheck 绿。⚠️ StockSearch 需 token 才有补全(无 token 诚实空,但默认全 A 不依赖搜索)。**质检页**同款控件待加(同理可贯穿 factor_quality)。
+- **发布剩余**:③ 余项=真实 **%/ETA + 前端实时进度条**(训练/质检已流式但前端仅靠日志页看;可让 Models/Indicators 页直接订阅 SSE 显进度条/转 jobs+`subscribeJob`);质检页补股票池/workers 控件。④ M6 打包(含 freeze_support)、⑤ UX 评审照旧。
+- 提速后全绿:engine pytest **166** · api node:test 57 · 前端 vitest 71 + typecheck 干净。
