@@ -20,11 +20,9 @@ const routes: RouteRecordRaw[] = [
     component: () => import('../pages/market/Market.vue'),
     meta: { title: '行情', needsData: true },
   },
-  {
-    path: '/news',
-    component: () => import('../pages/Locked.vue'),
-    meta: { title: '资讯', needsData: true },
-  },
+  // 资讯/news 为 v1 后续(M5,需新闻抓取 provider)。v1 暂收口:重定向到总览,不暴露通用 Locked 桩
+  // (导航也已隐藏)。绝不在 v1 造假新闻数据(红线#3)。
+  { path: '/news', redirect: '/dashboard' },
   {
     path: '/indicators',
     component: () => import('../pages/indicators/Indicators.vue'),

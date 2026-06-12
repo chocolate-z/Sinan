@@ -20,7 +20,7 @@ interface Item {
 const items: Item[] = [
   { to: '/dashboard', label: '总览', group: '监控', icon: 'dashboard' },
   { to: '/market', label: '行情', group: '监控', icon: 'market', needsData: true },
-  { to: '/news', label: '资讯', group: '监控', icon: 'news', needsData: true },
+  // 资讯/news 为 v1 后续(M5);v1 不暴露(路由已重定向到总览),避免通用 Locked 桩。
   { to: '/indicators', label: '指标', group: '研究', icon: 'indicator', needsData: true },
   { to: '/models', label: '模型', group: '研究', icon: 'model', needsData: true },
   { to: '/backtest', label: '回测', group: '研究', icon: 'backtest', needsData: true },
