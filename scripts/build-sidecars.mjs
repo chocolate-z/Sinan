@@ -76,6 +76,15 @@ cpSync(keyringDir, resolve(SIDECARS, 'api/node_modules/@napi-rs/keyring'), {
   recursive: true,
   dereference: true,
 });
+// ⚠️ @napi-rs 的 native .node 在独立平台子包(keyring/index.js fallback require('@napi-rs/keyring-win32-x64-msvc'))。
+// 只拷主包会漏 .node → 生产 require 崩。这里从 keyring 包视角解析并补拷平台子包(Windows x64)。
+const keyringRequire = createRequire(resolve(keyringDir, 'index.js'));
+const PLATFORM_PKG = '@napi-rs/keyring-win32-x64-msvc';
+const platDir = dirname(keyringRequire.resolve(`${PLATFORM_PKG}/package.json`));
+cpSync(platDir, resolve(SIDECARS, `api/node_modules/${PLATFORM_PKG}`), {
+  recursive: true,
+  dereference: true,
+});
 
 // ── 4) 引擎 PyInstaller one-dir ───────────────────────────────────────────
 if (!existsSync(PY)) {
