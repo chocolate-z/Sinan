@@ -489,3 +489,14 @@ labels.py   build_forward_return_labels(hfq[T+h]/hfq[T]-1,前向,尾 h 日 null)
 - **🔴 装机一条龙四个真 bug(只有真打包才暴露,dev 全程掩盖;靠 sidecar stdout/stderr 重定向到 `runtime/{engine,api}.log` 才抓到)**:① **健康超时 15s→120s**(冻结 engine 冷启动导入数百 MB + Defender 扫描数十秒,15s 误判→不起 api→卡启动遮罩);② **node 写无效 stdout 崩**(GUI 壳无控制台,子进程继承无效 std 句柄)→ 重定向到日志文件给有效句柄;③ **`\?\` 前缀**(tauri `resource_dir` 带 Windows 扩展长度前缀,node 解析主模块脚本路径 `realpathSync` 崩 `lstat 'D:' EISDIR`)→ 剥前缀(引擎 exe 经 CreateProcess 不受影响,仅 node 脚本中招);④ **多核 fork 死锁**(Linux 默认 fork 复制带 polars/duckdb 线程的进程,CI engine 测试卡死)→ 进程池强制 `spawn` 上下文(全平台一致=Windows 既有行为)。另:`bundle.icon` 补 `icon.ico`(MSI 必需)、sidecar `CREATE_NO_WINDOW`(不弹黑控制台窗)。
 - **验证**:本地 release exe 实测 engine+api 都起、api /providers 200;`Sinan_0.1.0_x64_en-US.msi`(226MB)/`Sinan_0.1.0_x64-setup.exe`(154MB)本地出包成功。云端 take3 含全部修复构建中→出 v0.1.0 草稿 Release(prerelease,人工复核 Publish)。engine 167 测试绿。
 - **剩余/已知**:装机 smoke 仍需用户在干净/无 Python+Node 环境双击装走「引导→建缓存→质检→信号」一条龙(本机 release exe 已验启动,但完整业务流 + token 落 OS 钥匙串持久 + 关窗无孤儿 待真装机确认);beta 未签名(提示「未知发布者」);仅 Windows x64(macos/linux 需参数化平台 keyring 子包 + 平台 PyInstaller)。
+
+### 11.10 在线更新(Tauri updater + Ed25519 签名,本会话)
+
+用户要在线更新。完整 Tauri updater 链路:已装版本启动时查 GitHub Release 签名清单 → 有新版下载/验签/安装/relaunch。
+
+- **签名**:`tauri signer generate -p "" --ci` 生成 Ed25519 密钥对;私钥写 `apps/desktop/.tauri-keys/`(**gitignore,绝不入库**),公钥内嵌 `tauri.conf plugins.updater.pubkey`。私钥经 GitHub secrets API(libsodium SealedBox 加密,系统 python 的 pynacl)推送至仓库 Secret `TAURI_SIGNING_PRIVATE_KEY`(空密码)——**全程不回显私钥**。
+- **Rust**:`tauri-plugin-updater` + `tauri-plugin-process`(relaunch);`lib.rs` 注册;capabilities 加 `updater:default`/`process:allow-restart`。
+- **配置**:`bundle.createUpdaterArtifacts:true` + `plugins.updater.endpoints=["https://github.com/chocolate-z/Sinan/releases/latest/download/latest.json"]`。
+- **前端**:`lib/updater.ts`(check/downloadAndInstall 进度/relaunch,非 Tauri/离线 try-catch 静默)+ `ui/UpdateBanner.vue`(启动 4s 后静默查,有新版才浮层:版本/release body/进度条/一键更新重启)挂 `AppShell`。
+- **CI**:`release.yml` 注入 `TAURI_SIGNING_PRIVATE_KEY` + 密码空串;**`prerelease:false`**(关键:updater endpoint 的 `releases/latest` 不解析到 prerelease)→ tauri-action 自动签 bundle + 生成上传 `latest.json`。
+- **升级路径**:take3 包无 updater 不能自更新;**装 take4 包(带 updater)后,以后 `git tag vX.Y.Z` 推送 → 云端签名出包发 Release → 旧版启动自动发现并一键更新**。⚠️ 改 endpoint 的 owner/repo 若仓库迁移要同步;换签名密钥需同步换 pubkey + Secret。cargo check + 前端 typecheck/eslint/vitest 71 全绿。
