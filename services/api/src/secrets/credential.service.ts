@@ -31,7 +31,15 @@ export class CredentialService {
   }
 
   info(provider: string): { configured: boolean; fingerprint: string | null } {
-    return this.repo.credentialInfo(provider);
+    const db = this.repo.credentialInfo(provider);
+    if (!db.configured) return db;
+    // 交叉校验:DB 里有指纹(持久)但密钥库里实际取不到 token —— dev 内存钥匙串重启即丢,
+    // 或系统钥匙串被清。此时若仍据指纹回「已配置」,引导页会显示「已配置·无需重输」、底栏「已连接」,
+    // 但随后测试连接/重建缓存却因无 token 报「未配置」自相矛盾。诚实化:无 token 即报未配置,促使重输。
+    if (this.store.get(keyOf(provider)) == null) {
+      return { configured: false, fingerprint: null };
+    }
+    return db;
   }
 
   delete(provider: string): void {

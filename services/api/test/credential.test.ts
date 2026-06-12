@@ -54,3 +54,19 @@ test('fingerprint stable for same token', () => {
   const b = cs.put('tushare', TOKEN).fingerprint;
   assert.equal(a, b);
 });
+
+test('指纹持久但密钥库丢 token(dev 内存钥匙串重启)→ info 诚实报未配置,不与「连接异常」自相矛盾', () => {
+  const { cs, store, repo } = svc();
+  cs.put('tushare', TOKEN);
+  assert.equal(cs.info('tushare').configured, true);
+
+  // 模拟 api 重启:内存钥匙串丢了 token,但 DB 指纹行仍持久存在。
+  store.delete('tushare/token');
+  assert.equal(repo.credentialInfo('tushare').configured, true); // DB 单看指纹仍记「已配置」
+  assert.equal(cs.getToken('tushare'), null); // 实际取不到 token
+
+  // 交叉校验后:info 诚实报未配置 → 引导页提示重输,不再「已配置·无需重输」却测试失败。
+  const info = cs.info('tushare');
+  assert.equal(info.configured, false);
+  assert.equal(info.fingerprint, null);
+});

@@ -32,12 +32,16 @@ def _chg_table(dl: DataLayer, latest: str, prev: str) -> pl.DataFrame:
 
 
 def _meta_frame(meta: Mapping[str, dict]) -> pl.DataFrame:
+    # 显式 schema:meta 为空时(本会话无 token / 缺 stock_list 权限)列也保持 str,
+    # 否则空列表会被推断成 Null 类型,与左侧 str 的 stock_code join 报 SchemaError。
+    # 缺行业元数据应诚实降级为「只出全A广度、板块为空」,而非 500。
     return pl.DataFrame(
         {
             "stock_code": list(meta.keys()),
             "industry": [(meta[c].get("industry") or None) for c in meta],
             "sname": [(meta[c].get("name") or None) for c in meta],
-        }
+        },
+        schema={"stock_code": pl.Utf8, "industry": pl.Utf8, "sname": pl.Utf8},
     )
 
 
