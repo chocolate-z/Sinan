@@ -10,6 +10,9 @@ export interface TrainForm {
   purge: number;
   train_span: number;
   test_span: number;
+  codes: string[]; // 股票池(空=全 A);缩小可大幅加速训练
+  codeNames: Record<string, string>; // code→name(仅前端 chip 展示,不下发)
+  feature_workers: number | null; // 特征面板并行核数;null=自动(engine min(核-1,4))
 }
 
 interface ModelsState {
@@ -32,6 +35,9 @@ export const useModelsStore = defineStore('models', {
       purge: 5,
       train_span: 252,
       test_span: 63,
+      codes: [],
+      codeNames: {},
+      feature_workers: null,
     },
     showForm: false,
     models: [],
@@ -66,7 +72,12 @@ export const useModelsStore = defineStore('models', {
       this.startedAt = Date.now();
       this.error = null;
       try {
-        const created = await api.trainModel({ ...f });
+        // codeNames 仅前端展示,不下发;空股票池 → 省略(engine 用全 A);feature_workers null → 省略(auto)。
+        const { codeNames: _drop, codes, feature_workers, ...rest } = f;
+        const body: Record<string, unknown> = { ...rest };
+        if (codes && codes.length) body.codes = codes;
+        if (feature_workers != null) body.feature_workers = feature_workers;
+        const created = await api.trainModel(body);
         this.showForm = false;
         await this.fetchModels();
         if (created?.id) await this.selectModel(created.id);

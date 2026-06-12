@@ -2,13 +2,14 @@
 // 策略 / 模型(M3 接真实)。训练 walk-forward ElasticNet → 模型版本库 → 激活。
 // 红线#3:样本内外 IC 并列;夏普/年化为分层口径(layered_,随 metrics_note 诚实标注);IC/ICIR 中性通道。
 // 流水线为真实系统架构;股票池/风控/成本为打包默认基线(config.defaults.json 真值)。
-import { computed, onMounted } from 'vue';
+import { computed, onMounted, ref } from 'vue';
 import { useModelsStore } from '../../stores/models';
 import { useAppStore } from '../../stores/app';
 import { fmt, fmtPct } from '../../lib/format';
 import PageHero from '../../ui/PageHero.vue';
 import RangePicker from '../../ui/RangePicker.vue';
 import RunningBar from '../../ui/RunningBar.vue';
+import StockSearch from '../../ui/StockSearch.vue';
 import Icon from '../../shell/Icon.vue';
 
 const app = useAppStore();
@@ -25,6 +26,26 @@ const error = computed(() => ms.error);
 const selectModel = (id: string) => ms.selectModel(id);
 const train = () => ms.train();
 const activate = (id: string, ev: Event) => ms.activate(id, ev);
+
+// 股票池篮子:StockSearch 选中即加入(默认空=全 A);缩小股票池可大幅加速训练。
+const stockSearch = ref<{ reset: () => void } | null>(null);
+function addCode(s: { code: string; name: string }) {
+  if (!form.codes.includes(s.code)) {
+    form.codes.push(s.code);
+    form.codeNames[s.code] = s.name;
+  }
+  stockSearch.value?.reset();
+}
+function removeCode(code: string) {
+  form.codes = form.codes.filter((c) => c !== code);
+  delete form.codeNames[code];
+}
+// 并行核数:null=自动(engine min(核-1,4));select 走字符串投影。
+const WORKER_OPTS = ['auto', '1', '2', '4', '8'];
+const workersModel = computed({
+  get: () => (form.feature_workers == null ? 'auto' : String(form.feature_workers)),
+  set: (v: string) => (form.feature_workers = v === 'auto' ? null : Number(v)),
+});
 
 const STATUS: Record<string, { kind: string; label: string }> = {
   running: { kind: 'ok', label: '运行中' },
@@ -127,6 +148,42 @@ const BT_RULES = [
           <div class="field">
             <label class="field-label">测试窗(交易日)</label>
             <input v-model.number="form.test_span" class="input mono" type="number" min="5" />
+          </div>
+          <div class="field">
+            <label class="field-label">
+              并行核数
+              <span class="lyr">利用多核</span>
+            </label>
+            <select v-model="workersModel" class="input mono">
+              <option v-for="w in WORKER_OPTS" :key="w" :value="w">
+                {{ w === 'auto' ? '自动(≤4 核)' : w === '1' ? '1(串行)' : `${w} 核` }}
+              </option>
+            </select>
+          </div>
+          <!-- 股票池:默认全 A;指定篮子可大幅加速(训练量随股票数线性下降) -->
+          <div class="field" style="grid-column: span 3">
+            <label class="field-label">
+              股票池
+              <span class="lyr">{{ form.codes.length ? `指定 ${form.codes.length} 只` : '全 A 股' }}</span>
+            </label>
+            <StockSearch
+              ref="stockSearch"
+              placeholder="搜索代码/名称加入股票池(留空=全 A);缩小可大幅加速"
+              @select="addCode"
+            />
+            <div v-if="form.codes.length" class="pool-chips">
+              <span v-for="c in form.codes" :key="c" class="pool-chip">
+                <span class="pc-name">{{ form.codeNames[c] || c }}</span>
+                <span class="pc-code mono">{{ c }}</span>
+                <button class="pc-x" title="移除" @click="removeCode(c)">
+                  <Icon name="x" :size="11" />
+                </button>
+              </span>
+              <button class="pool-clear" @click="form.codes = []">清空</button>
+            </div>
+            <p class="form-hint pool-hint">
+              留空 = 全 A 股(最慢)。指定股票池后训练量随股票数线性下降 —— 是单项最大的提速杠杆。
+            </p>
           </div>
         </div>
         <div class="form-actions">
@@ -443,6 +500,63 @@ const BT_RULES = [
 .form-hint {
   font-size: var(--fs-cap);
   color: var(--text-3);
+}
+
+/* 股票池篮子 */
+.pool-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  margin-top: 10px;
+}
+.pool-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 4px 6px 4px 10px;
+  border-radius: var(--r-sm);
+  background: var(--bg-panel-2);
+  border: 0.5px solid var(--border);
+}
+.pc-name {
+  font-size: 12px;
+  color: var(--text-1);
+}
+.pc-code {
+  font-size: 10.5px;
+  color: var(--text-3);
+}
+.pc-x {
+  display: grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-3);
+  cursor: pointer;
+  transition:
+    background var(--t-fast),
+    color var(--t-fast);
+}
+.pc-x:hover {
+  background: var(--status-err-bg);
+  color: var(--status-err);
+}
+.pool-clear {
+  border: none;
+  background: transparent;
+  color: var(--text-3);
+  font-size: 11.5px;
+  cursor: pointer;
+  padding: 0 6px;
+}
+.pool-clear:hover {
+  color: var(--accent);
+}
+.pool-hint {
+  margin: 8px 0 0;
 }
 .msg-err {
   display: flex;
