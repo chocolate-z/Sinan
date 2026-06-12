@@ -32,11 +32,18 @@
   ```
 - ⚠️ 首跑大概率补 hiddenimports(sinan 惰性 import / sklearn / duckdb native)。报 ModuleNotFoundError 就把模块加进 spec 的 collect 列表重构。
 
-## Sidecar 2 — api(Node SEA)⬜ 待做
+## Sidecar 2 — api(随包 node.exe + esbuild bundle)✅ 验证通过
 
-- api 已从 env 读端口(`SINAN_API_PORT`/`SINAN_ENGINE_PORT`),`api_frozen` 跑无参 exe 即可。
-- 难点:`@napi-rs/keyring`(native `.node`,生产存 token 到 OS 钥匙串,红线#4)不能塞进 SEA blob → 需随 exe 同目录附带 `.node`,且 require 能找到。`node:sqlite` 是 Node≥22 内置(SEA 基座用 Node≥22 即可)。
-- 计划:esbuild 把 `dist/src/main.js` 打成单 CJS(externalize `@napi-rs/keyring`)→ Node SEA 注入 blob → 产出 `sinan-api.exe` + 同目录 `*.node`。备选:`@yao-pkg/pkg`。
+**决策:不走 SEA,走「随包 node.exe + 单 CJS bundle」**——已实测 `node api-bundle.cjs` 跑通(NestJS + node:sqlite 建表迁移 + 路由),比 SEA 嵌 blob 后找 native keyring 更稳。supervisor 生产态复用 `api_dev(node, entry)`:program=随包 node.exe,args=[api-bundle.cjs]。
+
+- esbuild 把 `dist/src/main.js` 打成单 CJS(3.2MB),`--external` 掉 NestJS 惰性可选包(express/微服务/websocket/@fastify/static|view/class-validator,本 api 不用,运行时不触发)+ `@napi-rs/keyring`(native)。
+- ⚠️ **import.meta.url 坑**:secret-store 用 `createRequire(import.meta.url)` 惰性加载 keyring,CJS 下 `import.meta.url` 为空 → keyring 解析失败。esbuild `--define:import.meta.url=importMetaUrl` + banner `const importMetaUrl=pathToFileURL(__filename).href` 修正,指向 bundle 自身 → keyring 从同目录 `node_modules/@napi-rs/keyring` 解析。
+- 🔴 **抓到真缺口并修**:`@napi-rs/keyring` **一直没装**(dev 用 `SINAN_SECRET_STORE=memory` 从不实例化 KeyringSecretStore 而被掩盖)→ 打包后生产存 token 必 MODULE_NOT_FOUND。已 `pnpm --filter @sinan/api add @napi-rs/keyring@1.3.0`(real OS 钥匙串往返验证通过),随 bundle 同目录附带。
+- `node:sqlite` 是 Node≥22 内置(随包 node 是 v24,自带)。
+
+## 一键构建 sidecars ✅
+
+`node scripts/build-sidecars.mjs`(⚠️ 先停 `pnpm dev`):编译契约+api → esbuild 打 api → 拷 node.exe + @napi-rs/keyring → PyInstaller 冻 engine → 全部落 `apps/desktop/src-tauri/sidecars/{engine,api}/`。`sidecars/` 已 gitignore(产物不入库)。
 
 ## Tauri 打包 + 壳生产态定位 ⬜ 待做
 
