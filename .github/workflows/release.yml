@@ -63,7 +63,7 @@ jobs:
             司南 Sinan 桌面端首个可分发构建(beta)。全本机运行 · BYO 数据源(自备 Tushare/AkShare token)。
             ⚠️ 仅研究参考,不构成投资建议;模拟盘为纸面前向验证,不下任何真实单。日频 · T+1 · 不支持分时。
             首次启动会拉起本地引擎与网关(约需十几秒);token 仅加密存本机 OS 钥匙串,绝不外联。
-          releaseDraft: true
-          # 必须 false:updater 的 endpoint 是 releases/latest/download/latest.json,
-          # 而 latest 不解析到 prerelease。发布后即成「latest」,旧版本据此自更新。
+          # 自动发布(非草稿):构建完直接公开 Release,公开页面可见 + 在线更新立即生效
+          # (updater 的 latest 端点只解析已发布的非 prerelease)。已反复验证构建,适合个人项目。
+          releaseDraft: false
           prerelease: false
