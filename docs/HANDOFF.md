@@ -477,3 +477,15 @@ labels.py   build_forward_return_labels(hfq[T+h]/hfq[T]-1,前向,尾 h 日 null)
 - **训练页股票池 + 并行核数控件 = DONE**:`Models.vue` 训练表单加 ① **股票池**(`StockSearch` 篮子 + chips,默认空=全 A;指定后 codes 下发 → 训练量随股票数线性下降,单项最大提速杠杆)② **并行核数** select(自动/1/2/4/8 → `feature_workers`)。贯穿:`stores/models.ts TrainForm`(+codes/codeNames/feature_workers,`train()` 剔除 display-only codeNames、空 codes 省略)→ api `models.ts`(透传 codes+feature_workers)→ engine.client `TrainRequest.feature_workers`。新增 `icons.ts` 的 `x` 图标。api 57 + 前端 vitest 71 + 双 typecheck 绿。⚠️ StockSearch 需 token 才有补全(无 token 诚实空,但默认全 A 不依赖搜索)。**质检页**同款控件待加(同理可贯穿 factor_quality)。
 - **发布剩余**:③ 余项=真实 **%/ETA + 前端实时进度条**(训练/质检已流式但前端仅靠日志页看;可让 Models/Indicators 页直接订阅 SSE 显进度条/转 jobs+`subscribeJob`);质检页补股票池/workers 控件。④ M6 打包(含 freeze_support)、⑤ UX 评审照旧。
 - 提速后全绿:engine pytest **166** · api node:test 57 · 前端 vitest 71 + typecheck 干净。
+
+### 11.9 M6 打包 = DONE(v0.1.0 首个可分发包,本会话云端发布)
+
+用户「准备发布第一版」→ 把 dev 形态做成 Windows 安装包,云端 GitHub Actions 构建 + 发 Release。
+
+- **发布就绪审计(7-agent workflow)**:核心逻辑 + 6 红线 + ~290 测试全绿,**唯一 blocker = 可分发**(两个 sidecar 没冻结)。顺带收口 `/news` 桩(隐藏+重定向 /dashboard,M5 留 v2);核实 B5「token 泄漏」非真漏洞(tushare 错误不回显 token)。
+- **B1 engine 冻结**:`sinan/__main__.py`(`freeze_support()` 必需——多核子进程会重启本 exe;端口从 `SINAN_ENGINE_PORT` env)+ `sinan-engine.spec`(PyInstaller **one-dir** 利于多进程 + 关 UPX)。产出 536MB one-dir;healthz/providers/indicators/sklearn 端点全验通。
+- **B2 api 冻结**:**不走 SEA,走「随包 node.exe + esbuild 单 CJS bundle」**(实测 `node api-bundle.cjs` 跑通,比 SEA 找 native keyring 稳;supervisor 复用 `api_dev(node, bundle)`)。esbuild external 掉 NestJS 惰性可选包 + keyring;**import.meta.url 坑**(CJS 下空)用 `--define + banner pathToFileURL(__filename)` 修。🔴 **`@napi-rs/keyring` 一直没装**(dev memory store 掩盖)→ 已 add@1.3.0;**native .node 在独立平台子包 `keyring-win32-x64-msvc`**,build-sidecars 须补拷(否则生产 require 崩)。
+- **B3 壳生产态定位**:`lib.rs build_spec` 优先级 = 显式 BIN > dev env(dev.mjs)> 生产从 `resource_dir/sidecars/` 定位;`tauri.conf.json bundle.resources=["sidecars/**/*"]`;`scripts/build-sidecars.mjs` 一键(可移植:esbuild JS API、`SINAN_PYTHON` 覆盖)。`.github/workflows/release.yml` 改 windows runner 云端冻 sidecar + tauri-action 发草稿。
+- **🔴 装机一条龙四个真 bug(只有真打包才暴露,dev 全程掩盖;靠 sidecar stdout/stderr 重定向到 `runtime/{engine,api}.log` 才抓到)**:① **健康超时 15s→120s**(冻结 engine 冷启动导入数百 MB + Defender 扫描数十秒,15s 误判→不起 api→卡启动遮罩);② **node 写无效 stdout 崩**(GUI 壳无控制台,子进程继承无效 std 句柄)→ 重定向到日志文件给有效句柄;③ **`\?\` 前缀**(tauri `resource_dir` 带 Windows 扩展长度前缀,node 解析主模块脚本路径 `realpathSync` 崩 `lstat 'D:' EISDIR`)→ 剥前缀(引擎 exe 经 CreateProcess 不受影响,仅 node 脚本中招);④ **多核 fork 死锁**(Linux 默认 fork 复制带 polars/duckdb 线程的进程,CI engine 测试卡死)→ 进程池强制 `spawn` 上下文(全平台一致=Windows 既有行为)。另:`bundle.icon` 补 `icon.ico`(MSI 必需)、sidecar `CREATE_NO_WINDOW`(不弹黑控制台窗)。
+- **验证**:本地 release exe 实测 engine+api 都起、api /providers 200;`Sinan_0.1.0_x64_en-US.msi`(226MB)/`Sinan_0.1.0_x64-setup.exe`(154MB)本地出包成功。云端 take3 含全部修复构建中→出 v0.1.0 草稿 Release(prerelease,人工复核 Publish)。engine 167 测试绿。
+- **剩余/已知**:装机 smoke 仍需用户在干净/无 Python+Node 环境双击装走「引导→建缓存→质检→信号」一条龙(本机 release exe 已验启动,但完整业务流 + token 落 OS 钥匙串持久 + 关窗无孤儿 待真装机确认);beta 未签名(提示「未知发布者」);仅 Windows x64(macos/linux 需参数化平台 keyring 子包 + 平台 PyInstaller)。
