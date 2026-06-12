@@ -244,6 +244,8 @@ fn get_runtime_info(state: tauri::State<AppState>) -> Option<RuntimeInfo> {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_updater::Builder::new().build()) // 在线更新
+        .plugin(tauri_plugin_process::init()) // 更新后 relaunch
         .plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
             // 二次启动只激活已有窗口。
             if let Some(w) = app.get_webview_window("main") {

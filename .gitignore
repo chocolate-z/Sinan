@@ -54,3 +54,6 @@ Thumbs.db
 # 打包 sidecar 产物(可复现:scripts/build-sidecars.mjs)
 apps/desktop/src-tauri/sidecars/
 services/api/sea/
+
+# 在线更新签名私钥(绝不入库)
+apps/desktop/.tauri-keys/

@@ -51,8 +51,10 @@ jobs:
       - uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          # TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          # 在线更新:签名 bundle + 自动生成上传 latest.json(updater 据此校验)。
+          # 私钥放仓库 Secret TAURI_SIGNING_PRIVATE_KEY;生成时用空密码故密码留空字符串。
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ''
         with:
           projectPath: apps/desktop
           tagName: ${{ github.ref_type == 'tag' && github.ref_name || 'app-v__VERSION__' }}
@@ -62,4 +64,6 @@ jobs:
             ⚠️ 仅研究参考,不构成投资建议;模拟盘为纸面前向验证,不下任何真实单。日频 · T+1 · 不支持分时。
             首次启动会拉起本地引擎与网关(约需十几秒);token 仅加密存本机 OS 钥匙串,绝不外联。
           releaseDraft: true
-          prerelease: true
+          # 必须 false:updater 的 endpoint 是 releases/latest/download/latest.json,
+          # 而 latest 不解析到 prerelease。发布后即成「latest」,旧版本据此自更新。
+          prerelease: false

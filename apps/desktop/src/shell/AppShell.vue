@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import Sidebar from './Sidebar.vue';
 import StatusBar from './StatusBar.vue';
+import UpdateBanner from '../ui/UpdateBanner.vue';
 </script>
 
 <template>
@@ -14,6 +15,7 @@ import StatusBar from './StatusBar.vue';
       </section>
       <StatusBar />
     </main>
+    <UpdateBanner />
   </div>
 </template>
 

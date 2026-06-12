@@ -36,6 +36,13 @@
       "icons/icon.ico",
       "icons/icon.png"
     ],
-    "resources": ["sidecars/**/*"]
+    "resources": ["sidecars/**/*"],
+    "createUpdaterArtifacts": true
+  },
+  "plugins": {
+    "updater": {
+      "endpoints": ["https://github.com/chocolate-z/Sinan/releases/latest/download/latest.json"],
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDUyMDg0QTI5RTM3MDAzNDYKUldSR0EzRGpLVW9JVXNGUElxUlc0LzlCcy9ueVhTUFlCSFNxRitBM1g0cDZCdkt3Z0VoUGdQYW8K"
+    }
   }
 }
