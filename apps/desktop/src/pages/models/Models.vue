@@ -164,7 +164,9 @@ const BT_RULES = [
           <div class="field" style="grid-column: span 3">
             <label class="field-label">
               股票池
-              <span class="lyr">{{ form.codes.length ? `指定 ${form.codes.length} 只` : '全 A 股' }}</span>
+              <span class="lyr">{{
+                form.codes.length ? `指定 ${form.codes.length} 只` : '全 A 股'
+              }}</span>
             </label>
             <StockSearch
               ref="stockSearch"

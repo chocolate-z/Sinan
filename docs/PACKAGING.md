@@ -7,6 +7,7 @@
 `apps/desktop/src-tauri/src/lib.rs` 的 supervisor 启动顺序:探测端口(59900–59999)→ 生成会话 token → 写 `runtime/ports.json` → 起 engine → 健康探测 → 起 api → 健康探测 → 通知前端解锁。关窗优雅终止,不留孤儿。
 
 `build_spec()` **已内置 dev / frozen 双模式**(`apps/desktop/shell-core/src/supervisor.rs`):
+
 - engine:`SINAN_ENGINE_BIN` 设了 → `engine_frozen(exe)`(**无参** exe,端口从 `SINAN_ENGINE_PORT` env 读);否则 dev 走 `SINAN_PYTHON -m uvicorn`。
 - api:`SINAN_API_BIN` 设了 → `api_frozen(exe)`(无参 exe);否则 dev 走 `SINAN_NODE <SINAN_API_ENTRY>`。
 - `base_env()` 给两者下发 `SINAN_API_PORT / SINAN_ENGINE_PORT / SINAN_IPC_TOKEN / SINAN_DATA_DIR`。
