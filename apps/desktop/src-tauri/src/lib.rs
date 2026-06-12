@@ -19,7 +19,10 @@ const PROBE_START: u16 = 59900;
 const PROBE_END: u16 = 59999;
 const API_PREF: u16 = 59914;
 const ENGINE_PREF: u16 = 59915;
-const READY_TIMEOUT_MS: u64 = 15_000;
+// 冷启动容限要大:冻结 engine(PyInstaller one-dir,含 duckdb/polars/sklearn 等数百 MB)
+// 首次启动需导入大量 native 库 + 被 Windows Defender 实时扫描,实测可达数十秒;15s 太短会
+// 误判「健康超时」放弃 → 永不启动 api → 卡在启动遮罩。wait_ready 一就绪即返回,大上限不惩罚热启动。
+const READY_TIMEOUT_MS: u64 = 120_000;
 
 #[derive(Clone, Serialize)]
 struct RuntimeInfo {
@@ -114,7 +117,7 @@ fn build_spec(
     }
 }
 
-fn spawn(spec: &SidecarSpec) -> std::io::Result<Child> {
+fn spawn(spec: &SidecarSpec, log_dir: &std::path::Path) -> std::io::Result<Child> {
     let mut cmd = Command::new(&spec.program);
     cmd.args(&spec.args);
     for (k, v) in &spec.env {
@@ -123,11 +126,20 @@ fn spawn(spec: &SidecarSpec) -> std::io::Result<Child> {
     if let Some(cwd) = &spec.cwd {
         cmd.current_dir(cwd);
     }
+    // 把 sidecar 的 stdout/stderr 重定向到日志文件。关键:生产壳是 GUI(无控制台),子进程继承的
+    // std 句柄无效;node(api)首条启动日志写无效 stdout 即崩溃 → api 永远起不来(dev 从终端跑有
+    // 有效控制台故从未暴露)。给有效句柄根治,顺带留下 sidecar 日志可排障(每次启动覆盖,不无限增长)。
+    let _ = std::fs::create_dir_all(log_dir);
+    if let Ok(out) = std::fs::File::create(log_dir.join(format!("{}.log", spec.name))) {
+        if let Ok(err) = out.try_clone() {
+            cmd.stdout(std::process::Stdio::from(out));
+            cmd.stderr(std::process::Stdio::from(err));
+        }
+    }
     #[cfg(windows)]
     {
         use std::os::windows::process::CommandExt;
-        // CREATE_NO_WINDOW:生产壳是 GUI(无控制台),控制台子进程(engine/api)默认会各弹一个
-        // 黑色控制台窗口。dev 从终端跑时句柄继承不变,sidecar 日志照常打到终端。
+        // CREATE_NO_WINDOW:生产 GUI 壳下控制台子进程默认各弹一个黑色控制台窗;隐藏它。
         cmd.creation_flags(0x0800_0000);
     }
     cmd.spawn()
@@ -162,14 +174,26 @@ fn supervise(app: tauri::AppHandle) {
     let env = base_env(api_port, engine_port, &tok, &dir.to_string_lossy());
 
     // 资源目录:生产态(打包安装)定位 sidecars/;dev 态拿不到无妨(走环境变量分支)。
-    let resource_dir = app
-        .path()
-        .resource_dir()
-        .unwrap_or_else(|_| std::path::PathBuf::from("."));
+    // ⚠️ 去掉 Windows 扩展长度前缀 \\?\:tauri 的 resource_dir 常带它,但 node 解析主模块脚本路径时
+    // realpathSync 会在 \\?\ 路径上崩(lstat 裸盘符 'D:' EISDIR)→ api 永远起不来。引擎是 exe 由
+    // CreateProcess 启动不受此影响,仅 node 脚本路径中招;统一在此剥前缀,两条 sidecar 路径都干净。
+    let resource_dir = {
+        let raw = app
+            .path()
+            .resource_dir()
+            .unwrap_or_else(|_| std::path::PathBuf::from("."));
+        let s = raw.to_string_lossy();
+        std::path::PathBuf::from(
+            s.strip_prefix(r"\\?\")
+                .map(|x| x.to_string())
+                .unwrap_or_else(|| s.into_owned()),
+        )
+    };
+    let log_dir = dir.join("runtime");
 
     // engine 先就绪。
-    emit("engine", "正在启动本地引擎…", true);
-    match spawn(&build_spec("engine", env.clone(), engine_port, &resource_dir)) {
+    emit("engine", "正在启动本地引擎(首次较慢,请稍候)…", true);
+    match spawn(&build_spec("engine", env.clone(), engine_port, &resource_dir), &log_dir) {
         Ok(child) => state.sup.lock().unwrap().children.push(child),
         Err(e) => {
             emit("error", &format!("engine 启动失败:{e}"), false);
@@ -183,7 +207,7 @@ fn supervise(app: tauri::AppHandle) {
 
     // api 再就绪。
     emit("api", "正在启动网关…", true);
-    match spawn(&build_spec("api", env.clone(), engine_port, &resource_dir)) {
+    match spawn(&build_spec("api", env.clone(), engine_port, &resource_dir), &log_dir) {
         Ok(child) => state.sup.lock().unwrap().children.push(child),
         Err(e) => {
             emit("error", &format!("api 启动失败:{e}"), false);

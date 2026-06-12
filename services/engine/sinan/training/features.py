@@ -17,6 +17,7 @@
 
 from __future__ import annotations
 
+import multiprocessing as mp
 import os
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from dataclasses import dataclass, field
@@ -138,7 +139,11 @@ def _build_panel_parallel(
     codes_l = list(codes)
     days_done = 0
 
-    with ProcessPoolExecutor(max_workers=workers) as ex:
+    # 强制 'spawn' 上下文(全平台一致):Linux 默认 'fork' 会复制已起 polars/duckdb 后台线程的进程,
+    # 子进程继承不存在线程持有的锁 → 经典 fork+线程死锁(进程池永久挂起)。spawn 起全新进程重导入,
+    # 无此问题,也正是 Windows 默认行为(已验证并行==串行)。
+    ctx = mp.get_context("spawn")
+    with ProcessPoolExecutor(max_workers=workers, mp_context=ctx) as ex:
         futs = {
             ex.submit(_worker_panel, cache_root, codes_l, ch, factors): i
             for i, ch in enumerate(chunks)
