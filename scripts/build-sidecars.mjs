@@ -18,14 +18,13 @@ import { cpSync, existsSync, mkdirSync, rmSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import esbuild from 'esbuild';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const isWin = process.platform === 'win32';
 const r = (...p) => resolve(ROOT, ...p);
-const PY = r(isWin ? '.venv/Scripts/python.exe' : '.venv/bin/python');
-const ESBUILD = r(
-  'node_modules/.pnpm/@esbuild+win32-x64@0.25.0/node_modules/@esbuild/win32-x64/esbuild.exe',
-);
+// PY 可被 SINAN_PYTHON 覆盖(CI 用 setup-python 的 `python`;本地用 .venv)。
+const PY = process.env.SINAN_PYTHON || r(isWin ? '.venv/Scripts/python.exe' : '.venv/bin/python');
 const SIDECARS = r('apps/desktop/src-tauri/sidecars');
 
 function run(label, cmd, args, cwd) {
@@ -48,24 +47,35 @@ const EXTERNALS = [
 ];
 
 // ── 1) 契约 + api 编译 ────────────────────────────────────────────────────
-run('编译 shared-contracts', 'node', ['node_modules/typescript/bin/tsc', '-p', 'tsconfig.json'], r('packages/shared-contracts'));
-run('编译 api', 'node', ['node_modules/typescript/bin/tsc', '-p', 'tsconfig.build.json'], r('services/api'));
+run(
+  '编译 shared-contracts',
+  'node',
+  ['node_modules/typescript/bin/tsc', '-p', 'tsconfig.json'],
+  r('packages/shared-contracts'),
+);
+run(
+  '编译 api',
+  'node',
+  ['node_modules/typescript/bin/tsc', '-p', 'tsconfig.build.json'],
+  r('services/api'),
+);
 
 // ── 2) esbuild 把 api 打成单 CJS ──────────────────────────────────────────
 rmSync(SIDECARS, { recursive: true, force: true });
 mkdirSync(r('apps/desktop/src-tauri/sidecars/api/node_modules/@napi-rs'), { recursive: true });
-run('esbuild 打包 api → 单 CJS', ESBUILD, [
-  'services/api/dist/src/main.js',
-  '--bundle',
-  '--platform=node',
-  '--format=cjs',
-  '--target=node22',
-  `--outfile=${resolve(SIDECARS, 'api/api-bundle.cjs')}`,
-  '--keep-names',
-  '--define:import.meta.url=importMetaUrl',
-  "--banner:js=const importMetaUrl=require('url').pathToFileURL(__filename).href;",
-  ...EXTERNALS.map((e) => `--external:${e}`),
-]);
+console.log('\n▸ esbuild 打包 api → 单 CJS');
+esbuild.buildSync({
+  entryPoints: [r('services/api/dist/src/main.js')],
+  bundle: true,
+  platform: 'node',
+  format: 'cjs',
+  target: 'node22',
+  outfile: resolve(SIDECARS, 'api/api-bundle.cjs'),
+  keepNames: true,
+  define: { 'import.meta.url': 'importMetaUrl' },
+  banner: { js: "const importMetaUrl=require('url').pathToFileURL(__filename).href;" },
+  external: EXTERNALS,
+});
 
 // ── 3) 随包 node.exe + native keyring(供 bundle 同目录解析)────────────────
 console.log('\n▸ 随包 node 运行时 + @napi-rs/keyring');
@@ -88,12 +98,30 @@ cpSync(platDir, resolve(SIDECARS, `api/node_modules/${PLATFORM_PKG}`), {
 
 // ── 4) 引擎 PyInstaller one-dir ───────────────────────────────────────────
 if (!existsSync(PY)) {
-  console.error(`✗ 未找到 venv python: ${PY}(先建 venv + pip install -e services/engine 与 pyinstaller)`);
+  console.error(
+    `✗ 未找到 venv python: ${PY}(先建 venv + pip install -e services/engine 与 pyinstaller)`,
+  );
   process.exit(1);
 }
-run('PyInstaller 冻结 engine(较久)', PY, ['-m', 'PyInstaller', 'sinan-engine.spec', '--noconfirm', '--distpath', 'dist', '--workpath', 'build'], r('services/engine'));
+run(
+  'PyInstaller 冻结 engine(较久)',
+  PY,
+  [
+    '-m',
+    'PyInstaller',
+    'sinan-engine.spec',
+    '--noconfirm',
+    '--distpath',
+    'dist',
+    '--workpath',
+    'build',
+  ],
+  r('services/engine'),
+);
 console.log('\n▸ 拷贝 engine one-dir → sidecars/engine');
 cpSync(r('services/engine/dist/sinan-engine'), resolve(SIDECARS, 'engine'), { recursive: true });
 
 console.log(`\n✅ sidecars 就绪:${SIDECARS}`);
-console.log('   下一步:tauri.conf.json 配 bundle.resources 指向 sidecars/,壳生产态定位,然后 tauri build。');
+console.log(
+  '   下一步:tauri.conf.json 配 bundle.resources 指向 sidecars/,壳生产态定位,然后 tauri build。',
+);
