@@ -25,9 +25,34 @@ _TBL_SEQ = itertools.count()
 
 
 class DataLayer:
-    def __init__(self, cache_root: Path | str, con: "duckdb.DuckDBPyConnection | None" = None) -> None:
+    def __init__(
+        self,
+        cache_root: Path | str,
+        con: "duckdb.DuckDBPyConnection | None" = None,
+        *,
+        mat_since: str | None = None,
+    ) -> None:
         self.cache_root = Path(cache_root)
+        owns_con = con is None
         self._con = con or duckdb.connect(":memory:")
+        # 物化下界(YYYY-MM-DD):非财务(日频)数据集只物化 trade_date>=mat_since 的行。单日实盘
+        # (run_eod)只需最近窗口,却原本把全 A×多年(数千万行)整段灌进内存 → OOM(Allocation
+        # failure)。设下界把日频物化压到「最近窗口」防爆;财务类(fundamental)不裁剪——其 PIT 取
+        # 「ann_date<=T 的最新一期」需保留全历史,且体量小不致 OOM。仅内置/模型路径(因子回看已知
+        # 且≤窗口)由调用方设此界;自定义因子(回看未知)不设,靠下方磁盘溢写兜底,绝不少取致降级(红线#3)。
+        self.mat_since = mat_since
+        if owns_con:
+            # 开 duckdb 磁盘溢写:大缓存物化超内存预算时落盘而非 OOM。纯安全网,零正确性影响。
+            # memory_limit 设较保守值,使「可用内存紧张(开发服+本应用+子进程并发)」时提前溢写,
+            # 不依赖总内存的 80% 默认(会在低空闲内存下仍 OOM)。配置失败不致命(退回默认)。
+            try:
+                spill = self.cache_root / "_duckdb_spill"
+                spill.mkdir(parents=True, exist_ok=True)
+                p = str(spill).replace("\\", "/").replace("'", "''")
+                self._con.execute(f"SET temp_directory='{p}'")
+                self._con.execute("SET memory_limit='4GB'")
+            except Exception:  # noqa: BLE001 — 配置失败退回默认,不引入新错误
+                pass
         # 每实例物化缓存:(dataset, codes) → duckdb 临时表名。首次 asof 把该数据集(可选按 codes
         # 过滤,利用分区裁剪)整段读入临时表,后续逐日 asof 只在内存表上过滤 —— 质检/训练在大缓存
         # 上从「逐日重扫 parquet」降为「一次读入 + N 次内存查询」。WHERE/QUALIFY/ORDER 逻辑不变,
@@ -46,11 +71,16 @@ class DataLayer:
         glob = layout.glob_for(self.cache_root, dataset).replace("\\", "/").replace("'", "''")
         name = f"_ds_{next(_TBL_SEQ)}"
         params: list[object] = []
-        code_filter = ""
+        conds: list[str] = []
         if codes:
-            placeholders = ", ".join(["?"] * len(codes))
-            code_filter = f" WHERE stock_code IN ({placeholders})"
-            params = list(codes)
+            conds.append(f"stock_code IN ({', '.join(['?'] * len(codes))})")
+            params.extend(codes)
+        # 物化下界:仅非财务(日频)且设了 mat_since 时,只载最近窗口(防单日实盘把全历史灌爆内存)。
+        # asof 查询仍在物化表上加 <=asof 上界,PIT 不变;下界只是「不载更早的、当前用不到的日频历史」。
+        if self.mat_since and dataset not in layout.FINANCIAL_PIT:
+            conds.append(f"{layout.ASOF_DATE_COL[dataset]} >= ?")
+            params.append(self.mat_since)
+        where = (" WHERE " + " AND ".join(conds)) if conds else ""
         # 分股文件与旧共享 part.parquet 共存可能让同一主键出现重复行 → 物化时按主键去重(留一条),
         # 杜绝同 (stock_code, 日期) 重复进入横截面/asof。财务类不在此去重:其 PIT 需保留同 end_date
         # 的多条 ann_date 供 asof 取「<=T 的最新一期」(去重会破坏 ann_date 逻辑)。
@@ -62,7 +92,7 @@ class DataLayer:
         self._con.execute(
             f"CREATE TEMP TABLE {name} AS "
             f"SELECT * FROM read_parquet('{glob}', hive_partitioning=1, union_by_name=1)"
-            f"{code_filter}{dedup}",
+            f"{where}{dedup}",
             params,
         )
         self._materialized[key] = name

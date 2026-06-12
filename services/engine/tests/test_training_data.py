@@ -108,6 +108,26 @@ def test_feature_panel_windowed_equals_unbounded(tmp_path):
     assert windowed.equals(unbounded), "窗口裁剪改变了特征值 —— 提速破坏了正确性!"
 
 
+def test_mat_since_bounded_score_equals_unbounded(tmp_path):
+    """实盘单日物化下界(防 OOM):只载最近窗口的日频数据 vs 全历史,内置因子打分逐值相等。
+
+    mat_since 须早于因子在 asof 所需的回看窗(mom20 需 20 交易日前)。这里 mat_since=dates[5] 早于
+    mom20@dates[39] 所需的 dates[19](保正确),又真排除了 dates[0..4](考验排除生效)。财务类
+    (fundamental,roe 的来源)不受 mat_since 裁剪 → ann_date 仍全在,roe 不变。"""
+    from sinan.factors import FactorContext, score_universe
+
+    dates = _dates(40)
+    cache = tmp_path / "c"
+    _write(cache, _frames(dates))
+    asof = dates[39]
+
+    full = score_universe(FactorContext(DataLayer(cache), asof, CODES)).scores.sort("stock_code")
+    bounded = score_universe(
+        FactorContext(DataLayer(cache, mat_since=dates[5]), asof, CODES)
+    ).scores.sort("stock_code")
+    assert full.equals(bounded), "物化下界改变了打分 —— 防 OOM 的窗口裁剪破坏了正确性!"
+
+
 def test_feature_panel_parallel_equals_sequential(tmp_path):
     """提速正确性②:多核并行(进程池按日期分块)与串行特征面板逐值相等。
 

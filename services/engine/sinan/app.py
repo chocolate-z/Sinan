@@ -303,10 +303,21 @@ def _price_map(dl, dataset: str, asof: str, field: str, codes) -> dict[str, floa
 def paper_run(req: PaperRunReq) -> dict:
     from dataclasses import asdict
 
+    from datetime import datetime, timedelta
+
     from .data import DataLayer
     from .paper import CostModel, Position, SimAccount, run_eod
 
-    dl = DataLayer(config.cache_dir())
+    # 单日实盘只看最近数据:把日频物化压到最近窗口防 OOM(全 A 大缓存)。内置因子回看≤20、模型同;
+    # 自定义因子(req.custom)回看未知 → 不设下界(载全历史,靠 duckdb 溢写兜底,绝不少取致降级,红线#3)。
+    mat_since = None
+    if not req.custom:
+        try:
+            anchor = datetime.strptime(req.today, "%Y-%m-%d") - timedelta(days=800)
+            mat_since = anchor.strftime("%Y-%m-%d")
+        except (TypeError, ValueError):
+            mat_since = None
+    dl = DataLayer(config.cache_dir(), mat_since=mat_since)
 
     codes = req.codes
     if not codes:
