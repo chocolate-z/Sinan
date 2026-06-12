@@ -76,24 +76,39 @@ fn wait_ready(port: u16, timeout_ms: u64) -> bool {
     false
 }
 
-fn build_spec(name: &str, env: std::collections::BTreeMap<String, String>, engine_port: u16) -> SidecarSpec {
+/// 解析 sidecar 启动规格。优先级:显式 BIN 覆盖 > dev 环境变量(由 scripts/dev.mjs 下发)> 生产打包产物。
+/// 生产态(双击安装包启动,无 dev 环境变量)从 tauri 资源目录定位 `sidecars/` 下打包进去的冻结产物。
+fn build_spec(
+    name: &str,
+    env: std::collections::BTreeMap<String, String>,
+    engine_port: u16,
+    resource_dir: &std::path::Path,
+) -> SidecarSpec {
+    let sc = resource_dir.join("sidecars");
     match name {
         "engine" => {
             if let Ok(bin) = std::env::var("SINAN_ENGINE_BIN") {
                 SidecarSpec::engine_frozen(&bin, env)
-            } else {
-                let python = std::env::var("SINAN_PYTHON").unwrap_or_else(|_| "python".into());
+            } else if let Ok(python) = std::env::var("SINAN_PYTHON") {
                 SidecarSpec::engine_dev(&python, engine_port, env)
+            } else {
+                // 生产:PyInstaller 冻结引擎(无参启动,端口从 SINAN_ENGINE_PORT env 读)。
+                let exe = sc.join("engine").join("sinan-engine.exe");
+                SidecarSpec::engine_frozen(&exe.to_string_lossy(), env)
             }
         }
         _ => {
             if let Ok(bin) = std::env::var("SINAN_API_BIN") {
                 SidecarSpec::api_frozen(&bin, env)
-            } else {
-                let node = std::env::var("SINAN_NODE").unwrap_or_else(|_| "node".into());
+            } else if let Ok(node) = std::env::var("SINAN_NODE") {
                 let entry = std::env::var("SINAN_API_ENTRY")
                     .unwrap_or_else(|_| "services/api/dist/src/main.js".into());
                 SidecarSpec::api_dev(&node, &entry, env)
+            } else {
+                // 生产:随包 node.exe 跑 esbuild bundle(require('@napi-rs/keyring') 从 bundle 同目录解析)。
+                let node = sc.join("api").join("node.exe");
+                let bundle = sc.join("api").join("api-bundle.cjs");
+                SidecarSpec::api_dev(&node.to_string_lossy(), &bundle.to_string_lossy(), env)
             }
         }
     }
@@ -139,9 +154,15 @@ fn supervise(app: tauri::AppHandle) {
 
     let env = base_env(api_port, engine_port, &tok, &dir.to_string_lossy());
 
+    // 资源目录:生产态(打包安装)定位 sidecars/;dev 态拿不到无妨(走环境变量分支)。
+    let resource_dir = app
+        .path()
+        .resource_dir()
+        .unwrap_or_else(|_| std::path::PathBuf::from("."));
+
     // engine 先就绪。
     emit("engine", "正在启动本地引擎…", true);
-    match spawn(&build_spec("engine", env.clone(), engine_port)) {
+    match spawn(&build_spec("engine", env.clone(), engine_port, &resource_dir)) {
         Ok(child) => state.sup.lock().unwrap().children.push(child),
         Err(e) => {
             emit("error", &format!("engine 启动失败:{e}"), false);
@@ -155,7 +176,7 @@ fn supervise(app: tauri::AppHandle) {
 
     // api 再就绪。
     emit("api", "正在启动网关…", true);
-    match spawn(&build_spec("api", env.clone(), engine_port)) {
+    match spawn(&build_spec("api", env.clone(), engine_port, &resource_dir)) {
         Ok(child) => state.sup.lock().unwrap().children.push(child),
         Err(e) => {
             emit("error", &format!("api 启动失败:{e}"), false);
