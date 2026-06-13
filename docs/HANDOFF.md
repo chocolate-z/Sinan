@@ -500,3 +500,18 @@ labels.py   build_forward_return_labels(hfq[T+h]/hfq[T]-1,前向,尾 h 日 null)
 - **前端**:`lib/updater.ts`(check/downloadAndInstall 进度/relaunch,非 Tauri/离线 try-catch 静默)+ `ui/UpdateBanner.vue`(启动 4s 后静默查,有新版才浮层:版本/release body/进度条/一键更新重启)挂 `AppShell`。
 - **CI**:`release.yml` 注入 `TAURI_SIGNING_PRIVATE_KEY` + 密码空串;**`prerelease:false`**(关键:updater endpoint 的 `releases/latest` 不解析到 prerelease)→ tauri-action 自动签 bundle + 生成上传 `latest.json`。
 - **升级路径**:take3 包无 updater 不能自更新;**装 take4 包(带 updater)后,以后 `git tag vX.Y.Z` 推送 → 云端签名出包发 Release → 旧版启动自动发现并一键更新**。⚠️ 改 endpoint 的 owner/repo 若仓库迁移要同步;换签名密钥需同步换 pubkey + Secret。cargo check + 前端 typecheck/eslint/vitest 71 全绿。
+
+### 11.11 交接状态(2026-06-12 会话末)— v0.1.0 已发布
+
+**当前状态**:v0.1.0 已正式公开发布(可分发 Windows 安装包 + Tauri 在线自动更新)。功能层面 v1 早已完整(缓存→因子→信号→回测→训练→持仓→行情全闭环,6 红线守牢,engine 167 + api 57 + 前端 71 测试绿,CI 三 job 绿)。本会话从 dev 形态一路真打包真发布,挖修 8 个「只有真打包才暴露」的 bug(§11.9)+ 在线更新全链路(§11.10)。
+
+**发新版**:`git tag vX.Y.Z && git push origin vX.Y.Z` → 云端 windows runner 自动冻 sidecar + 签名出包 + **公开发布** Release(releaseDraft=false);装着的旧版启动自动弹更新浮层一键升级。签名 Secret `TAURI_SIGNING_PRIVATE_KEY` 已配;私钥在 gitignore 的 `apps/desktop/.tauri-keys/sinan-updater.key`(别删,换库/换钥需同步 pubkey+Secret+endpoint)。
+
+**待办(优先级)**:
+
+- 🔴 **唯一硬收尾**:干净机/别人电脑装 v0.1.0 走完整业务流验收(本机已验证 engine+api 都能起,但完整业务流 + token 落 OS 钥匙串持久 + 关窗无残留,还没在真·干净环境过)。排障看 `%APPDATA%\Sinan\runtime\{engine,api}.log`(sidecar 日志已重定向到这)。
+- 🟡 **v1 小打磨(半天)**:质检页(Indicators)加股票池/核数控件(训练页 Models 已有,同改法)· Models/Indicators 页实时进度条(现仅日志页看进度)· 模型 OOS 警告(IC 0.50–0.53 正常非失败)· 行情快照降级标记 · `/models/train` ISO 日期校验 · README 红线声明。
+- 🐛 单日期框被撑成竖排高框(DatePicker padding;DevTools 量 `.dp-trigger` 对照同页 RangePicker)。
+- ⚪ **v2**:LightGBM/ensemble · ICIR 自动加权 · 自定义因子并行 · 资讯页(M5)· 系统托盘+关闭确认 · 申万一级/北向(需更高 Tushare 积分)· 财务 PIT 精准化。
+
+**gotcha**:dev `pnpm dev`(token 内存存重启丢,引导页重输)· 别同开多会话改同仓库(曾被 git reset 清掉未提交工作)· 改 engine/api 需重启 dev · 打包改动需停 dev 跑 `node scripts/build-sidecars.mjs` 再 tauri build · cargo/rustc 残锁卡 dev 用 Stop-Process 清。
