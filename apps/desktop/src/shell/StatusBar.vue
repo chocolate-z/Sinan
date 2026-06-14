@@ -1,9 +1,26 @@
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted, ref } from 'vue';
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 import { useAppStore } from '../stores/app';
+import { useModelsStore } from '../stores/models';
+import { useIndicatorsStore } from '../stores/indicators';
+import { useBacktestStore } from '../stores/backtest';
+import { useTradingStore } from '../stores/trading';
 import { fmtInt } from '../lib/format';
 
 const app = useAppStore();
+const models = useModelsStore();
+const indicators = useIndicatorsStore();
+const backtest = useBacktestStore();
+const trading = useTradingStore();
+
+// 全局运行指示器:任一长任务在跑 → 状态栏显示(切到任意页都看得见,评审 #11)。
+const runningLabel = computed<string | null>(() => {
+  if (models.training) return '训练中';
+  if (indicators.loading) return '质检中';
+  if (backtest.running) return '回测中';
+  if (trading.loading) return '运行中';
+  return null;
+});
 
 // 实时时钟(本机时间,HH:MM:SS,每秒更新)。
 const clock = ref('');
@@ -45,6 +62,10 @@ onBeforeUnmount(() => {
       </span>
     </div>
     <div class="sb-right">
+      <span v-if="runningLabel" class="sb-running">
+        <span class="sb-pulse" />
+        {{ runningLabel }}…
+      </span>
       <span class="sb-disclaimer">本工具仅供量化研究与策略验证,不构成任何投资建议</span>
       <span class="mono sb-clock">{{ clock }}</span>
     </div>
@@ -108,5 +129,30 @@ onBeforeUnmount(() => {
 }
 .sb-clock {
   color: var(--text-3);
+}
+.sb-running {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--accent);
+  font-weight: 500;
+}
+.sb-pulse {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+  animation: sb-pulse 1.1s ease-in-out infinite;
+}
+@keyframes sb-pulse {
+  0%,
+  100% {
+    opacity: 0.35;
+    transform: scale(0.85);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.15);
+  }
 }
 </style>
