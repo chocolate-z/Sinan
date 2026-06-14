@@ -3,10 +3,18 @@ import { computed, onMounted } from 'vue';
 import { useBacktestStore, type Scoring } from '../../stores/backtest';
 import { pnlClass } from '../../lib/pnl';
 import { actionLabel, reasonLabel } from '../../lib/signals';
-import { drawdownSeries, honestyBadges, monthlyGrid, monthlyReturns } from '../../lib/backtest';
+import {
+  compareBacktests,
+  drawdownSeries,
+  honestyBadges,
+  monthlyGrid,
+  monthlyReturns,
+  type CompareMetric,
+} from '../../lib/backtest';
 import { fmt, fmtInt } from '../../lib/format';
 import PageHero from '../../ui/PageHero.vue';
 import EquityChart from '../../ui/charts/EquityChart.vue';
+import CompareChart from '../../ui/charts/CompareChart.vue';
 import Heatmap from '../../ui/charts/Heatmap.vue';
 import DatePicker from '../../ui/DatePicker.vue';
 import RangePicker from '../../ui/RangePicker.vue';
@@ -45,6 +53,64 @@ const resModelName = computed(() => {
 
 const runBacktest = () => bt.run();
 const loadOne = (id: string) => bt.loadOne(id);
+
+// ── 模型 vs 等权基线对比 ──────────────────────────────────────────────────────
+const comparing = computed(() => bt.comparing);
+const comparison = computed(() => bt.comparison);
+const compareError = computed(() => bt.compareError);
+const canCompare = computed(() => bt.canCompare);
+const runCompare = () => bt.compare();
+const clearComparison = () => bt.clearComparison();
+// 无可用模型时按钮禁用 → 用 tooltip 指明原因(否则用户不知为何点不动)。
+const compareTitle = computed(() =>
+  bt.compareModelId
+    ? '同窗口同成本各跑一次模型与等权基线,直接看模型有没有用'
+    : '需先在「模型」页训练并激活一个模型,才能与等权基线对比',
+);
+
+// 逐项对比 + 综合判定(纯逻辑在 lib/backtest,便于单测)。
+const cmp = computed(() =>
+  comparison.value
+    ? compareBacktests(comparison.value.model?.metrics, comparison.value.equal?.metrics)
+    : null,
+);
+// 对比图三条归一化序列(模型/等权/基准),两次回测同窗口 → 按索引对齐。
+function normNav(curve: any[]): number[] {
+  const navs = (curve ?? []).map((p) => p.nav ?? 0);
+  const base = navs[0] || 1;
+  return navs.map((v) => v / base);
+}
+const cmpModelSeries = computed(() => normNav(comparison.value?.model?.nav_curve ?? []));
+const cmpEqualSeries = computed(() => normNav(comparison.value?.equal?.nav_curve ?? []));
+const cmpBenchSeries = computed<number[]>(() => {
+  const curve: any[] = comparison.value?.model?.nav_curve ?? [];
+  const raw = curve.map((p) => (p.benchmark ?? null) as number | null);
+  const b0 = raw.find((v) => v != null) ?? null;
+  if (b0 == null) return [];
+  return raw.map((v) => (v != null ? v / b0 : 0));
+});
+const cmpModelName = computed(() => {
+  const id = comparison.value?.model?.model_id;
+  if (!id) return '';
+  return models.value.find((x) => x.id === id)?.name || String(id).slice(0, 8);
+});
+
+function cmpCell(v: number | null, unit: 'pct' | 'num'): string {
+  if (v == null) return '—';
+  return unit === 'pct' ? `${(v * 100).toFixed(2)}%` : v.toFixed(2);
+}
+function cmpDiff(v: number | null, unit: 'pct' | 'num'): string {
+  if (v == null) return '—';
+  const s = v >= 0 ? '+' : '';
+  return unit === 'pct' ? `${s}${(v * 100).toFixed(2)}%` : `${s}${v.toFixed(2)}`;
+}
+// 差值色:模型更优=盈亏「涨」通道,更差=「跌」通道,持平/缺失=中性(语义,非数值符号)。
+function cmpDiffClass(m: CompareMetric): string {
+  return pnlClass(m.modelBetter == null ? 0 : m.modelBetter ? 1 : -1);
+}
+function verdictClass(tone?: string): string {
+  return pnlClass(tone === 'good' ? 1 : tone === 'bad' ? -1 : 0);
+}
 
 onMounted(() => {
   bt.loadHistory();
@@ -118,6 +184,14 @@ function fixed(v: number | null | undefined): string {
     sub="事件驱动逐日撮合 · T+1 开盘成交 · 含交易成本 · 仅测训练截止后(诚实样本外)"
   >
     <template #right>
+      <button
+        class="btn btn-secondary btn-sm"
+        :disabled="!canCompare"
+        :title="compareTitle"
+        @click="runCompare"
+      >
+        <Icon name="backtest" :size="14" /> {{ comparing ? '对比中…' : '模型 vs 等权' }}
+      </button>
       <button class="btn btn-primary btn-sm" :disabled="!canRun" @click="runBacktest">
         <Icon name="refresh" :size="14" /> {{ running ? '回测中…' : '跑回测' }}
       </button>
@@ -149,7 +223,90 @@ function fixed(v: number | null | undefined): string {
     </div>
 
     <p v-if="error" class="msg-err"><Icon name="alert" :size="14" /> {{ error }}</p>
-    <RunningBar :active="running" :since="bt.startedAt" label="回测中 · 逐日撮合" />
+    <p v-if="compareError" class="msg-err">
+      <Icon name="alert" :size="14" /> 对比失败 · {{ compareError }}
+    </p>
+    <RunningBar
+      :active="running || comparing"
+      :since="bt.startedAt"
+      :label="comparing ? '对比中 · 模型与等权各跑一次(两次回测)' : '回测中 · 逐日撮合'"
+    />
+
+    <!-- ── 模型 vs 等权基线对比卡(回答「模型有没有用」)──────────────────────────── -->
+    <div v-if="comparison && cmp" class="card cmp-card">
+      <div class="card-head">
+        <div>
+          <h3 class="card-title">模型 vs 等权基线对比</h3>
+          <span class="card-sub">
+            同样本外窗口 · 同成本 · 唯一变量=打分口径{{
+              cmpModelName ? ` · 模型 ${cmpModelName}` : ''
+            }}
+          </span>
+        </div>
+        <button class="btn btn-ghost btn-sm" @click="clearComparison">
+          <Icon name="alert" :size="12" style="display: none" />清除对比
+        </button>
+      </div>
+
+      <!-- 综合判定(盈亏通道:跑赢=涨色/跑输=跌色/持平=中性)-->
+      <div class="verdict" :class="verdictClass(cmp.verdict.tone)">
+        <span class="vd-icon">
+          <Icon
+            :name="cmp.verdict.tone === 'good' ? 'shield' : 'alert'"
+            :size="16"
+            :style="cmp.verdict.tone === 'neutral' ? 'opacity:.6' : ''"
+          />
+        </span>
+        <span class="vd-headline">{{ cmp.verdict.headline }}</span>
+        <span class="vd-detail">{{ cmp.verdict.detail }}</span>
+      </div>
+
+      <!-- 净值对比(三线:模型 accent / 等权 accent-2 虚线 / 基准 灰点线)-->
+      <div class="card-pad">
+        <div class="cmp-legend">
+          <span class="cl"><i class="ln model" />模型</span>
+          <span class="cl"><i class="ln equal" />等权基线</span>
+          <span v-if="cmpBenchSeries.length" class="cl"
+            ><i class="ln bench" />{{ form.benchmark }}</span
+          >
+        </div>
+        <CompareChart
+          :model="cmpModelSeries"
+          :equal="cmpEqualSeries"
+          :bench="cmpBenchSeries"
+          :height="236"
+        />
+      </div>
+
+      <!-- 逐项指标对比表 -->
+      <div class="tbl-wrap">
+        <table class="dt dt-compact cmp-table">
+          <thead>
+            <tr>
+              <th>指标</th>
+              <th class="num">模型</th>
+              <th class="num">等权基线</th>
+              <th class="num">差(模型 − 等权)</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="row in cmp.metrics" :key="row.key">
+              <td>
+                {{ row.label }}
+                <span class="cmp-dir cap">{{ row.betterIsHigher ? '越高越优' : '越低越优' }}</span>
+              </td>
+              <td class="num mono">{{ cmpCell(row.model, row.unit) }}</td>
+              <td class="num mono dim">{{ cmpCell(row.equal, row.unit) }}</td>
+              <td class="num mono" :class="cmpDiffClass(row)">{{ cmpDiff(row.diff, row.unit) }}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="cmp-foot cap">
+        等权基线 = 同因子等权打分(不训练);若模型相对它无稳定增益,多半是模型未学到超越等权的信号,
+        宜重训 / 换特征 / 检查样本。历史回测不代表未来。
+      </p>
+    </div>
 
     <!-- 参数(左列)+ 绩效与净值(右列):有结果时左右双栏,无结果时参数卡全宽 -->
     <div :class="result ? 'bt-cols' : ''">
@@ -605,6 +762,93 @@ function fixed(v: number | null | undefined): string {
   color: var(--text-2);
   font-family: var(--font-mono);
   font-size: var(--fs-cap);
+}
+
+/* ── 模型 vs 等权对比卡 ──────────────────────────────────────────────────────── */
+.cmp-card {
+  border-color: color-mix(in srgb, var(--accent) 24%, var(--border));
+}
+.verdict {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin: 0 16px 12px;
+  padding: 11px 14px;
+  border-radius: var(--r-md);
+  background: var(--bg-base);
+  border: 0.5px solid var(--border);
+}
+.vd-icon {
+  display: inline-flex;
+  flex: none;
+}
+.verdict.pnl-up .vd-icon {
+  color: var(--pnl-up);
+}
+.verdict.pnl-down .vd-icon {
+  color: var(--pnl-down);
+}
+.verdict.pnl-flat .vd-icon {
+  color: var(--text-3);
+}
+.vd-headline {
+  font-size: 13.5px;
+  font-weight: 600;
+}
+.verdict.pnl-up .vd-headline {
+  color: var(--pnl-up);
+}
+.verdict.pnl-down .vd-headline {
+  color: var(--pnl-down);
+}
+.verdict.pnl-flat .vd-headline {
+  color: var(--text-1);
+}
+.vd-detail {
+  font-size: var(--fs-sub);
+  color: var(--text-2);
+  font-family: var(--font-mono);
+}
+.cmp-legend {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 6px;
+  font-size: var(--fs-sub);
+  color: var(--text-2);
+}
+.cl {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.cl .ln {
+  width: 16px;
+  height: 0;
+  border-top: 2.2px solid var(--accent);
+}
+.cl .ln.equal {
+  border-top: 2px dashed var(--accent-2);
+}
+.cl .ln.bench {
+  border-top: 1.5px dotted var(--benchmark);
+}
+.cmp-table {
+  width: 100%;
+}
+.cmp-dir {
+  margin-left: 8px;
+  font-size: 9px;
+  color: var(--text-3);
+  border: 0.5px solid var(--border);
+  border-radius: 3px;
+  padding: 0 4px;
+}
+.cmp-foot {
+  margin: 4px 16px 14px;
+  color: var(--text-3);
+  line-height: 1.6;
 }
 
 /* ── 错误条 ──────────────────────────────────────────────────────────────────── */

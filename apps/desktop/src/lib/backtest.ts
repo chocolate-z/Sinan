@@ -223,3 +223,102 @@ export function honestyBadges(purge: number, costIncluded: boolean): string[] {
     costIncluded ? '含交易成本' : '⚠ 未含成本',
   ];
 }
+
+// ── 模型 vs 等权基线对比(回答「模型有没有用」;纯逻辑,便于单测)──────────────────
+// 调用方须保证两次回测同窗口/同成本(以等权回测复用模型回测的生效 train_end)——否则非公平对比。
+// 红线#3 诚实:判定只读两份样本外 metrics,不夸大;持平/跑输如实说,且永远附「非未来收益保证」。
+
+export interface CompareMetric {
+  key: string;
+  label: string;
+  model: number | null;
+  equal: number | null;
+  diff: number | null; // model − equal(原始单位)
+  unit: 'pct' | 'num'; // pct=百分数(×100)·num=两位小数
+  betterIsHigher: boolean; // 该指标越高越好(回撤/换手为 false)
+  modelBetter: boolean | null; // 模型在该指标是否更优;null=持平或缺失
+}
+
+export interface BacktestComparison {
+  metrics: CompareMetric[];
+  verdict: { tone: 'good' | 'neutral' | 'bad'; headline: string; detail: string };
+}
+
+const COMPARE_SPEC: Array<{ key: string; label: string; unit: 'pct' | 'num'; higher: boolean }> = [
+  { key: 'annual_return', label: '年化收益', unit: 'pct', higher: true },
+  { key: 'excess_return', label: '超额收益(vs 基准)', unit: 'pct', higher: true },
+  { key: 'sharpe', label: '夏普比率', unit: 'num', higher: true },
+  { key: 'information_ratio', label: '信息比率', unit: 'num', higher: true },
+  { key: 'max_drawdown', label: '最大回撤', unit: 'pct', higher: false },
+  { key: 'win_rate', label: '胜率', unit: 'pct', higher: true },
+  { key: 'turnover', label: '区间换手', unit: 'pct', higher: false },
+];
+
+function finiteNum(v: unknown): number | null {
+  return typeof v === 'number' && Number.isFinite(v) ? v : null;
+}
+function signedPct(v: number): string {
+  return `${v >= 0 ? '+' : ''}${(v * 100).toFixed(2)}%`;
+}
+function signedNum(v: number): string {
+  return `${v >= 0 ? '+' : ''}${v.toFixed(2)}`;
+}
+
+/** 模型 metrics 与等权 metrics 逐项对比 + 综合判定。 */
+export function compareBacktests(
+  modelMetrics: Record<string, unknown> | null | undefined,
+  equalMetrics: Record<string, unknown> | null | undefined,
+): BacktestComparison {
+  const mm = modelMetrics ?? {};
+  const em = equalMetrics ?? {};
+  const metrics: CompareMetric[] = COMPARE_SPEC.map((s) => {
+    const model = finiteNum(mm[s.key]);
+    const equal = finiteNum(em[s.key]);
+    const diff = model != null && equal != null ? model - equal : null;
+    let modelBetter: boolean | null = null;
+    if (diff != null && diff !== 0) modelBetter = s.higher ? diff > 0 : diff < 0;
+    return {
+      key: s.key,
+      label: s.label,
+      model,
+      equal,
+      diff,
+      unit: s.unit,
+      betterIsHigher: s.higher,
+      modelBetter,
+    };
+  });
+
+  // 综合判定:以年化(annual delta)与夏普 delta 为主信号(阈值避免噪声当真增益)。
+  const annDiff = pairDiff(mm.annual_return, em.annual_return);
+  const shDiff = pairDiff(mm.sharpe, em.sharpe);
+  const exDiff = pairDiff(mm.excess_return, em.excess_return);
+
+  let tone: 'good' | 'neutral' | 'bad' = 'neutral';
+  let headline = '模型与等权基线基本持平,增益不显著'; // 中性默认(下方仅在 good/bad/缺数据时改写)
+  if (annDiff == null && shDiff == null) {
+    headline = '数据不足,无法判定';
+  } else {
+    const ad = annDiff ?? 0;
+    const sd = shDiff ?? 0;
+    if (ad >= 0.005 && sd >= -0.05) {
+      tone = 'good';
+      headline = '模型跑赢等权基线';
+    } else if (ad <= -0.005 || sd <= -0.2) {
+      tone = 'bad';
+      headline = '模型跑输等权基线';
+    }
+  }
+  const parts: string[] = [];
+  if (annDiff != null) parts.push(`年化 ${signedPct(annDiff)}`);
+  if (shDiff != null) parts.push(`夏普 ${signedNum(shDiff)}`);
+  if (exDiff != null) parts.push(`超额 ${signedPct(exDiff)}`);
+  const detail = (parts.length ? parts.join(' · ') + '。' : '') + '单次样本外对比,非未来收益保证。';
+  return { metrics, verdict: { tone, headline, detail } };
+}
+
+function pairDiff(a: unknown, b: unknown): number | null {
+  const x = finiteNum(a);
+  const y = finiteNum(b);
+  return x != null && y != null ? x - y : null;
+}

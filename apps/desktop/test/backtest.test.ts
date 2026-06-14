@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   areaPath,
   buildNavCharts,
+  compareBacktests,
   drawdownSeries,
   honestyBadges,
   linePoints,
@@ -147,5 +148,68 @@ describe('honestyBadges 诚实口径', () => {
   });
   it('未含成本时标警', () => {
     expect(honestyBadges(3, false)[3]).toBe('⚠ 未含成本');
+  });
+});
+
+describe('compareBacktests 模型 vs 等权基线', () => {
+  const model = {
+    annual_return: 0.18,
+    excess_return: 0.06,
+    sharpe: 1.4,
+    information_ratio: 0.8,
+    max_drawdown: 0.12,
+    win_rate: 0.56,
+    turnover: 1.2,
+  };
+  const equal = {
+    annual_return: 0.1,
+    excess_return: 0.0,
+    sharpe: 0.9,
+    information_ratio: 0.4,
+    max_drawdown: 0.18,
+    win_rate: 0.5,
+    turnover: 1.0,
+  };
+
+  it('模型明显更好 → tone=good,逐项 diff/方向正确', () => {
+    const c = compareBacktests(model, equal);
+    expect(c.verdict.tone).toBe('good');
+    const ann = c.metrics.find((m) => m.key === 'annual_return')!;
+    expect(ann.diff).toBeCloseTo(0.08);
+    expect(ann.modelBetter).toBe(true);
+    // 最大回撤越低越优:模型 0.12 < 等权 0.18 → diff 负但模型更优
+    const dd = c.metrics.find((m) => m.key === 'max_drawdown')!;
+    expect(dd.betterIsHigher).toBe(false);
+    expect(dd.diff).toBeCloseTo(-0.06);
+    expect(dd.modelBetter).toBe(true);
+    expect(c.verdict.detail).toContain('非未来收益保证');
+  });
+
+  it('模型更差(年化更低)→ tone=bad', () => {
+    const c = compareBacktests(equal, model); // 反过来
+    expect(c.verdict.tone).toBe('bad');
+    expect(c.metrics.find((m) => m.key === 'annual_return')!.modelBetter).toBe(false);
+  });
+
+  it('基本持平 → tone=neutral', () => {
+    const c = compareBacktests(
+      { annual_return: 0.101, sharpe: 0.91 },
+      { annual_return: 0.1, sharpe: 0.9 },
+    );
+    expect(c.verdict.tone).toBe('neutral');
+  });
+
+  it('换手率越低越优:模型换手更高 → 该项 modelBetter=false', () => {
+    const c = compareBacktests(model, equal);
+    const to = c.metrics.find((m) => m.key === 'turnover')!;
+    expect(to.betterIsHigher).toBe(false);
+    expect(to.diff).toBeCloseTo(0.2); // 模型换手更高
+    expect(to.modelBetter).toBe(false);
+  });
+
+  it('缺指标安全:diff 为 null,主信号全缺 → 数据不足', () => {
+    const c = compareBacktests({}, {});
+    expect(c.metrics.every((m) => m.diff === null && m.modelBetter === null)).toBe(true);
+    expect(c.verdict.headline).toContain('数据不足');
   });
 });

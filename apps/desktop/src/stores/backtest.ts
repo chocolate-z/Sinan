@@ -24,6 +24,10 @@ interface BacktestState {
   history: any[];
   models: any[];
   selectedDay: any | null;
+  // 模型 vs 等权基线对比:同窗口同成本各跑一次,留存于 store(切菜单不丢)。
+  comparing: boolean;
+  comparison: { model: any; equal: any } | null;
+  compareError: string | null;
 }
 
 export const useBacktestStore = defineStore('backtest', {
@@ -44,6 +48,9 @@ export const useBacktestStore = defineStore('backtest', {
     history: [],
     models: [],
     selectedDay: null,
+    comparing: false,
+    comparison: null,
+    compareError: null,
   }),
   getters: {
     needsTrainEnd: (s): boolean => s.form.scoring === 'equal_weight' || s.form.scoring === 'custom',
@@ -53,6 +60,19 @@ export const useBacktestStore = defineStore('backtest', {
         !!s.form.backtest_end &&
         (!this.needsTrainEnd || !!s.form.train_end) &&
         !s.running
+      );
+    },
+    // 对比口径要解析出一个模型版本:表单选定的 model_id,或回退到激活模型。
+    compareModelId(s): string {
+      return s.form.model_id || s.models.find((m) => m.status === 'active')?.id || '';
+    },
+    canCompare(s): boolean {
+      return (
+        !!s.form.backtest_start &&
+        !!s.form.backtest_end &&
+        !!this.compareModelId && // 必须有可用模型,否则对比无意义
+        !s.running &&
+        !s.comparing
       );
     },
   },
@@ -105,6 +125,50 @@ export const useBacktestStore = defineStore('backtest', {
       } catch (e) {
         this.error = String(e);
       }
+    },
+    /** 模型 vs 等权基线对比:同窗口同成本各跑一次 → 回答「模型有没有用」。
+     *  公平性关键:先跑模型(api 会把 train_end 抬到模型训练截止=真实样本外),
+     *  再用「模型回测的生效 train_end」跑等权,确保两者样本外窗口完全一致(红线#2/#3)。 */
+    async compare() {
+      if (!this.canCompare) return;
+      const f = this.form;
+      const modelId = this.compareModelId;
+      this.comparing = true;
+      this.startedAt = Date.now();
+      this.compareError = null;
+      this.comparison = null;
+      try {
+        const modelRes = await api.createBacktest({
+          backtest_start: f.backtest_start,
+          backtest_end: f.backtest_end,
+          train_end: f.train_end || undefined,
+          purge: f.purge,
+          benchmark: f.benchmark,
+          scoring: 'model',
+          model_id: modelId,
+        });
+        // 等权基线复用模型回测的生效训练截止 → 两者样本外窗口一致,唯一变量是打分口径。
+        const equalRes = await api.createBacktest({
+          backtest_start: f.backtest_start,
+          backtest_end: f.backtest_end,
+          train_end: modelRes.train_end,
+          purge: f.purge,
+          benchmark: f.benchmark,
+          scoring: 'equal_weight',
+        });
+        this.comparison = { model: modelRes, equal: equalRes };
+        await this.loadHistory();
+      } catch (e: any) {
+        const d = e?.detail;
+        this.compareError = d && typeof d === 'object' && d.message ? d.message : String(d ?? e);
+        this.comparison = null;
+      } finally {
+        this.comparing = false;
+      }
+    },
+    clearComparison() {
+      this.comparison = null;
+      this.compareError = null;
     },
     selectDay(r: any) {
       this.selectedDay = this.selectedDay?.date === r.date ? null : r;
