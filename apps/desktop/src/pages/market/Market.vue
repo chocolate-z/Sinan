@@ -46,6 +46,16 @@ const selStock = ref<{ stock_code: string; name?: string | null } | null>(null);
 const bars = ref<any[]>([]);
 const loadingK = ref(false);
 
+// 板块涨跌家数(从 sectors 派生,纯展示)+ 抽屉成分股上涨/下跌数。
+const sectorBreadth = computed(() => ({
+  up: sectors.value.filter((s) => s.chg > 0).length,
+  down: sectors.value.filter((s) => s.chg < 0).length,
+}));
+const consBreadth = computed(() => ({
+  up: constituents.value.filter((c) => (c.chg ?? 0) > 0).length,
+  down: constituents.value.filter((c) => (c.chg ?? 0) < 0).length,
+}));
+
 async function loadSnapshot() {
   loading.value = true;
   error.value = null;
@@ -165,7 +175,13 @@ onMounted(() => {
       <!-- 左:板块卡网格 -->
       <div class="sectors-col">
         <div class="sectors-head">
-          <div class="sec-label">行业板块</div>
+          <div class="sec-label-row">
+            <div class="sec-label">行业板块</div>
+            <span class="sec-breadth mono">
+              <span :class="app.pnlClass(1)">{{ sectorBreadth.up }} 涨</span>
+              <span :class="app.pnlClass(-1)">{{ sectorBreadth.down }} 跌</span>
+            </span>
+          </div>
           <div class="segmented">
             <button :class="{ on: sort === 'desc' }" @click="sort = 'desc'">涨幅</button>
             <button :class="{ on: sort === 'asc' }" @click="sort = 'asc'">跌幅</button>
@@ -179,7 +195,10 @@ onMounted(() => {
             @click="openDrill(s)"
           >
             <div class="sc-top">
-              <div class="sc-name">{{ s.name }}</div>
+              <div class="sc-name-wrap">
+                <div class="sc-name">{{ s.name }}</div>
+                <div class="sc-lead">领涨 {{ s.lead }}</div>
+              </div>
               <div class="sc-chg mono" :class="app.pnlClass(s.chg)">{{ pctTxt(s.chg) }}</div>
             </div>
             <Sparkline
@@ -191,7 +210,7 @@ onMounted(() => {
             />
             <div v-else class="sc-nospark" />
             <div class="sc-foot">
-              <span class="sc-lead">领涨 {{ s.lead }}</span>
+              <span class="sc-cap">涨 / 跌 家数</span>
               <span class="sc-ud mono">
                 <span :class="app.pnlClass(1)">{{ s.up }}</span>
                 <span class="sc-sep">/</span>
@@ -296,29 +315,47 @@ onMounted(() => {
           <!-- 成分股列表 -->
           <template v-else>
             <div v-if="loadingCons" class="empty"><div class="empty-title">加载成分股…</div></div>
-            <table v-else-if="constituents.length" class="dt dt-compact">
-              <thead>
-                <tr>
-                  <th>名称 / 代码</th>
-                  <th class="num">现价</th>
-                  <th class="num">涨跌幅</th>
-                  <th class="num">换手</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr v-for="c in constituents" :key="c.stock_code" @click="pickStock(c)">
-                  <td>
-                    <div class="cons-name">
-                      <span class="nm">{{ c.name || c.stock_code }}</span>
-                      <span class="cd mono">{{ c.stock_code }}</span>
-                    </div>
-                  </td>
-                  <td class="num">{{ c.price == null ? '—' : fmt(c.price) }}</td>
-                  <td class="num" :class="app.pnlClass(c.chg)">{{ pctTxt(c.chg) }}</td>
-                  <td class="num c2">{{ c.turnover == null ? '—' : c.turnover + '%' }}</td>
-                </tr>
-              </tbody>
-            </table>
+            <template v-else-if="constituents.length">
+              <div class="cons-stats">
+                <div class="cs">
+                  <span class="cs-k cap">上涨</span>
+                  <span class="cs-v mono" :class="app.pnlClass(1)">{{ consBreadth.up }}</span>
+                </div>
+                <div class="cs">
+                  <span class="cs-k cap">下跌</span>
+                  <span class="cs-v mono" :class="app.pnlClass(-1)">{{ consBreadth.down }}</span>
+                </div>
+                <div class="cs">
+                  <span class="cs-k cap">成分股</span>
+                  <span class="cs-v mono">{{ constituents.length }}</span>
+                </div>
+              </div>
+              <table class="dt dt-compact">
+                <thead>
+                  <tr>
+                    <th>名称 / 代码</th>
+                    <th class="num">现价</th>
+                    <th class="num">涨跌幅</th>
+                    <th class="num">换手</th>
+                    <th style="width: 28px" />
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="c in constituents" :key="c.stock_code" @click="pickStock(c)">
+                    <td>
+                      <div class="cons-name">
+                        <span class="nm">{{ c.name || c.stock_code }}</span>
+                        <span class="cd mono">{{ c.stock_code }}</span>
+                      </div>
+                    </td>
+                    <td class="num">{{ c.price == null ? '—' : fmt(c.price) }}</td>
+                    <td class="num" :class="app.pnlClass(c.chg)">{{ pctTxt(c.chg) }}</td>
+                    <td class="num c2">{{ c.turnover == null ? '—' : c.turnover + '%' }}</td>
+                    <td class="c-chev">›</td>
+                  </tr>
+                </tbody>
+              </table>
+            </template>
             <div v-else class="empty">
               <div class="empty-title">该板块暂无成分股数据</div>
             </div>
@@ -463,6 +500,47 @@ onMounted(() => {
 .sc-ud {
   font-size: 12px;
   flex: none;
+}
+.sec-label-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.sec-breadth {
+  display: inline-flex;
+  gap: 8px;
+  font-size: 11px;
+}
+.sc-name-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  flex: 1;
+}
+.sc-cap {
+  font-size: 10px;
+  color: var(--text-3);
+}
+.cons-stats {
+  display: flex;
+  gap: 28px;
+  padding: 10px 14px;
+  border-bottom: 0.5px solid var(--border-faint);
+}
+.cons-stats .cs {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.cons-stats .cs-v {
+  font-size: 14px;
+  font-weight: 600;
+}
+.c-chev {
+  color: var(--text-3);
+  text-align: center;
+  width: 28px;
 }
 .sc-sep {
   color: var(--text-3);
