@@ -155,19 +155,45 @@ class StockSearchReq(BaseModel):
 _STOCK_LIST_CACHE: dict = {}
 
 
+def _load_stock_list(provider: str, token: Optional[str]):
+    """完整股票清单(stock_code/name/board/industry)。进程 memo → 实时取(成功落盘)→ 盘缓存兜底。
+
+    搜索 / 名称映射 / 行情页行业聚合共用。修「行情页板块视角离线/重启/无 token 即空」:行业分类
+    与名称是近静态参考数据,曾用 token 取过一次即落 cache/_meta(见 data.meta),之后离线亦可复用。
+    红线#4:落盘只含 code/name/board/industry,绝无 token;红线#1:仅展示用,不入因子/信号/回测。
+    """
+    from .data import meta as _meta
+
+    df = _STOCK_LIST_CACHE.get(provider)
+    if df is not None:
+        return df
+    # 1) 实时取(有 token/网络时):成功 → 落盘(供日后离线)+ memo。
+    live = None
+    try:
+        live = _make_provider(provider, token).stock_list()
+    except Exception:  # noqa: BLE001 — 无 token/网络/权限 → 落盘兜底
+        live = None
+    if live is not None and not live.is_empty():
+        _STOCK_LIST_CACHE[provider] = live
+        try:
+            _meta.save_stock_meta(config.cache_dir(), live)
+        except Exception:  # noqa: BLE001 — 落盘失败不影响本次返回
+            pass
+        return live
+    # 2) 盘缓存兜底(此前曾取过一次):无 token / 离线 / 网络抖动仍可用。
+    disk = _meta.load_stock_meta(config.cache_dir())
+    if disk is not None and not disk.is_empty():
+        _STOCK_LIST_CACHE[provider] = disk
+        return disk
+    return None
+
+
 @app.post("/engine/stocks/search", dependencies=[Depends(require_internal)])
 def stocks_search(req: StockSearchReq) -> dict:
     """按代码或名称模糊搜索股票。无 token/网络不可达 → 诚实空(不报错)。"""
     import polars as pl
 
-    df = _STOCK_LIST_CACHE.get(req.provider)
-    if df is None:
-        try:
-            df = _make_provider(req.provider, req.token).stock_list()
-        except Exception:  # noqa: BLE001 — 无 token/网络/权限 → 诚实空
-            df = None
-        if df is not None and not df.is_empty():
-            _STOCK_LIST_CACHE[req.provider] = df
+    df = _load_stock_list(req.provider, req.token)
     if df is None or df.is_empty():
         return {"stocks": []}
 
@@ -195,17 +221,10 @@ class StockNamesReq(BaseModel):
 
 @app.post("/engine/stocks/names", dependencies=[Depends(require_internal)])
 def stocks_names(req: StockNamesReq) -> dict:
-    """code→name 映射(用激活源 stock_list,进程内 memo)。无 token/不可达 → 诚实空 {}。"""
+    """code→name 映射(用激活源 stock_list,进程内 memo + 盘缓存兜底)。无源 → 诚实空 {}。"""
     import polars as pl
 
-    df = _STOCK_LIST_CACHE.get(req.provider)
-    if df is None:
-        try:
-            df = _make_provider(req.provider, req.token).stock_list()
-        except Exception:  # noqa: BLE001 — 无 token/网络/权限 → 诚实空
-            df = None
-        if df is not None and not df.is_empty():
-            _STOCK_LIST_CACHE[req.provider] = df
+    df = _load_stock_list(req.provider, req.token)
     if df is None or df.is_empty():
         return {"names": {}}
     out = df.filter(pl.col("stock_code").is_in(req.codes)) if req.codes else df
@@ -214,19 +233,16 @@ def stocks_names(req: StockNamesReq) -> dict:
 
 # ── 行情页全市场快照(板块视角)────────────────────────────────────────────
 def _industry_meta(provider: str, token: Optional[str]) -> dict:
-    """code → {name, industry}(行情页板块聚合用,复用 stock_list 进程内 memo)。"""
-    df = _STOCK_LIST_CACHE.get(provider)
-    if df is None:
-        try:
-            df = _make_provider(provider, token).stock_list()
-        except Exception:  # noqa: BLE001 — 无 token/网络 → 诚实空
-            df = None
-        if df is not None and not df.is_empty():
-            _STOCK_LIST_CACHE[provider] = df
+    """code → {name, industry}(行情页板块聚合用;memo → 实时取落盘 → 盘缓存兜底)。"""
+    df = _load_stock_list(provider, token)
     if df is None or df.is_empty():
         return {}
+    has_industry = "industry" in df.columns
     return {
-        r["stock_code"]: {"name": r.get("name"), "industry": r.get("industry")}
+        r["stock_code"]: {
+            "name": r.get("name"),
+            "industry": r.get("industry") if has_industry else None,
+        }
         for r in df.iter_rows(named=True)
     }
 

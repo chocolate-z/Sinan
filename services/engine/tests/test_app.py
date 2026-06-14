@@ -202,7 +202,8 @@ def _fake_stock_list():
     )
 
 
-def test_stocks_search_by_code_and_name(monkeypatch):
+def test_stocks_search_by_code_and_name(tmp_path, monkeypatch):
+    monkeypatch.setenv("SINAN_DATA_DIR", str(tmp_path))  # 隔离:落盘不碰真实用户缓存
     appmod._STOCK_LIST_CACHE.clear()
 
     class Fake:
@@ -220,7 +221,8 @@ def test_stocks_search_by_code_and_name(monkeypatch):
     appmod._STOCK_LIST_CACHE.clear()
 
 
-def test_stocks_search_honest_empty_when_provider_fails(monkeypatch):
+def test_stocks_search_honest_empty_when_provider_fails(tmp_path, monkeypatch):
+    monkeypatch.setenv("SINAN_DATA_DIR", str(tmp_path))  # 隔离:盘缓存兜底也空
     appmod._STOCK_LIST_CACHE.clear()
 
     def boom(provider, token):
@@ -229,4 +231,51 @@ def test_stocks_search_honest_empty_when_provider_fails(monkeypatch):
     monkeypatch.setattr(appmod, "_make_provider", boom)
     r = client.post("/engine/stocks/search", json={"provider": "tushare", "q": "x"})
     assert r.status_code == 200 and r.json()["stocks"] == []
+    appmod._STOCK_LIST_CACHE.clear()
+
+
+def test_stock_list_persists_then_serves_offline(tmp_path, monkeypatch):
+    """核心修复:有 token 取一次 → 落盘;之后无 token/网络断,行业映射仍从盘缓存复用。
+
+    这是「建了全市场缓存、行情页板块仍空」的根治:行业/名称元数据落盘后离线/重启可用。
+    """
+    monkeypatch.setenv("SINAN_DATA_DIR", str(tmp_path))
+    appmod._STOCK_LIST_CACHE.clear()
+
+    import polars as pl
+
+    listing = pl.DataFrame(
+        {
+            "stock_code": ["600519.SH", "000858.SZ"],
+            "name": ["贵州茅台", "五粮液"],
+            "board": ["sh", "sz"],
+            "industry": ["白酒", "白酒"],
+            "list_date": ["2001-08-27", "1998-04-27"],
+        }
+    )
+
+    class Live:
+        def stock_list(self):
+            return listing
+
+    # 1) 有源:取到 → 落盘 + 行业映射可用
+    monkeypatch.setattr(appmod, "_make_provider", lambda provider, token: Live())
+    meta = appmod._industry_meta("tushare", "TOKEN")
+    assert meta["600519.SH"] == {"name": "贵州茅台", "industry": "白酒"}
+    from sinan.data import meta as metamod
+
+    assert metamod.meta_file(tmp_path / "cache").exists()  # 已落盘
+    # 落盘不含 token,只含白名单参考列
+    saved = metamod.load_stock_meta(tmp_path / "cache")
+    assert set(saved.columns) == {"stock_code", "name", "board", "industry", "list_date"}
+
+    # 2) 清进程 memo + 断源(无 token/网络):仍从盘缓存兜底,行业映射不空
+    appmod._STOCK_LIST_CACHE.clear()
+
+    def boom(provider, token):
+        raise RuntimeError("no token / offline")
+
+    monkeypatch.setattr(appmod, "_make_provider", boom)
+    meta2 = appmod._industry_meta("tushare", None)
+    assert meta2["000858.SZ"]["industry"] == "白酒"  # 离线复用成功
     appmod._STOCK_LIST_CACHE.clear()

@@ -751,18 +751,29 @@ function weightOf(h: { market_value?: number | null }): number | null {
   opacity: 0.7;
 }
 
-/* 合计行 */
+/* 合计行:与表头呼应的汇总带(轻微底色 + 清晰分隔),从数据行中显出层级 */
 .dt tfoot .foot td {
-  height: 38px;
-  border-top: 0.5px solid var(--border-strong);
+  height: 44px;
+  padding: 0 16px;
+  background: var(--bg-elevated);
+  border-top: 1px solid var(--border-strong);
   border-bottom: none;
 }
+.dt tfoot .foot td:first-child {
+  border-bottom-left-radius: var(--r-md);
+}
+.dt tfoot .foot td:last-child {
+  border-bottom-right-radius: var(--r-md);
+}
 .foot-label {
-  color: var(--text-2);
-  font-weight: 500;
+  color: var(--text-3);
+  font-size: var(--fs-cap);
+  font-weight: 600;
+  letter-spacing: 0.08em;
 }
 .foot-strong {
   font-weight: 600;
+  color: var(--text-1);
 }
 
 .disclaimer {

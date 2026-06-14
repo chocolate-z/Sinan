@@ -259,14 +259,23 @@ onMounted(() => {
       </div>
     </div>
 
-    <!-- 诚实空 -->
+    <!-- 诚实空:区分「无任何行情」与「有广度但缺行业分类」两种,避免自相矛盾 -->
     <div v-else-if="!loading" class="card">
       <div class="empty">
         <div class="empty-icon"><Icon name="market" :size="20" /></div>
-        <div class="empty-title">暂无全市场快照</div>
-        <div class="empty-desc">
-          需先到「设置 → 数据源」建立本地缓存(含日线 + 行业);建好后这里按行业聚合展示板块视角。
-        </div>
+        <template v-if="breadth">
+          <div class="empty-title">已有全市场广度,暂缺行业分类</div>
+          <div class="empty-desc">
+            板块视角需个股行业分类。请确认数据源为 <b>Tushare</b>(免费源不含行业字段)且已配置 token,
+            然后点右上「刷新」拉取一次行业分类 —— 之后离线 / 重启亦可复用(本地参考元数据)。
+          </div>
+        </template>
+        <template v-else>
+          <div class="empty-title">暂无全市场快照</div>
+          <div class="empty-desc">
+            需先到「设置 → 数据源」建立本地缓存(含日线 + 行业);建好后这里按行业聚合展示板块视角。
+          </div>
+        </template>
       </div>
     </div>
 
