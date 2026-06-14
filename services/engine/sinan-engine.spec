@@ -14,9 +14,16 @@
 native 包数据)。跑出来若报 ModuleNotFoundError，把缺的模块加进 collect 列表再构建。
 """
 
+import os
+
 from PyInstaller.utils.hooks import collect_all, collect_submodules
 
 _datas, _binaries, _hidden = [], [], []
+
+# 打包默认配置:config.py 三层加载的最底层基线。冻结后 __file__ 之上没有仓库根 → 必须显式打进包,
+# 否则 provider 测试/建缓存/成本模型一律 FileNotFoundError(只有真打包才暴露,dev 在仓库根能找到)。
+# SPECPATH = services/engine;config.defaults.json 在仓库根(上两级)。落到包根(one-dir 即 _internal)。
+_datas.append((os.path.join(SPECPATH, "..", "..", "config.defaults.json"), "."))
 
 # 第三方(含 native 库/数据文件):collect_all 抓 .pyd/.dll/数据。
 for _pkg in (

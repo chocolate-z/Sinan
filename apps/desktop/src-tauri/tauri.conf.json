@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "Sinan",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "identifier": "com.sinan.desktop",
   "build": {
     "frontendDist": "../dist",
@@ -41,7 +41,10 @@
   },
   "plugins": {
     "updater": {
-      "endpoints": ["https://github.com/chocolate-z/Sinan/releases/latest/download/latest.json"],
+      "endpoints": [
+        "https://gh-proxy.com/https://github.com/chocolate-z/Sinan/releases/latest/download/latest-cn.json",
+        "https://github.com/chocolate-z/Sinan/releases/latest/download/latest.json"
+      ],
       "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDUyMDg0QTI5RTM3MDAzNDYKUldSR0EzRGpLVW9JVXNGUElxUlc0LzlCcy9ueVhTUFlCSFNxRitBM1g0cDZCdkt3Z0VoUGdQYW8K"
     }
   }

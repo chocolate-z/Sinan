@@ -514,4 +514,18 @@ labels.py   build_forward_return_labels(hfq[T+h]/hfq[T]-1,前向,尾 h 日 null)
 - 🐛 单日期框被撑成竖排高框(DatePicker padding;DevTools 量 `.dp-trigger` 对照同页 RangePicker)。
 - ⚪ **v2**:LightGBM/ensemble · ICIR 自动加权 · 自定义因子并行 · 资讯页(M5)· 系统托盘+关闭确认 · 申万一级/北向(需更高 Tushare 积分)· 财务 PIT 精准化。
 
+### 11.12 v0.1.1 装机收口(干净机后台 + 国内下载/更新,本会话)
+
+用户在干净机装包后台起不来 + GitHub 下载被墙。手动跑 `sinan-engine.exe` 报 `[Errno 10048] bind 59915`——**引擎本体健康(到 Application startup complete),唯一失败是端口被占**(AVX2/缺 DLL/杀软全被实证排除)。定位:① 用户装的是 **`268d66a` 之前的旧本地包**(缺日志重定向/路径前缀/超时/多核四修复,故「有 ports.json 无日志」);② `ports.rs::allocate` 本就 `TcpListener::bind` 探测、**对孤儿端口免疫**(占用即顺延),孤儿毒不到当前代码——失败纯属旧包。顺带挖出独立真 bug:**`config.defaults.json` 没打进冻结包**(spec/build/base_env 都没带它)→ 冻结版任何读 `defaults()` 的功能 FileNotFoundError(dev 在仓库根能找到故掩盖)。
+
+**修复(出 v0.1.1;engine 170 + shell-core 12 + `cargo check` 全绿)**:
+- **config.defaults.json 打包**:`sinan-engine.spec` datas 加 `SPECPATH/../../config.defaults.json`(落 one-dir 包根)+ `config.py _find_defaults` frozen 时显式查 `sys._MEIPASS`/exe 同级(+3 回归 `tests/test_config_frozen.py`)。
+- **shell.log**:`lib.rs` 监护器自身留痕(独立于子进程 stdout 重定向)——拉起引擎前每步/spawn 失败/健康结果都落 `runtime/shell.log`,根治「有 ports.json 无线索」盲区。
+- **子进程秒退检测**:`wait_ready`→`wait_ready_or_exit`,readiness 循环 `child.try_wait()`,绑定失败/崩溃立即报错 + 记退出码,不傻等 120s。
+- **国内下载/更新(GitHub+公共代理,用户拍板;非对象存储——用户只有 Gitee,免费版 100MB 装不下 148/217MB 包)**:README + release.yml 发布说明加 `gh-proxy.com` 镜像下载;updater 端点改「镜像 `latest-cn.json` 优先、GitHub `latest.json` 兜底」+ CI 发版产出把下载 URL 前缀成镜像的 `latest-cn.json`(签名与下载源无关、仍验签)。⚠️ **依赖公共代理活着**,长期稳定仍建议上对象存储。
+
+**发版**:已 bump 0.1.0→0.1.1(tauri.conf/Cargo/package.json/Cargo.lock)。`git tag v0.1.1 && git push origin v0.1.1` → 云端构建公开发布(自带镜像下载说明)。
+
+**本会话六视角专家评审已跑(部分子任务撞用量上限,5am 恢复),确认的真 bug 待修**:🔴 外壳崩溃不自动重启(`lib.rs` docstring 谎称「指数退避重启」,实际 spawn 一次不监控,sidecar 中途崩=静默假死)· api 无会话 token 校验(红线#4/#6 服务端没真拦,任何本机进程可驱动全部端点)· train/backtest 阻塞同步无 job 行(切导航即丢)· logs 表无界增长。🟠 PM/设计:信号页两个空日期框无引导(小白不友好)· 品牌 logo 花朵 vs 设计稿罗盘 · 设置页仅 3/7 tab。🟢 评审纠正:DatePicker 高框 bug 已修(height:30px)、行情页已还原、多数设计漂移已解决。性能:backtest `run_eod` 仍 O(N²)(无 lookback 裁剪、逐日重取基准)。**用户产品反馈**:信号日/生效日难懂 · 因子太少(实际只 bp+北向起作用,token 缺财务) · 模型有没有用看不出 → 计划:信号日自动填+一键跑、因子库扩充(只依赖日线的动量/反转/波动/换手等)、模型 vs 等权基线对比、模拟盘买卖流水(`/trades` 数据+接口已就绪,`Portfolio.vue` 未展示)。
+
 **gotcha**:dev `pnpm dev`(token 内存存重启丢,引导页重输)· 别同开多会话改同仓库(曾被 git reset 清掉未提交工作)· 改 engine/api 需重启 dev · 打包改动需停 dev 跑 `node scripts/build-sidecars.mjs` 再 tauri build · cargo/rustc 残锁卡 dev 用 Stop-Process 清。
