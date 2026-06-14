@@ -18,7 +18,7 @@ const step = ref<Step>('welcome');
 const provider = ref<'tushare' | 'akshare'>('tushare');
 const token = ref('');
 const showToken = ref(false);
-const quickMode = ref(true);
+const universeMode = ref<'quick' | 'standard' | 'all'>('standard');
 // 已配置凭据检测:重建缓存时不必重输 token(直接带入设置里已存的主源 token)。
 const credConfigured = ref(false);
 const replacingToken = ref(false);
@@ -94,6 +94,45 @@ async function runTest() {
 }
 
 const QUICK_CODES = ['600519.SH', '000001.SZ', '600036.SH', '000333.SZ', '601318.SH'];
+// 「标准」一篮子各行业流动性好的大盘蓝筹(约 40 只):比 5 股可用、比全 A 快,适合日常研究的默认宇宙。
+const STANDARD_CODES = [
+  '600519.SH',
+  '000858.SZ',
+  '600036.SH',
+  '601318.SH',
+  '000001.SZ',
+  '600276.SH',
+  '000333.SZ',
+  '600900.SH',
+  '601166.SH',
+  '000651.SZ',
+  '600030.SH',
+  '601398.SH',
+  '600887.SH',
+  '002594.SZ',
+  '600309.SH',
+  '601012.SH',
+  '600585.SH',
+  '000725.SZ',
+  '601888.SH',
+  '600009.SH',
+  '600031.SH',
+  '000002.SZ',
+  '601628.SH',
+  '600048.SH',
+  '002415.SZ',
+  '600028.SH',
+  '601857.SH',
+  '600104.SH',
+  '000063.SZ',
+  '600690.SH',
+  '601088.SH',
+  '600050.SH',
+  '000568.SZ',
+  '600436.SH',
+  '002304.SZ',
+  '601336.SH',
+];
 
 async function startBuild() {
   go('build_cache');
@@ -101,9 +140,13 @@ async function startBuild() {
   build.progress = 0;
   build.status = 'running';
   const params: any = {
-    universe: quickMode.value
-      ? { boards: ['sh', 'sz'], codes: QUICK_CODES }
-      : { boards: ['sh', 'sz'] },
+    universe:
+      universeMode.value === 'all'
+        ? { boards: ['sh', 'sz'] }
+        : {
+            boards: ['sh', 'sz'],
+            codes: universeMode.value === 'quick' ? QUICK_CODES : STANDARD_CODES,
+          },
     start_year: 2018,
     datasets: ['price', 'adj_factor', 'daily_basic', 'northbound'],
   };
@@ -328,10 +371,26 @@ const buildPct = computed(() => Math.round(build.progress * 100));
         <section v-else-if="step === 'build_cache'" class="step-pane">
           <h2 class="pane-title">建立本地数据缓存</h2>
           <p class="pane-lead">全程在你的电脑上完成 —— 数据不出本机。</p>
-          <label class="quick">
-            <input v-model="quickMode" type="checkbox" class="switch" />
-            <span class="quick-lbl">快速模式(少量股票,先跑通)</span>
-          </label>
+          <div class="segmented uni-modes">
+            <button :class="{ on: universeMode === 'quick' }" @click="universeMode = 'quick'">
+              快速 · 5 股
+            </button>
+            <button :class="{ on: universeMode === 'standard' }" @click="universeMode = 'standard'">
+              标准 · 约 40 蓝筹
+            </button>
+            <button :class="{ on: universeMode === 'all' }" @click="universeMode = 'all'">
+              全市场 · 慢
+            </button>
+          </div>
+          <p class="uni-hint cap">
+            {{
+              universeMode === 'quick'
+                ? '5 只样例股,先跑通整套流程'
+                : universeMode === 'standard'
+                  ? '各行业流动性好的大盘蓝筹(约 40 只),适合日常研究 —— 推荐'
+                  : '全 A 股,数据量大、建缓存较慢'
+            }}
+          </p>
           <div v-if="!build.jobId" class="build-start">
             <button class="btn btn-primary" @click="startBuild">开始建缓存</button>
           </div>
@@ -755,16 +814,12 @@ const buildPct = computed(() => Math.round(build.progress * 100));
 }
 
 /* ── 建缓存 ───────────────────────────────────────────────── */
-.quick {
-  display: flex;
-  align-items: center;
-  gap: var(--sp-3);
-  margin: var(--sp-2) 0 var(--sp-4);
-  cursor: pointer;
+.uni-modes {
+  margin: var(--sp-2) 0 var(--sp-1);
 }
-.quick-lbl {
-  font-size: var(--fs-body);
-  color: var(--text-1);
+.uni-hint {
+  color: var(--text-3);
+  margin: 0 0 var(--sp-4);
 }
 .build-start {
   margin-top: var(--sp-2);
