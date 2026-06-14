@@ -79,12 +79,13 @@ jobs:
       # 签名是对文件内容签的、与下载源无关 → 镜像下载仍验签通过。仅 tag 发布时产出。
       - name: 生成国内镜像版 latest-cn.json(updater 国内化)
         if: github.ref_type == 'tag'
+        continue-on-error: true # 国内化尽力而为:此步失败不拖红已成功发布的 Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ github.ref_name }}
         shell: bash
         run: |
-          gh release download "$TAG" -p latest.json -O latest.json
+          gh release download "$TAG" --pattern latest.json --clobber
           node -e '
             const fs = require("fs");
             const PREFIX = "https://gh-proxy.com/";
