@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue';
+import { computed, onMounted, watch } from 'vue';
 import { useTradingStore } from '../../stores/trading';
 import {
   actionLabel,
@@ -30,6 +30,40 @@ const tab = computed({
   get: () => trading.signalTab,
   set: (v: 'pass' | 'blocked') => (trading.signalTab = v),
 });
+
+// 小白友好:默认把「信号日」填成最新有数据的交易日,「生效日」自动跟随为下一交易日。
+// 用户仍可手动改;值留 store,切菜单不丢。
+function nextTradeDate(d: string): string {
+  if (!d) return '';
+  const dt = new Date(`${d}T00:00:00`);
+  if (Number.isNaN(dt.getTime())) return '';
+  do {
+    dt.setDate(dt.getDate() + 1);
+  } while (dt.getDay() === 0 || dt.getDay() === 6); // 跳过周末;节假日由后端数据缺失诚实处理
+  const m = String(dt.getMonth() + 1).padStart(2, '0');
+  const day = String(dt.getDate()).padStart(2, '0');
+  return `${dt.getFullYear()}-${m}-${day}`;
+}
+function prefillDates() {
+  const last = app.coverage?.last_date;
+  if (last && !trading.signalToday) {
+    trading.signalToday = last;
+    if (!trading.signalEffective) trading.signalEffective = nextTradeDate(last);
+  }
+}
+onMounted(() => {
+  prefillDates();
+  if (!app.coverage) void app.refreshCoverage().then(prefillDates);
+});
+// 信号日变更 → 生效日自动跟随下一交易日(改信号日后无需再手动算 T+1)。
+watch(today, (d) => {
+  if (d) trading.signalEffective = nextTradeDate(d);
+});
+// coverage 异步晚到时补填。
+watch(
+  () => app.coverage?.last_date,
+  () => prefillDates(),
+);
 
 async function run() {
   if (!today.value || !effective.value) return;
@@ -104,6 +138,10 @@ function scorePct(score: number): string {
           查看该日信号
         </button>
       </div>
+      <p class="run-hint cap">
+        信号日 = 最新有数据的交易日(已自动填);生效日 = 下一交易日,模拟盘按其开盘价撮合(T+1
+        纪律)。可手动调整。
+      </p>
       <p v-if="trading.error" class="run-err status-err">{{ trading.error }}</p>
     </div>
 
@@ -296,6 +334,10 @@ function scorePct(score: number): string {
 .run-err {
   margin: 14px 0 0;
   font-size: var(--fs-sub);
+}
+.run-hint {
+  margin: 12px 0 0;
+  color: var(--text-3);
 }
 
 /* 分段切换 + 图例 */
