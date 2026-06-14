@@ -574,3 +574,17 @@ labels.py   build_forward_return_labels(hfq[T+h]/hfq[T]-1,前向,尾 h 日 null)
 **⚠️ 会话工具 gotcha**:Bash 工具 `cd X && cmd` 后 cwd **不保留到下条**(`;` 分隔的 git 会用错 cwd 报 pathspec 错)→ git 用绝对路径或在同一条命令内 cd 根;**提交 .md/.test 前先 `prettier --check`**(本会话两次因格式红 CI)。
 
 **gotcha**:dev `pnpm dev`(token 内存存重启丢,引导页重输)· 别同开多会话改同仓库(曾被 git reset 清掉未提交工作)· 改 engine/api 需重启 dev · 打包改动需停 dev 跑 `node scripts/build-sidecars.mjs` 再 tauri build · cargo/rustc 残锁卡 dev 用 Stop-Process 清。
+
+### 11.15 v0.1.6 分支续作:行情页板块根治 + 合计行 + 模型 vs 等权对比(本会话)
+
+**全部落在 `feat/v0.1.6-polish` 分支(已 merge main 同步 §11.14;未发版,用户拍板「先不发」)。** 三件事,各带回归测试,CI 口径全绿(engine 181 · 前端 vitest 76 / typecheck / build / eslint / prettier)。
+
+**① 行情页板块离线/重启即空 —— 根因找到并根治(用户 #1 优先,真 bug)。** 诊断:用户真实缓存其实是**全市场 5208 只 @ 2026-06-12**(不是 ~40 股),全A广度本该出;真根因=**行业映射(`stock_basic.industry`)从不落盘**,`app.py _industry_meta` 每次实时调 `stock_list()` 现取(需 token+联网),dev 重启丢 token → `sectors=[]`,而广度仍出 → 页面自相矛盾(顶部 5208 只真实广度,下面却「请先建缓存」)。修复:新增 `data/meta.py`(`save/load_stock_meta`,落 `cache/_meta/stock_basic.parquet`,白名单仅 code/name/board/industry/list_date,**绝无 token**=红线#4;损坏自愈);`_load_stock_list` 三级 **进程 memo → 实时取(成功落盘)→ 盘缓存兜底**,搜索/名称映射/行情行业共用 → 无 token/重启/离线均可复用。行业仅进行情页展示,**不入因子/信号/回测**(只走 DataLayer.asof,红线#1)。免费源 AkShare **无 industry 列** → 落盘容忍缺列,行业诚实空(只有 Tushare 有行业)。前端 `Market.vue` 去矛盾空状态(有广度但缺行业 → 提示「确认 Tushare 源并刷新一次」)。测试:`test_meta.py` 7 + `test_app.py` 落盘/离线兜底回归 1(既有搜索测试补 `SINAN_DATA_DIR` 隔离防误写真实缓存)。⚠️ **代码已修但用户现有缓存还没这份落盘元数据** → 需用户**配好 Tushare token 后打开一次行情页**(触发实时取+落盘),之后离线/重启板块常驻;无 token 的会话无法替他验。
+
+**② Portfolio「合计」行打磨**:原只有一条细顶边、混进数据行。改为**与表头呼应的汇总带**(`--bg-elevated` 底色 + 1px 强分隔 + 圆角收口 + 标签字距/字重)。纯 CSS。
+
+**③ 模型 vs 等权基线一键对比(用户 #3,直接回答「模型有没有用看不出」)。** 纯前端编排,**无后端/契约/迁移改动**(回测引擎已支持 `scoring=model/equal_weight`)。公平性关键:**先跑 `scoring=model`**(api 把 train_end 抬到模型训练截止=真实样本外,红线#2),**再用「模型回测的生效 train_end」跑 `equal_weight`** → 两者样本外窗口完全一致,唯一变量=打分口径。`lib/backtest.ts compareBacktests()`(逐项 metrics 对比 + 综合判定:以年化/夏普 delta 为主信号+阈值滤噪,跑赢/持平/跑输 + 永远附「单次样本外对比,非未来收益保证」=红线#3;纯逻辑 5 单测)+ `ui/charts/CompareChart.vue`(三线:模型 accent 实线/等权 accent-2 虚线/基准 灰点线,全在 accent+中性通道)+ store `compare()/canCompare`(切菜单留存)+ `Backtest.vue`「模型 vs 等权」按钮(无模型时禁用+tooltip 指明「先训练并激活模型」)。⚠️ **未能 live 点验**:用户 DB 现 **0 个训练模型**(`model_versions` 空)→ 对比按钮按设计禁用;逻辑已单测+typecheck+build。要真验需先训一个模型(可让用户点,或下次会话训个小样本验)。
+
+**未发版,下一步(v0.1.6)**:bump 版本 → merge `feat/v0.1.6-polish` → main → `git tag v0.1.6 && git push origin v0.1.6` → 云端出包。分支现含:run_eod 提速 + 行情根治 + 合计行 + 模型对比。
+
+**仍待**:🟡 基金/ETF(用户 #4,v2 新数据域,未动,待出方案) · 🟠 外壳崩溃自愈(用户 #6/评审#1,生命周期关键 Rust,仍故意未做,务必真打包测崩溃重启) · 模型对比 live 验机 · ICIR 自动加权。
