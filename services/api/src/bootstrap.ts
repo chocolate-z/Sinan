@@ -18,7 +18,11 @@ export async function createApp(opts: AppOptions = {}): Promise<NestFastifyAppli
   // ⚠️ 必须显式列全 methods/headers:@fastify/cors 默认只放 GET/HEAD/POST,否则 PUT(保存 token/
   // 设主源)、DELETE(清凭据)、PATCH(jobs) 的 CORS 预检会被拒 → 跨域请求失败。
   app.enableCors({
-    origin: ['tauri://localhost', /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/],
+    origin: [
+      /^tauri:\/\/localhost$/, // macOS/Linux WebView
+      /^https?:\/\/tauri\.localhost$/, // ⚠️ Windows WebView2(Tauri 2)的 webview origin,缺它则打包版前端跨域被拒
+      /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/, // dev(vite :9521)/ 本机回环
+    ],
     methods: ['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['content-type', 'x-sinan-token'],
   });
