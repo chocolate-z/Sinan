@@ -503,7 +503,7 @@ const buildPct = computed(() => Math.round(build.progress * 100));
   border-color: var(--accent);
 }
 .step.done .node {
-  background: var(--accent-grad);
+  background: var(--accent);
   color: #fff;
   border-color: transparent;
 }
@@ -520,7 +520,7 @@ const buildPct = computed(() => Math.round(build.progress * 100));
   flex: 1;
   height: 1px;
   min-width: 8px;
-  background: var(--border-faint);
+  background: var(--border);
   margin: 13px var(--sp-2) 0;
   transition: background var(--t-med) var(--ease);
 }

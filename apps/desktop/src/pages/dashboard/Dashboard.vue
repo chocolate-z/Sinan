@@ -107,6 +107,18 @@ const personalDay = computed(
 const modelDay = computed(() => trading.liveModel?.day_pnl ?? null);
 const modelDayPct = computed(() => trading.modelPnlLatest?.day_pnl_pct ?? null);
 const modelExcess = computed(() => trading.modelPnlLatest?.excess_pct ?? null);
+const personalDayPct = computed(() => trading.personalPnlLatest?.day_pnl_pct ?? null);
+// 本月口径:本月最后一日总资产 / 本月起点(上月末或本月首日)总资产 − 1;数据不足诚实留空。
+const personalMonth = computed(() => {
+  const rows = trading.personalPnl;
+  if (rows.length < 2) return null;
+  const ym = rows[rows.length - 1].trade_date.slice(0, 7);
+  const firstIdx = rows.findIndex((r) => r.trade_date.slice(0, 7) === ym);
+  if (firstIdx < 0) return null;
+  const base = firstIdx > 0 ? rows[firstIdx - 1].total_assets : rows[firstIdx].total_assets;
+  const last = rows[rows.length - 1].total_assets;
+  return base ? last / base - 1 : null;
+});
 
 // 双卡迷你净值线:取真实逐日权益(daily_pnl.total_assets)最近 40 点;不足 2 点不画(诚实)。
 const personalNav = computed(() => trading.personalPnl.map((r) => r.total_assets).slice(-40));
@@ -151,6 +163,13 @@ function pct(v: number | null | undefined, dec = 2): string {
               <div class="stat-val mono" :class="app.pnlClass(personalDay ?? 0)">
                 {{ personalDay == null ? '—' : '¥' + formatPnl(personalDay) }}
               </div>
+              <div
+                v-if="personalDayPct != null"
+                class="stat-delta mono"
+                :class="app.pnlClass(personalDayPct)"
+              >
+                {{ personalDayPct >= 0 ? '▲' : '▼' }} {{ pct(personalDayPct) }}
+              </div>
             </div>
             <Sparkline
               v-if="personalNav.length >= 2"
@@ -170,6 +189,15 @@ function pct(v: number | null | undefined, dec = 2): string {
               <div class="m-k">实时口径</div>
               <div class="m-v mono">
                 {{ trading.livePersonal?.degraded ? '部分缺价' : '现价×持仓' }}
+              </div>
+            </div>
+            <div class="metric">
+              <div class="m-k">本月</div>
+              <div
+                class="m-v mono"
+                :class="personalMonth != null ? app.pnlClass(personalMonth) : ''"
+              >
+                {{ pct(personalMonth) }}
               </div>
             </div>
           </div>
@@ -211,6 +239,12 @@ function pct(v: number | null | undefined, dec = 2): string {
               <div class="m-k">当日超额(vs 沪深300)</div>
               <div class="m-v mono" :class="modelExcess != null ? app.pnlClass(modelExcess) : ''">
                 {{ pct(modelExcess) }}
+              </div>
+            </div>
+            <div class="metric">
+              <div class="m-k">最大回撤</div>
+              <div class="m-v mono" :class="app.pnlClass(modelDD != null ? -1 : 0)">
+                {{ modelDD == null ? '—' : '−' + modelDD + '%' }}
               </div>
             </div>
           </div>
