@@ -7,6 +7,7 @@ from .score import (
     compute_factor_matrix,
     composite_score,
     model_score_universe,
+    run_eod_lookback,
     score_universe,
 )
 
@@ -18,5 +19,6 @@ __all__ = [
     "compute_factor_matrix",
     "composite_score",
     "model_score_universe",
+    "run_eod_lookback",
     "score_universe",
 ]

@@ -104,6 +104,16 @@ def _with_custom(factors: list[Factor], custom: list[dict] | None) -> tuple[list
     return out, degraded
 
 
+def run_eod_lookback(model: dict | None, custom: list[dict] | None) -> int | None:
+    """run_eod 逐日 FactorContext 的有界窗口:把回测/实盘逐日「重扫 ≤asof 全历史」降为「只取每股最近
+    窗口」(O(N²)→O(N·窗口)),PIT 安全、逐值不变。内置/模型路径 → 内置因子 max 回看 + 5 缓冲行裁剪;
+    自定义因子在场(DSL 闭包回看窗口未知)→ None 不裁剪(保正确,红线#1)。与训练 _resolve_lookback 同
+    口径;正确性由 test_training_data 黄金测试(有界==无界逐值相等)覆盖。"""
+    factors = list(DEFAULT_FACTORS) if model else _with_custom(DEFAULT_FACTORS, custom)[0]
+    lbs = [f.lookback for f in factors]
+    return None if any(lb is None for lb in lbs) else max(lbs, default=0) + 5
+
+
 def score_universe(
     ctx: FactorContext,
     factors: list[Factor] = DEFAULT_FACTORS,

@@ -13,7 +13,7 @@ from typing import Mapping, Sequence
 import polars as pl
 
 from ..data import DataLayer
-from ..factors import FactorContext, model_score_universe, score_universe
+from ..factors import FactorContext, model_score_universe, run_eod_lookback, score_universe
 from .account import SimAccount, Trade
 from .eod import DEFAULTS, apply_fills, decide
 
@@ -63,7 +63,8 @@ def run_eod(
     custom: list[dict] | None = None,
 ) -> EodResult:
     p = {**DEFAULTS, **(params or {})}
-    ctx = FactorContext(data, today, codes)
+    # 有界取数:逐日只取每股最近窗口而非重扫全历史(回测 O(N²)→O(N),PIT 安全、逐值不变)。
+    ctx = FactorContext(data, today, codes, lookback=run_eod_lookback(model, custom))
     # 激活的 ML 模型在场 → 用模型线性打分(同一 asof 特征,红线#1);否则等权因子合成(含启用的自定义因子)。
     sr = model_score_universe(ctx, model) if model else score_universe(ctx, custom=custom)
     scores = sr.scores
