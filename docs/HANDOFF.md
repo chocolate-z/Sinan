@@ -544,13 +544,13 @@ labels.py   build_forward_return_labels(hfq[T+h]/hfq[T]-1,前向,尾 h 日 null)
 
 **🎉 里程碑**:用户在干净机装 v0.1.5,**后台真正起来、前端连上、正在拉缓存**——「全新电脑后台起不来」这条线**端到端闭环**。本会话从 v0.1.0 一路真打包真验收,**挖修 5 个「只有真打包+真跑才暴露、dev 全程掩盖」的坑**(每个都加了回归测试):
 
-| 坑 | 现象 | 修复 | 版本 |
-|---|---|---|---|
-| `config.defaults.json` 没打进冻结包 | 建缓存/数据源 FileNotFoundError | spec datas + config.py frozen 定位 `sys._MEIPASS` | v0.1.3 |
-| **api SQL 迁移没打进包** | api `code=1` 崩、后台起不来(shell.log 定位) | build-sidecars 拷 migrations 到 bundle 同级 + migrationsDir 认它 | v0.1.3 |
-| **CORS 不放行 `tauri.localhost`** | 后台起来了但前端连不上(Win WebView2 origin) | bootstrap CORS 加 `http(s)://tauri.localhost` + e2e 回归 | v0.1.4 |
-| **安装时文件被占用** | `Error opening file for writing VCRUNTIME140.dll`(旧进程锁文件) | NSIS `installer-hooks.nsh` 安装前 `taskkill /T` 主程序树+孤儿引擎 | v0.1.5 |
-| 安装器朴素 | — | 品牌化 NSIS(深紫侧边图/头图/中文/icon,`gen-installer-images.py`) | v0.1.5 |
+| 坑                                  | 现象                                                            | 修复                                                              | 版本   |
+| ----------------------------------- | --------------------------------------------------------------- | ----------------------------------------------------------------- | ------ |
+| `config.defaults.json` 没打进冻结包 | 建缓存/数据源 FileNotFoundError                                 | spec datas + config.py frozen 定位 `sys._MEIPASS`                 | v0.1.3 |
+| **api SQL 迁移没打进包**            | api `code=1` 崩、后台起不来(shell.log 定位)                     | build-sidecars 拷 migrations 到 bundle 同级 + migrationsDir 认它  | v0.1.3 |
+| **CORS 不放行 `tauri.localhost`**   | 后台起来了但前端连不上(Win WebView2 origin)                     | bootstrap CORS 加 `http(s)://tauri.localhost` + e2e 回归          | v0.1.4 |
+| **安装时文件被占用**                | `Error opening file for writing VCRUNTIME140.dll`(旧进程锁文件) | NSIS `installer-hooks.nsh` 安装前 `taskkill /T` 主程序树+孤儿引擎 | v0.1.5 |
+| 安装器朴素                          | —                                                               | 品牌化 NSIS(深紫侧边图/头图/中文/icon,`gen-installer-images.py`)  | v0.1.5 |
 
 **教训**:esbuild/PyInstaller **不打非 JS/非 import 的运行时文件**(.sql 迁移、config.defaults.json);engine 自带 CRT 但 **api node 旁无 VC++**(暂未触发);Windows WebView2 origin=`http://tauri.localhost`(非 `tauri://localhost`)。诊断靠 `%APPDATA%\Sinan\runtime\{shell,engine,api}.log`(shell.log=外壳自身留痕,本会话新增,功不可没)。
 
@@ -561,6 +561,7 @@ labels.py   build_forward_return_labels(hfq[T+h]/hfq[T]-1,前向,尾 h 日 null)
 **🟡 未发布:`feat/v0.1.6-polish` 分支**(commit `6c7cfd8`)= **回测 run_eod 有界取数**(逐日重扫全历史 O(N²)→只取窗口 O(N),`score.run_eod_lookback`;自定义因子 lookback=None 不裁剪保正确;逐值不变=170 引擎测试+黄金测试+新 `test_run_eod_lookback` 验证)。**下一步可发 v0.1.6**(bump 版本→merge→tag)。
 
 **用户本会话未决项(优先处理)**:
+
 - 🔴 **行情页仍无数据**:用户已建缓存(标准≈40股)但行情页空。诊断方向:① 缓存可能还在建;② 行情页设计为「全A广度+按行业聚合板块」,只缓存 40 股→板块稀疏/广度小;③ 板块需 industry 映射(stock_basic.industry,本会话有 token 时才有)。需用用户真实缓存态查 `factors/market.py` + `GET /indicators... /market/snapshot`。
 - 🟡 **「合计」行不美观**:某表格(Portfolio/Backtest)底部 `合计` 行样式待打磨(用户截图反馈)。
 - 🟡 **基金/ETF 功能**:用户问是否加。现仅 A 股个股;基金=v2 新数据域(见 V2_PLAN,可加一节)。
