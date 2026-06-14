@@ -35,7 +35,10 @@ test('已设 token:头匹配 → 放行', () => {
 test('已设 token:头不匹配 → 401', () => {
   process.env.SINAN_IPC_TOKEN = 'sess-secret';
   try {
-    assert.throws(() => new IpcTokenGuard().canActivate(ctx({ 'x-sinan-token': 'wrong' })), /token/);
+    assert.throws(
+      () => new IpcTokenGuard().canActivate(ctx({ 'x-sinan-token': 'wrong' })),
+      /token/,
+    );
   } finally {
     delete process.env.SINAN_IPC_TOKEN;
   }
@@ -44,10 +47,7 @@ test('已设 token:头不匹配 → 401', () => {
 test('已设 token:SSE(Accept: text/event-stream)→ 豁免(EventSource 带不了头)', () => {
   process.env.SINAN_IPC_TOKEN = 'sess-secret';
   try {
-    assert.equal(
-      new IpcTokenGuard().canActivate(ctx({ accept: 'text/event-stream' })),
-      true,
-    );
+    assert.equal(new IpcTokenGuard().canActivate(ctx({ accept: 'text/event-stream' })), true);
   } finally {
     delete process.env.SINAN_IPC_TOKEN;
   }

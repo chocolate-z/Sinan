@@ -519,6 +519,7 @@ labels.py   build_forward_return_labels(hfq[T+h]/hfq[T]-1,前向,尾 h 日 null)
 用户在干净机装包后台起不来 + GitHub 下载被墙。手动跑 `sinan-engine.exe` 报 `[Errno 10048] bind 59915`——**引擎本体健康(到 Application startup complete),唯一失败是端口被占**(AVX2/缺 DLL/杀软全被实证排除)。定位:① 用户装的是 **`268d66a` 之前的旧本地包**(缺日志重定向/路径前缀/超时/多核四修复,故「有 ports.json 无日志」);② `ports.rs::allocate` 本就 `TcpListener::bind` 探测、**对孤儿端口免疫**(占用即顺延),孤儿毒不到当前代码——失败纯属旧包。顺带挖出独立真 bug:**`config.defaults.json` 没打进冻结包**(spec/build/base_env 都没带它)→ 冻结版任何读 `defaults()` 的功能 FileNotFoundError(dev 在仓库根能找到故掩盖)。
 
 **修复(出 v0.1.1;engine 170 + shell-core 12 + `cargo check` 全绿)**:
+
 - **config.defaults.json 打包**:`sinan-engine.spec` datas 加 `SPECPATH/../../config.defaults.json`(落 one-dir 包根)+ `config.py _find_defaults` frozen 时显式查 `sys._MEIPASS`/exe 同级(+3 回归 `tests/test_config_frozen.py`)。
 - **shell.log**:`lib.rs` 监护器自身留痕(独立于子进程 stdout 重定向)——拉起引擎前每步/spawn 失败/健康结果都落 `runtime/shell.log`,根治「有 ports.json 无线索」盲区。
 - **子进程秒退检测**:`wait_ready`→`wait_ready_or_exit`,readiness 循环 `child.try_wait()`,绑定失败/崩溃立即报错 + 记退出码,不傻等 120s。
