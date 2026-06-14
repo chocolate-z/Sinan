@@ -37,7 +37,18 @@
       "icons/icon.png"
     ],
     "resources": ["sidecars/**/*"],
-    "createUpdaterArtifacts": true
+    "createUpdaterArtifacts": true,
+    "windows": {
+      "nsis": {
+        "installerIcon": "icons/icon.ico",
+        "headerImage": "installer/header.bmp",
+        "sidebarImage": "installer/sidebar.bmp",
+        "installMode": "currentUser",
+        "languages": ["SimpChinese", "English"],
+        "displayLanguageSelector": false,
+        "installerHooks": "installer-hooks.nsh"
+      }
+    }
   },
   "plugins": {
     "updater": {
