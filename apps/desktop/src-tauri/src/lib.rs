@@ -66,17 +66,47 @@ fn data_dir() -> PathBuf {
     }
 }
 
-/// TCP 连通即视为该端口的服务已就绪。
-fn wait_ready(port: u16, timeout_ms: u64) -> bool {
+/// sidecar 就绪结果:就绪 / 超时 / 启动后秒退(绑定失败或崩溃)。
+enum Ready {
+    Ok,
+    Timeout,
+    Exited(Option<i32>),
+}
+
+/// 等待端口可连通即就绪;同时盯子进程是否已退出(端口被占绑定失败/崩溃)→ 立刻失败,不傻等到
+/// 超时。ports::allocate 已做绑定探测,正常不会撞占用口;这里是纵深兜底 + 可观测(把 120s 静默
+/// 超时变成立即报错 + 退出码留痕)。一就绪即返回,大上限不惩罚热启动。
+fn wait_ready_or_exit(port: u16, timeout_ms: u64, child: &mut Child) -> Ready {
     let addr: SocketAddr = ([127, 0, 0, 1], port).into();
     let deadline = std::time::Instant::now() + Duration::from_millis(timeout_ms);
     while std::time::Instant::now() < deadline {
         if TcpStream::connect_timeout(&addr, Duration::from_millis(500)).is_ok() {
-            return true;
+            return Ready::Ok;
+        }
+        if let Ok(Some(status)) = child.try_wait() {
+            return Ready::Exited(status.code());
         }
         std::thread::sleep(Duration::from_millis(300));
     }
-    false
+    Ready::Timeout
+}
+
+/// 监护器自身的诊断日志(独立于子进程 stdout 重定向)。关键:子进程(engine/api)还没被拉起时
+/// 若出问题,只有这里能留痕——否则只有 ports.json、无任何线索(干净机排障的盲区)。每次启动追加。
+fn shell_log(log_dir: &std::path::Path, line: &str) {
+    use std::io::Write;
+    let _ = std::fs::create_dir_all(log_dir);
+    let ts = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis())
+        .unwrap_or(0);
+    if let Ok(mut f) = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(log_dir.join("shell.log"))
+    {
+        let _ = writeln!(f, "[{ts}] {line}");
+    }
 }
 
 /// 解析 sidecar 启动规格。优先级:显式 BIN 覆盖 > dev 环境变量(由 scripts/dev.mjs 下发)> 生产打包产物。
@@ -148,13 +178,19 @@ fn spawn(spec: &SidecarSpec, log_dir: &std::path::Path) -> std::io::Result<Child
 /// 启动两个 sidecar 并探活;经事件向前端推进启动遮罩进度。
 fn supervise(app: tauri::AppHandle) {
     let state = app.state::<AppState>();
+    let dir = data_dir();
+    let log_dir = dir.join("runtime");
+    let _ = std::fs::create_dir_all(&log_dir);
+    let log_emit = log_dir.clone();
     let emit = |stage: &str, message: &str, ok: bool| {
+        shell_log(&log_emit, &format!("[{stage}] {message} (ok={ok})"));
         let _ = app.emit(
             "startup://progress",
             StartupEvent { stage: stage.into(), message: message.into(), ok },
         );
     };
 
+    shell_log(&log_dir, &format!("──── supervise start (data_dir={}) ────", dir.display()));
     emit("probe", "探测端口…", true);
     let (api_port, engine_port) = match ports::allocate(API_PREF, ENGINE_PREF, PROBE_START, PROBE_END) {
         Some(p) => p,
@@ -163,11 +199,11 @@ fn supervise(app: tauri::AppHandle) {
             return;
         }
     };
+    shell_log(&log_dir, &format!("ports allocated: api={api_port} engine={engine_port}"));
     let tok = token::session_token();
-    let dir = data_dir();
-    let _ = std::fs::create_dir_all(dir.join("runtime"));
     let ports_file = PortsFile { api: api_port, engine: engine_port, token: tok.clone() };
-    let _ = sinan_shell_core::runtime::write_ports(&dir.join("runtime").join("ports.json"), &ports_file);
+    let _ = sinan_shell_core::runtime::write_ports(&log_dir.join("ports.json"), &ports_file);
+    shell_log(&log_dir, "ports.json written");
 
     *state.runtime.lock().unwrap() = Some(RuntimeInfo { api: api_port, engine: engine_port, token: tok.clone() });
 
@@ -189,36 +225,71 @@ fn supervise(app: tauri::AppHandle) {
                 .unwrap_or_else(|| s.into_owned()),
         )
     };
-    let log_dir = dir.join("runtime");
+    shell_log(&log_dir, &format!("resource_dir = {}", resource_dir.display()));
 
     // engine 先就绪。
     emit("engine", "正在启动本地引擎(首次较慢,请稍候)…", true);
-    match spawn(&build_spec("engine", env.clone(), engine_port, &resource_dir), &log_dir) {
-        Ok(child) => state.sup.lock().unwrap().children.push(child),
+    let engine_spec = build_spec("engine", env.clone(), engine_port, &resource_dir);
+    shell_log(&log_dir, &format!("spawn engine: {} {:?}", engine_spec.program, engine_spec.args));
+    let mut engine_child = match spawn(&engine_spec, &log_dir) {
+        Ok(child) => child,
         Err(e) => {
+            shell_log(&log_dir, &format!("engine spawn FAILED: {e}"));
             emit("error", &format!("engine 启动失败:{e}"), false);
             return;
         }
-    }
-    if !wait_ready(engine_port, READY_TIMEOUT_MS) {
-        emit("error", "engine 健康检查超时", false);
-        return;
+    };
+    shell_log(&log_dir, &format!("engine spawned, pid={}", engine_child.id()));
+    match wait_ready_or_exit(engine_port, READY_TIMEOUT_MS, &mut engine_child) {
+        Ready::Ok => {
+            shell_log(&log_dir, &format!("engine ready on {engine_port}"));
+            state.sup.lock().unwrap().children.push(engine_child);
+        }
+        Ready::Exited(code) => {
+            shell_log(&log_dir, &format!("engine 启动后异常退出 code={code:?}(详见 engine.log)"));
+            emit("error", "engine 启动后异常退出(详见 engine.log)", false);
+            return;
+        }
+        Ready::Timeout => {
+            shell_log(&log_dir, "engine 健康检查超时");
+            let _ = engine_child.kill();
+            emit("error", "engine 健康检查超时", false);
+            return;
+        }
     }
 
     // api 再就绪。
     emit("api", "正在启动网关…", true);
-    match spawn(&build_spec("api", env.clone(), engine_port, &resource_dir), &log_dir) {
-        Ok(child) => state.sup.lock().unwrap().children.push(child),
+    let api_spec = build_spec("api", env.clone(), engine_port, &resource_dir);
+    shell_log(&log_dir, &format!("spawn api: {} {:?}", api_spec.program, api_spec.args));
+    let mut api_child = match spawn(&api_spec, &log_dir) {
+        Ok(child) => child,
         Err(e) => {
+            shell_log(&log_dir, &format!("api spawn FAILED: {e}"));
             emit("error", &format!("api 启动失败:{e}"), false);
             return;
         }
-    }
-    if !wait_ready(api_port, READY_TIMEOUT_MS) {
-        emit("error", "api 健康检查超时", false);
-        return;
+    };
+    shell_log(&log_dir, &format!("api spawned, pid={}", api_child.id()));
+    match wait_ready_or_exit(api_port, READY_TIMEOUT_MS, &mut api_child) {
+        Ready::Ok => {
+            shell_log(&log_dir, &format!("api ready on {api_port}"));
+            state.sup.lock().unwrap().children.push(api_child);
+        }
+        Ready::Exited(code) => {
+            shell_log(&log_dir, &format!("api 启动后异常退出 code={code:?}(详见 api.log)"));
+            emit("error", "api 启动后异常退出(详见 api.log)", false);
+            return;
+        }
+        Ready::Timeout => {
+            shell_log(&log_dir, "api 健康检查超时");
+            let _ = api_child.kill();
+            emit("error", "api 健康检查超时", false);
+            return;
+        }
     }
 
+    shell_log(&log_dir, "──── ready ────");
     emit("ready", "就绪", true);
     let _ = app.emit("startup://ready", RuntimeInfo { api: api_port, engine: engine_port, token: tok });
 }

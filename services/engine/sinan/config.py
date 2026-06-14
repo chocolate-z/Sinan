@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import os
+import sys
 from functools import lru_cache
 from pathlib import Path
 from typing import Any
@@ -18,10 +19,19 @@ def _find_defaults() -> Path:
     env = os.environ.get("SINAN_CONFIG_DEFAULTS")
     if env and Path(env).is_file():
         return Path(env)
+    candidates: list[Path] = []
+    # 冻结分发(PyInstaller one-dir):config.defaults.json 由 sinan-engine.spec 的 datas 打进包。
+    # 冻结后 __file__ 在 _internal/sinan 下、其上没有仓库根,向上 walk 找不到 → 必须显式查这里。
+    # 视 PyInstaller 版本落在 _internal(sys._MEIPASS)或 exe 同级,两处都查 → 都覆盖。
+    if getattr(sys, "frozen", False):
+        meipass = getattr(sys, "_MEIPASS", None)
+        if meipass:
+            candidates.append(Path(meipass) / "config.defaults.json")
+        candidates.append(Path(sys.executable).resolve().parent / "config.defaults.json")
     here = Path(__file__).resolve()
-    # services/engine/sinan/config.py -> 仓库根在 parents[3]
-    for base in [here, *here.parents]:
-        candidate = base / "config.defaults.json"
+    # 开发期:services/engine/sinan/config.py -> 仓库根在 parents[3],向上 walk 命中。
+    candidates.extend(base / "config.defaults.json" for base in [here, *here.parents])
+    for candidate in candidates:
         if candidate.is_file():
             return candidate
     raise FileNotFoundError("找不到 config.defaults.json;请设置 SINAN_CONFIG_DEFAULTS。")

@@ -6,6 +6,19 @@
 > 司南是研究与纪律辅助工具,不是投资顾问,更不是赚钱机器。所有信号/打分/回测/模拟盘仅供研究参考,
 > 不构成投资建议;模拟盘为纸面前向验证,不进行任何自动真实下单。完整设计见 [`SINAN_DESIGN.md`](SINAN_DESIGN.md)。
 
+## 下载安装(Windows x64)
+
+最新安装包见 [**Releases**](https://github.com/chocolate-z/Sinan/releases/latest):`Sinan_*_x64-setup.exe`(推荐,体积小)或 `Sinan_*_x64_en-US.msi`。首次启动会拉起本地引擎与网关,约需十几秒。
+
+> 🇨🇳 **国内下载**:GitHub 的安装包 CDN(`release-assets.githubusercontent.com`)在国内常被拒连,直接点可能下不动。
+> **解决办法:在下载链接前拼一个国内镜像前缀**,例如(以 v0.1.0 为例):
+>
+> ```
+> https://gh-proxy.com/https://github.com/chocolate-z/Sinan/releases/download/v0.1.0/Sinan_0.1.0_x64-setup.exe
+> ```
+>
+> 某个镜像失效时,把前缀换成 `https://ghfast.top/` 或 `https://ghproxy.net/` 再试;实在不行就在能联网的机器上下好再拷过去。
+
 ## 当前状态:M0 地基完成 ✅
 
 M0 = **Onboarding + 数据源接入 + 零数据冷启动建缓存**,严格按总纲⑦自底向上构建,每步自测。
