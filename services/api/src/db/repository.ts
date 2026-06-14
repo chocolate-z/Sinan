@@ -323,6 +323,9 @@ export class Repository {
   }
 
   // ── logs ──────────────────────────────────────────────────────────────
+  /** 滚动清理计数:训练/质检 SSE 会写大量日志,累计若干条触发一次裁剪(防 logs 表无界增长)。 */
+  private logsSinceTrim = 0;
+
   logInsert(entry: {
     level: string;
     source?: string;
@@ -351,6 +354,14 @@ export class Repository {
       job_id: entry.job_id ?? null,
       message: entry.message,
     });
+    // 滚动清理:每 500 条裁剪一次,只保留最近 5000 条(评审项:logs 表无界增长)。
+    if (++this.logsSinceTrim >= 500) {
+      this.logsSinceTrim = 0;
+      this.db.run(
+        'DELETE FROM logs WHERE rowid NOT IN (SELECT rowid FROM logs ORDER BY ts DESC LIMIT ?)',
+        5000,
+      );
+    }
   }
 
   logsList(limit = 200): any[] {

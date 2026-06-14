@@ -97,6 +97,15 @@ cpSync(platDir, resolve(SIDECARS, `api/node_modules/${PLATFORM_PKG}`), {
   dereference: true,
 });
 
+// ── 3b) api 运行时读的非 JS 文件(esbuild 不打进 bundle,只有真打包才暴露)──────────────
+//   ① SQL 迁移 → migrator 找不到即崩(api 启动失败,后台起不来);migrationsDir 认 bundle 同级 ./migrations。
+//   ② config.defaults.json → api 的 config.ts ancestor 从 bundle 同级起找(缺则降级默认限流,不崩)。
+console.log('\n▸ 随包 api 迁移(.sql)+ config.defaults.json');
+cpSync(r('services/api/src/db/migrations'), resolve(SIDECARS, 'api/migrations'), {
+  recursive: true,
+});
+cpSync(r('config.defaults.json'), resolve(SIDECARS, 'api/config.defaults.json'));
+
 // ── 4) 引擎 PyInstaller one-dir ───────────────────────────────────────────
 // 存在性检查只对本地 .venv 默认路径做;显式 SINAN_PYTHON 覆盖(常是 PATH 命令名如 'python',
 // existsSync 按文件路径查必 false)由调用方负责可用性 —— 否则 CI 误判「未找到 venv python」退出。
