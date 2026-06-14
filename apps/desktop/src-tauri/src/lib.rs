@@ -1,8 +1,10 @@
 //! 司南桌面外壳:Tauri 主进程作为生命周期主宰,监护 engine/api 两个 sidecar。
 //!
 //! 启动顺序:探测端口 → 生成会话 token → 写 runtime/ports.json → 起 engine → 健康探测
-//! → 起 api → 健康探测 → 通知前端解锁(启动遮罩)。崩溃指数退避重启;关窗优雅终止,
-//! 不留孤儿进程。可被验证的纯逻辑在 sinan-shell-core(已单测);本文件是 Tauri 胶水。
+//! → 起 api → 健康探测 → 通知前端解锁(启动遮罩)。健康探测含子进程秒退检测(绑定失败/崩溃
+//! 即报错并记退出码,不傻等超时);全程落 runtime/shell.log。关窗优雅终止 sidecar,不留孤儿进程。
+//! ⚠️ 暂不做「运行期崩溃自愈(监控+指数退避重启)」——那是 v2 健壮性项;当前仅启动期探活 + 关窗清理。
+//! 可被验证的纯逻辑在 sinan-shell-core(已单测);本文件是 Tauri 胶水。
 
 use std::net::{SocketAddr, TcpStream};
 use std::path::PathBuf;
