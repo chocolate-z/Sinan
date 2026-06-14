@@ -253,14 +253,27 @@ class MarketSnapshotReq(BaseModel):
     spark_days: int = 20
 
 
+def _market_datalayer():
+    """行情快照专用 DataLayer:只物化最近两年分区(快照只需最近 ~21 交易日)。
+
+    全市场多年缓存(数千万行/上万分股文件)整库物化要数分钟 → 前端卡「刷新中…」。
+    快照是「当下视角」,只需近窗口 → 按年裁剪到最近两年(覆盖跨年 21 日窗),实测成倍提速。
+    """
+    from .data import DataLayer
+    from .data.layout import available_years
+
+    cache = config.cache_dir()
+    years = available_years(cache, "price")
+    return DataLayer(cache, years=years[-2:] if years else None)
+
+
 @app.post("/engine/market/snapshot", dependencies=[Depends(require_internal)])
 def market_snapshot_ep(req: MarketSnapshotReq) -> dict:
     """全 A 广度 + 板块卡(真实板块视角)。无缓存/无行业 → 诚实空。"""
-    from .data import DataLayer
     from .factors.market import market_snapshot
 
     meta = _industry_meta(req.provider, req.token)
-    return market_snapshot(DataLayer(config.cache_dir()), meta, spark_days=req.spark_days)
+    return market_snapshot(_market_datalayer(), meta, spark_days=req.spark_days)
 
 
 class MarketSectorReq(BaseModel):
@@ -272,11 +285,10 @@ class MarketSectorReq(BaseModel):
 @app.post("/engine/market/sector", dependencies=[Depends(require_internal)])
 def market_sector_ep(req: MarketSectorReq) -> dict:
     """板块成分股(现价/当日涨跌/换手)。无数据 → 诚实空。"""
-    from .data import DataLayer
     from .factors.market import sector_constituents
 
     meta = _industry_meta(req.provider, req.token)
-    return sector_constituents(DataLayer(config.cache_dir()), meta, req.industry)
+    return sector_constituents(_market_datalayer(), meta, req.industry)
 
 
 # ── 盘后:出信号 + 模拟盘撮合记账(run_eod)────────────────────────────────

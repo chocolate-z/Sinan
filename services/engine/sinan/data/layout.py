@@ -62,6 +62,30 @@ def glob_for(cache_root: Path, dataset: str) -> str:
     return str(dataset_dir(cache_root, dataset) / "**" / "*.parquet")
 
 
+def globs_for_years(cache_root: Path, dataset: str, years: list[str]) -> list[str]:
+    """只覆盖指定 year 分区的 glob 列表(DuckDB read_parquet 接受 glob 列表)。
+
+    用于「只需最近窗口」的查询(如行情快照)避免 glob 全库上万个分股 parquet 文件 ——
+    全市场多年缓存里,打开文件本身是主耗时,按年裁剪可成倍提速。
+    """
+    d = dataset_dir(cache_root, dataset)
+    return [str(d / "board=*" / f"year={y}" / "*.parquet") for y in years]
+
+
+def available_years(cache_root: Path, dataset: str) -> list[str]:
+    """该数据集磁盘上存在的 year 分区(升序;仅列目录,不读文件,O(分区数)极廉价)。"""
+    d = dataset_dir(cache_root, dataset)
+    if not d.exists():
+        return []
+    years: set[str] = set()
+    for board_dir in d.glob("board=*"):
+        for yd in board_dir.glob("year=*"):
+            name = yd.name
+            if name.startswith("year="):
+                years.add(name.split("=", 1)[1])
+    return sorted(years)
+
+
 def has_any(cache_root: Path, dataset: str) -> bool:
     d = dataset_dir(cache_root, dataset)
     return d.exists() and any(d.rglob("*.parquet"))

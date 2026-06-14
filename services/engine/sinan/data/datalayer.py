@@ -31,10 +31,16 @@ class DataLayer:
         con: "duckdb.DuckDBPyConnection | None" = None,
         *,
         mat_since: str | None = None,
+        years: "Sequence[str] | None" = None,
     ) -> None:
         self.cache_root = Path(cache_root)
         owns_con = con is None
         self._con = con or duckdb.connect(":memory:")
+        # 年分区裁剪(可选):只 glob 这些 year 分区的 parquet,而非全库 **。全市场多年缓存里
+        # 打开上万个分股文件是主耗时;只需最近窗口的查询(行情快照)按年裁剪可成倍提速。
+        # ⚠ 设了它,本实例对任意 asof 只看得见这些年的数据 —— 仅供「当下视角/近窗口」查询
+        # (行情快照、近端因子),绝不可用于跨更早年份的回测/训练(会少取致错)。
+        self.years = list(years) if years else None
         # 物化下界(YYYY-MM-DD):非财务(日频)数据集只物化 trade_date>=mat_since 的行。单日实盘
         # (run_eod)只需最近窗口,却原本把全 A×多年(数千万行)整段灌进内存 → OOM(Allocation
         # failure)。设下界把日频物化压到「最近窗口」防爆;财务类(fundamental)不裁剪——其 PIT 取
@@ -68,7 +74,17 @@ class DataLayer:
             return name
         if not layout.has_any(self.cache_root, dataset):
             return None
-        glob = layout.glob_for(self.cache_root, dataset).replace("\\", "/").replace("'", "''")
+        # 年分区裁剪:只读最近窗口需要的 year 分区(read_parquet 接受 glob 列表),避免
+        # glob 全库上万个分股文件。未设 years 时退回全 glob(行为不变)。
+        if self.years:
+            globs = [
+                g.replace("\\", "/").replace("'", "''")
+                for g in layout.globs_for_years(self.cache_root, dataset, self.years)
+            ]
+            src_expr = "[" + ", ".join(f"'{g}'" for g in globs) + "]"
+        else:
+            glob = layout.glob_for(self.cache_root, dataset).replace("\\", "/").replace("'", "''")
+            src_expr = f"'{glob}'"
         name = f"_ds_{next(_TBL_SEQ)}"
         params: list[object] = []
         conds: list[str] = []
@@ -91,7 +107,7 @@ class DataLayer:
         # 物化时按 codes 过滤(分区裁剪,只读该股票池的分区),后续 asof 不再带 code 过滤。
         self._con.execute(
             f"CREATE TEMP TABLE {name} AS "
-            f"SELECT * FROM read_parquet('{glob}', hive_partitioning=1, union_by_name=1)"
+            f"SELECT * FROM read_parquet({src_expr}, hive_partitioning=1, union_by_name=1)"
             f"{where}{dedup}",
             params,
         )

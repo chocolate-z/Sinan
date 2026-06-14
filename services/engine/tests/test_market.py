@@ -82,3 +82,24 @@ def test_sector_constituents_no_meta_is_honest(tmp_path):
     _write(tmp_path, "600000.SH", [("2024-01-02", 10.0), ("2024-01-03", 11.0)])
     res = sector_constituents(DataLayer(tmp_path), {}, "银行")
     assert res["industry"] == "银行" and res["constituents"] == []
+
+
+def test_datalayer_year_pruning(tmp_path):
+    """行情快照提速地基:DataLayer(years=) 只物化指定 year 分区,跨年只看裁剪内的年份。
+    全市场多年缓存里只读最近两年可成倍提速(避免 glob 上万分股文件),asof 在裁剪内仍正确。"""
+    from sinan.data.layout import available_years
+
+    _write(tmp_path, "600000.SH", [("2024-12-30", 10.0), ("2025-06-02", 11.0), ("2025-06-03", 12.0)])
+    assert available_years(tmp_path, "price") == ["2024", "2025"]  # 廉价目录列举
+
+    full = DataLayer(tmp_path).latest_dates("price", n=5)
+    assert "2024-12-30" in full and "2025-06-03" in full
+
+    pruned = DataLayer(tmp_path, years=["2025"]).latest_dates("price", n=5)
+    assert "2024-12-30" not in pruned and set(pruned) == {"2025-06-02", "2025-06-03"}
+
+    # asof 在裁剪分区内仍取最新一行(PIT 上界不受影响)
+    a = DataLayer(tmp_path, years=["2025"]).latest_asof(
+        "price", "2025-06-03", fields=["stock_code", "close"]
+    )
+    assert a.row(0, named=True)["close"] == 12.0
