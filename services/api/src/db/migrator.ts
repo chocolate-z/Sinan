@@ -18,6 +18,11 @@ function* ancestors(start: string): Generator<string> {
 
 export function migrationsDir(): string {
   if (process.env.SINAN_MIGRATIONS_DIR) return process.env.SINAN_MIGRATIONS_DIR;
+  // 冻结分发:esbuild 不打 .sql;迁移由 build-sidecars 拷到 bundle 同级 ./migrations。
+  // CJS bundle 内 import.meta.url 经 banner 指向 bundle 文件,故 __dirnameLocal = sidecars/api。
+  const bundled = join(__dirnameLocal, 'migrations');
+  if (existsSync(join(bundled, '0001_init.sql'))) return bundled;
+  // 开发期:从本文件位置向上找仓库内 services/api/src/db/migrations。
   for (const a of ancestors(__dirnameLocal)) {
     const candidate = join(a, 'services', 'api', 'src', 'db', 'migrations');
     if (existsSync(join(candidate, '0001_init.sql'))) return candidate;
