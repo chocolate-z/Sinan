@@ -4,6 +4,8 @@ import { useTradingStore, type Holding } from '../../stores/trading';
 import { useAppStore } from '../../stores/app';
 import { formatPnl } from '../../lib/pnl';
 import { fmt, fmtInt, fmtPct } from '../../lib/format';
+import { reasonLabel } from '../../lib/signals';
+import { api } from '../../api/client';
 import PageHero from '../../ui/PageHero.vue';
 import Icon from '../../shell/Icon.vue';
 import Modal from '../../ui/Modal.vue';
@@ -108,10 +110,21 @@ async function submitDialog() {
   }
 }
 
+// 模拟盘买卖流水(只对模型账户;个人持仓为手动建仓,不入流水)。
+const trades = ref<any[]>([]);
+async function loadTrades() {
+  try {
+    trades.value = (await api.trades('model')) ?? [];
+  } catch {
+    trades.value = [];
+  }
+}
+
 onMounted(() => {
   trading.fetchPersonal();
   trading.fetchModel();
   trading.fetchLivePnl();
+  loadTrades();
 });
 
 // ---- 真实数据派生(不改数据来源,仅由真实持仓/盈亏聚合)----
@@ -412,6 +425,63 @@ function weightOf(h: { market_value?: number | null }): number | null {
         <button v-if="tab === 'personal'" class="btn btn-primary btn-sm" @click="openCreate">
           <Icon name="plus" :size="14" /> 建仓
         </button>
+      </div>
+    </div>
+
+    <!-- 买卖流水 + 运行说明(模拟盘,只对模型账户) -->
+    <div v-if="tab === 'model'" class="card">
+      <div class="card-head">
+        <div>
+          <h3 class="card-title">模型模拟盘 · 买卖流水</h3>
+          <span class="card-sub">
+            每个交易日 15:30 盘后自动跑一轮(需 App 保持打开);T 日出信号、T+1
+            开盘成交。也可到「信号」页手动「盘后跑一轮」。
+          </span>
+        </div>
+        <button class="btn btn-ghost btn-sm" @click="loadTrades">
+          <Icon name="refresh" :size="14" /> 刷新
+        </button>
+      </div>
+      <table v-if="trades.length" class="dt">
+        <thead>
+          <tr>
+            <th style="width: 110px">日期</th>
+            <th style="width: 160px">标的</th>
+            <th>方向</th>
+            <th class="num">股数</th>
+            <th class="num">成交价</th>
+            <th class="num">金额</th>
+            <th>原因</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr v-for="(t, i) in trades" :key="i">
+            <td class="col-code">{{ t.trade_date }}</td>
+            <td>
+              <div class="cell-stock">
+                <span class="cs-name">{{ t.stock_name || t.code }}</span>
+                <span class="cs-code mono">{{ t.code }}</span>
+              </div>
+            </td>
+            <td>
+              <span class="badge" :class="t.side === 'buy' ? 'badge-ok' : 'badge-warn'"
+                ><span style="font-size: 9px">{{ t.side === 'buy' ? '▲' : '▼' }}</span>
+                {{ t.side === 'buy' ? '买入' : '卖出' }}</span
+              >
+            </td>
+            <td class="num">{{ fmtInt(t.shares) }}</td>
+            <td class="num c2">{{ fmt(t.price) }}</td>
+            <td class="num">{{ t.amount == null ? '—' : fmtInt(Math.round(t.amount)) }}</td>
+            <td>{{ reasonLabel(t.reason) }}</td>
+          </tr>
+        </tbody>
+      </table>
+      <div v-else class="empty">
+        <div class="empty-icon"><Icon name="signals" :size="20" /></div>
+        <div class="empty-title">暂无买卖记录</div>
+        <div class="empty-desc">
+          模拟盘每次盘后跑一轮产生的买卖会记录在此;到「信号」页选信号日并「盘后跑一轮」即可生成。
+        </div>
       </div>
     </div>
 

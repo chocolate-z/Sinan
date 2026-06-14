@@ -528,4 +528,15 @@ labels.py   build_forward_return_labels(hfq[T+h]/hfq[T]-1,前向,尾 h 日 null)
 
 **本会话六视角专家评审已跑(部分子任务撞用量上限,5am 恢复),确认的真 bug 待修**:🔴 外壳崩溃不自动重启(`lib.rs` docstring 谎称「指数退避重启」,实际 spawn 一次不监控,sidecar 中途崩=静默假死)· api 无会话 token 校验(红线#4/#6 服务端没真拦,任何本机进程可驱动全部端点)· train/backtest 阻塞同步无 job 行(切导航即丢)· logs 表无界增长。🟠 PM/设计:信号页两个空日期框无引导(小白不友好)· 品牌 logo 花朵 vs 设计稿罗盘 · 设置页仅 3/7 tab。🟢 评审纠正:DatePicker 高框 bug 已修(height:30px)、行情页已还原、多数设计漂移已解决。性能:backtest `run_eod` 仍 O(N²)(无 lookback 裁剪、逐日重取基准)。**用户产品反馈**:信号日/生效日难懂 · 因子太少(实际只 bp+北向起作用,token 缺财务) · 模型有没有用看不出 → 计划:信号日自动填+一键跑、因子库扩充(只依赖日线的动量/反转/波动/换手等)、模型 vs 等权基线对比、模拟盘买卖流水(`/trades` 数据+接口已就绪,`Portfolio.vue` 未展示)。
 
+### 11.13 v0.1.2 分支:小白友好 + 设计稿严格还原 + 模拟盘流水 + v2 方案(本会话续)
+
+承上,在 **`feat/v0.1.2-ux`** 分支(基于 v0.1.1 合并后的 main)推进 v1 完善,**未发版**:
+
+- **信号页小白化**(`b423fe6`):onMounted 自动填信号日=最新有数据交易日、生效日自动跟随 T+1 + 一句话解释。
+- **设计稿严格还原**(`9ab6891`/`667048a`/`963feaf`):`design-fidelity-restore` 工作流逐页对照 `design_source/*.jsx`,修 onboarding/backtest/dashboard/market/indicators/models 细节漂移(**portfolio/signals/shell 本就保真**;评审纠正了"settings 仅 3/7 tab""signals 缺右抽屉""DatePicker 高框"等过时待办)。⚠️ **用户拍板保留四色花朵 logo,不换罗盘**。**6 处诚实保留**(设计用假数据,照搬违反红线#3):indicators 半衰期→真实 IC 天数 · models 风控→真实阈值文本(RiskBar 需实时已用值) · backtest 导出 · settings 崩溃上报(零遥测)/自动刷新段控件(无设置写接口) · market 资金流·成交额排序(无数据)。
+- **模拟盘买卖流水**(`ae268d1`):Portfolio 模型 tab 接 `/trades('model')` 出流水 + 运行说明。
+- **docstring 诚实化**(`07f6f76`):lib.rs 删假的「崩溃指数退避重启」。
+- **v2 方案**(`07f6f76`,`docs/V2_PLAN.md`):算法升级 / 因子扩充(价量类不卡积分)/ 模型优化(模型vs基线·ICIR自动加权·相关性·真实半衰期)/ **AI 因子挖掘**(LLM 提案 + 诚实引擎裁决,BYO-key·本地优先·零外联默认,守 6 红线)。
+- vue-tsc + vite build 全绿。**发 v0.1.2 前 v1 收尾待办**:🔴 **api 会话 token 服务端 Guard 校验**(红线#4/#6 现未真拦) · 🟠 外壳运行期崩溃自愈 · 🟡 设置写接口 / train·backtest 转 job / logs 滚动清理 · 全局运行指示器。
+
 **gotcha**:dev `pnpm dev`(token 内存存重启丢,引导页重输)· 别同开多会话改同仓库(曾被 git reset 清掉未提交工作)· 改 engine/api 需重启 dev · 打包改动需停 dev 跑 `node scripts/build-sidecars.mjs` 再 tauri build · cargo/rustc 残锁卡 dev 用 Stop-Process 清。

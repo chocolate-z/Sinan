@@ -1,5 +1,7 @@
 import { DynamicModule, Module } from '@nestjs/common';
+import { APP_GUARD } from '@nestjs/core';
 import * as config from './config.js';
+import { IpcTokenGuard } from './secrets/ipc-token.guard.js';
 import { Db } from './db/sqlite.js';
 import { migrate } from './db/migrator.js';
 import { Repository } from './db/repository.js';
@@ -51,6 +53,8 @@ export class AppModule {
         IndicatorsController,
       ],
       providers: [
+        // 会话 token 全局守卫(红线#4/#6):生产态要求前端带匹配 X-Sinan-Token。
+        { provide: APP_GUARD, useClass: IpcTokenGuard },
         {
           provide: Db,
           useFactory: () => {

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 // 指标 · 因子库(M4 接真实)。对因子库逐因子算真实 IC 均值 / ICIR / 覆盖度 + IC 时序 + 十分位分层收益。
 // 红线#3:IC/ICIR/覆盖度 中性通道;分层收益 PnL 通道;缺数据 coverage=0 如实(不造假)。
-import { computed, onMounted } from 'vue';
+import { computed, onMounted, ref } from 'vue';
 import { useIndicatorsStore } from '../../stores/indicators';
 import PageHero from '../../ui/PageHero.vue';
 import RangePicker from '../../ui/RangePicker.vue';
@@ -65,6 +65,37 @@ const selected = computed(
   () => factors.value.find((f) => f.name === selectedName.value) ?? factors.value[0] ?? null,
 );
 
+// 内置因子的人类名 + 释义(真实知识,非造数;自定义因子退回键名 + DSL 表达式)。
+const FACTOR_META: Record<string, { label: string; desc: string }> = {
+  f_bp: { label: '账面市值比 (BP)', desc: '净资产 / 市值,价值因子——数值越高,估值相对越"便宜"。' },
+  f_ep: { label: '盈利市值比 (EP)', desc: '净利润 / 市值(市盈率倒数),价值因子,反映盈利相对估值。' },
+  f_roe: { label: '净资产收益率 (ROE)', desc: '净利润 / 净资产,质量因子,衡量公司盈利能力。' },
+  f_mom20: { label: '20 日动量', desc: '近 20 个交易日累计涨幅,趋势 / 动量因子。' },
+  f_north: { label: '北向资金', desc: '陆股通近 5 日净流入强度,资金面因子。' },
+};
+function factorLabel(name: string): string {
+  return FACTOR_META[name]?.label ?? name;
+}
+function factorDesc(f: { name: string }): string {
+  return FACTOR_META[f.name]?.desc ?? customByName.value[f.name]?.expr ?? '';
+}
+
+// 因子分类过滤(段控件,从 group 派生类别)。
+const cat = ref('全部');
+const cats = computed(() => ['全部', ...new Set(factors.value.map((f) => groupLabel(f.group)))]);
+const filteredFactors = computed(() =>
+  cat.value === '全部'
+    ? factors.value
+    : factors.value.filter((f) => groupLabel(f.group) === cat.value),
+);
+
+// 「新建因子」滚动并聚焦到 DSL 编辑器。
+function focusEditor() {
+  const el = document.querySelector('.dsl-input') as HTMLElement | null;
+  el?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  el?.focus();
+}
+
 // 因子表「权重 / 启用」列:仅自定义因子有真实可调权重/启用态;内置因子=等权·内置(诚实,
 // 不伪造可编辑)。按名匹配已保存的自定义因子,拿真实 weight/enabled/id。
 const customByName = computed<Record<string, any>>(() => {
@@ -98,7 +129,13 @@ function pct(v: number | null | undefined): string {
   <PageHero
     title="指标 · 因子库"
     sub="多因子模型的原子构建块 · 对因子库做真实样本外质检(IC 均值 / ICIR / 覆盖度 / 十分位分层)"
-  />
+  >
+    <template #right>
+      <button class="btn btn-primary btn-sm" @click="focusEditor">
+        <Icon name="plus" :size="14" /> 新建因子
+      </button>
+    </template>
+  </PageHero>
 
   <div class="page-body">
     <!-- 色彩通道说明 -->
@@ -289,6 +326,13 @@ function pct(v: number | null | undefined): string {
           </div>
           <span class="ch-tag"><i style="background: var(--text-2)" />中性</span>
         </div>
+        <div class="factor-filter">
+          <div class="segmented">
+            <button v-for="c in cats" :key="c" :class="{ on: cat === c }" @click="cat = c">
+              {{ c }}
+            </button>
+          </div>
+        </div>
         <table class="dt">
           <thead>
             <tr>
@@ -303,14 +347,17 @@ function pct(v: number | null | undefined): string {
           </thead>
           <tbody>
             <tr
-              v-for="f in factors"
+              v-for="f in filteredFactors"
               :key="f.name"
               class="row"
               :class="{ sel: selected?.name === f.name }"
               @click="selectedName = f.name"
             >
               <td>
-                <span class="f-name mono">{{ f.name }}</span>
+                <div class="f-cell">
+                  <span class="f-label">{{ factorLabel(f.name) }}</span>
+                  <span v-if="factorLabel(f.name) !== f.name" class="f-key mono">{{ f.name }}</span>
+                </div>
               </td>
               <td>
                 <span class="chip">{{ groupLabel(f.group) }}</span>
@@ -353,10 +400,11 @@ function pct(v: number | null | undefined): string {
 
       <div class="card card-pad detail">
         <div class="detail-head">
-          <h3 class="card-title">{{ selected?.name ?? '—' }}</h3>
+          <h3 class="card-title">{{ selected ? factorLabel(selected.name) : '—' }}</h3>
           <span v-if="selected" class="chip">{{ groupLabel(selected.group) }}</span>
         </div>
         <template v-if="selected">
+          <p v-if="factorDesc(selected)" class="factor-desc">{{ factorDesc(selected) }}</p>
           <div class="mini-grid">
             <div class="mini">
               <div class="mini-k">IC 均值</div>
@@ -645,6 +693,28 @@ function pct(v: number | null | undefined): string {
 .f-name {
   font-weight: 500;
   color: var(--text-1);
+}
+.f-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.f-label {
+  font-weight: 500;
+  color: var(--text-1);
+}
+.f-key {
+  font-size: 10px;
+  color: var(--text-3);
+}
+.factor-filter {
+  margin-bottom: 12px;
+}
+.factor-desc {
+  font-size: 12.5px;
+  color: var(--text-2);
+  line-height: 1.6;
+  margin: 0 0 16px;
 }
 .dim {
   color: var(--text-2);

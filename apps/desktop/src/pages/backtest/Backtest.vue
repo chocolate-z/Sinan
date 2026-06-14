@@ -380,7 +380,8 @@ function fixed(v: number | null | undefined): string {
                   <td class="col-code">{{ t.trade_date }}</td>
                   <td>
                     <span class="badge" :class="t.side === 'buy' ? 'badge-ok' : 'badge-warn'"
-                      ><span class="dot" />{{ actionLabel(t.side) }}</span
+                      ><span style="font-size: 9px">{{ t.side === 'buy' ? '▲' : '▼' }}</span
+                      >{{ actionLabel(t.side) }}</span
                     >
                   </td>
                   <td class="col-code">{{ t.code }}</td>

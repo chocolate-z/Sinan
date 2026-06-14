@@ -11,9 +11,11 @@ import RangePicker from '../../ui/RangePicker.vue';
 import RunningBar from '../../ui/RunningBar.vue';
 import StockSearch from '../../ui/StockSearch.vue';
 import Icon from '../../shell/Icon.vue';
+import { useRouter } from 'vue-router';
 
 const app = useAppStore();
 const ms = useModelsStore();
+const router = useRouter();
 // 表单=store 同一 reactive 引用(v-model 直接写 store);showForm 可写投影;其余只读投影。
 const form = ms.form;
 const showForm = computed({ get: () => ms.showForm, set: (v: boolean) => (ms.showForm = v) });
@@ -100,6 +102,9 @@ const BT_RULES = [
     sub="多因子选股模型的训练、样本外评估与纪律化风控 · 默认基线随模型可调"
   >
     <template #right>
+      <button class="btn btn-secondary btn-sm" @click="router.push('/backtest')">
+        <Icon name="refresh" :size="14" /> 样本外回测
+      </button>
       <button class="btn btn-primary btn-sm" @click="showForm = !showForm">
         <Icon name="plus" :size="14" /> 训练新模型
       </button>
