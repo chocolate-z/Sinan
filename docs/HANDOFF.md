@@ -588,3 +588,15 @@ labels.py   build_forward_return_labels(hfq[T+h]/hfq[T]-1,前向,尾 h 日 null)
 **未发版,下一步(v0.1.6)**:bump 版本 → merge `feat/v0.1.6-polish` → main → `git tag v0.1.6 && git push origin v0.1.6` → 云端出包。分支现含:run_eod 提速 + 行情根治 + 合计行 + 模型对比。
 
 **仍待**:🟡 基金/ETF(用户 #4,v2 新数据域,未动,待出方案) · 🟠 外壳崩溃自愈(用户 #6/评审#1,生命周期关键 Rust,仍故意未做,务必真打包测崩溃重启) · 模型对比 live 验机 · ICIR 自动加权。
+
+### 11.16 行情根治(性能)+ 通达信公式子系统 MVP + 多基准指数(同会话续作)
+
+**仍在 `feat/v0.1.6-polish`(已 merge main)。用户装机验机(v0.1.5)报 3 件:行情页仍空、要通达信/同花顺公式、要中证500/上证/深证基准。多智能体工作流出设计 → 逐件实现,全带回归测试,口径全绿(engine 198 · api 66 · 前端 vitest 76 · 契约 Py6/TS10)。**
+
+**① 行情页「刷新中…」卡死 = 性能根治(与 §11.15 的行业 meta 是两个独立问题)。** 实测真根因:用户装机版缓存是**全市场 30M 行 / ~万个分股 parquet**,`market_snapshot` 经 `DataLayer` **无界物化整库**(CREATE TEMP TABLE 读全 `**` glob,打开上万文件)→ 数分钟,前端卡死。修:`DataLayer(years=)` **按年分区裁剪**(`layout.available_years` 廉价列目录 + `globs_for_years` 只 glob 指定 year 分区,read_parquet 接 glob 列表);market 端点用最近两年 → 实测**数分钟→4.2s**,全A广度 5208 完整,板块有行业 meta 即正确聚合。PIT 安全(years 仅「看得见的年份」下界,asof 上界不变;docstring 禁用于跨更早年回测)。`test_datalayer_year_pruning`。⚠ 需重打包/重启 dev 生效;板块仍需 token 拉行业(commit `c9901bb`)。
+
+**② 通达信/同花顺公式子系统 MVP(检测扫描)= 端到端 done。** 用户拍板「检测优先」。自建小语言(`sinan/tdx/`:lexer/parser/ast/evaluator,**不污染 indicators 沙箱,绝不裸 eval**=红线#6)。🔴 **两个「假绿」坑黄金测试锁死**:`SMA(X,N,M)`=中国式递归 α=M/N → `ewm_mean(alpha=M/N, adjust=False)`(非 rolling_mean/非 ewm-span;`SMA(…,3.2,1)` 的 3.2 **不取整**——递归型 N 保留浮点、窗口型 N 才整数化,两类相反);`CROSS(A,B)`=前根 A−B≤0 且当前根>0(上穿瞬间非持续)。红线#1 三防线:仅回看算子 + **负 REF 解析期拒**(`TdxUnsafeError`)+ crossing 黄金测试(asof(T) 只依赖 ≤T)。函数白名单:REF/MA/SUM/HHV/LLV/SMA/EMA/CROSS/IF/COUNT/MAX/MIN/ABS。引擎 `validate/scan` + `/engine/tdx/{validate,scan}`(scan 用近两年分区裁剪)→ api `TdxController /tdx/{validate,scan}`(契约 spec/TS/Py 三绑定 + slowPost 无超时 + 422 诚实转发 + 写统一日志)→ 前端 **`/formulas`「公式」页**(研究组导航;编辑→校验→选信号列→全市场扫描→今日触发表;示例预填用户公式;诚实条:布尔筛选非打分/日频近似/绘制仅识别不绘图)。**实测**:用户真实公式在 5208 只缓存上扫出当日 **538 只「建仓」金叉**(16.4s)。⚠ **浏览器点验需运行态会话 token,无法在此点**;引擎已真实数据验、api 以 fake 测通。commit `1fa2cf7`(引擎)+ `e5fc72e`(接入)。**剩 TDX**:saved 公式库(持久化,`tdx_formulas` 表 + 迁移)· **回测接入**(v2:CROSS 当买卖信号,`BacktestScoring` 加 `tdx`)· 完整语言(BARSLAST/MACD 宏 + 绘制渲染,v3)· 全市场扫描 16s 可再优化。
+
+**③ 多基准指数 = done(akshare 免费源)。** 真相:缓存**从无 `index_ohlcv`**,连沪深300 基准线在真机都空;provider 只声明 INDEX_OHLCV 能力位、**无取数方法体**;用户 token 拉不到 tushare 指数。修:`base/akshare/tushare.index_bars`(akshare 复用东财 kline,secid 区分市场,**绕开 token 门槛**;tushare index_daily 无权限→CapabilityNotSupported→注册表降级 akshare);`cache/build.DEFAULT_INDICES`(沪深300/中证500/上证综指/深证成指/创业板指)+ `run()` 末尾 best-effort 拉指数落 index_ohlcv(两源皆无→诚实 degraded,绝不伪造净值=红线#3);前端回测页基准**自由文本→下拉**(5 指数 + 中文名,图例显示中文)。⚠ **akshare 走网络,无法在此环境实测**;用户需**重建一次缓存**(末尾自动拉指数)基准线才出。commit `1aa4873`。
+
+**本会话 commit 链(feat/v0.1.6-polish)**:`46689df`(行情行业 meta+合计)→`4ab42a5`(模型 vs 等权)→`c6749b3`(§11.15)→`c9901bb`(行情性能)→`1fa2cf7`+`e5fc72e`(TDX)→`1aa4873`(多基准)。**下一步可发 v0.1.6**(bump→merge→tag);或先让用户重建缓存验行情/基准 + 训模型验对比 + 真机验 TDX 扫描。
