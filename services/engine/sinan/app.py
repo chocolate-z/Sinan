@@ -291,6 +291,48 @@ def market_sector_ep(req: MarketSectorReq) -> dict:
     return sector_constituents(_market_datalayer(), meta, req.industry)
 
 
+# ── 通达信(TDX)公式:校验 + 全市场检测扫描 ───────────────────────────────────
+class TdxValidateReq(BaseModel):
+    src: str
+
+
+@app.post("/engine/tdx/validate", dependencies=[Depends(require_internal)])
+def tdx_validate_ep(req: TdxValidateReq) -> dict:
+    """静态校验 TDX 公式(语法/白名单/无未来函数)。非法 → ok=False + 中文错误。"""
+    from .tdx import validate
+
+    return validate(req.src)
+
+
+class TdxScanReq(BaseModel):
+    src: str
+    asof: Optional[str] = None  # 省略 → 取缓存最新交易日
+    signal: Optional[str] = None  # 信号列名;省略 → 取第一个布尔/输出列
+    codes: Optional[list[str]] = None  # 股票池;省略 → 全市场
+
+
+@app.post("/engine/tdx/scan", dependencies=[Depends(require_internal)])
+def tdx_scan_ep(req: TdxScanReq) -> dict:
+    """全市场扫描:返回 asof 当日触发该信号的股票清单(布尔筛选,非打分)。无缓存 → 诚实空。"""
+    from .data import DataLayer
+    from .data.layout import available_years
+    from .tdx import TdxError, scan
+
+    cache = config.cache_dir()
+    years = available_years(cache, "price")
+    dl = DataLayer(cache, years=years[-2:] if years else None)
+    asof = req.asof
+    if not asof:
+        dates = dl.latest_dates("price", n=1)
+        if not dates:
+            return {"asof": None, "signal": req.signal, "outputs": [], "hits": [], "scanned": 0}
+        asof = dates[0]
+    try:
+        return scan(dl, req.codes, req.src, asof, signal=req.signal)
+    except TdxError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+
+
 # ── 盘后:出信号 + 模拟盘撮合记账(run_eod)────────────────────────────────
 class PaperPosition(BaseModel):
     code: str

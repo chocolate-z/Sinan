@@ -159,6 +159,49 @@ def test_provider_test_unknown_provider_400():
     assert r.status_code == 400
 
 
+def test_tdx_validate_endpoint():
+    ok = client.post("/engine/tdx/validate", json={"src": "建仓: CROSS(CLOSE, MA(CLOSE,5));"})
+    assert ok.status_code == 200 and ok.json()["ok"] is True
+    assert "建仓" in ok.json()["outputs"]
+    bad = client.post("/engine/tdx/validate", json={"src": "OUT: REF(CLOSE, -1);"})
+    assert bad.status_code == 200 and bad.json()["ok"] is False
+    assert any("未来函数" in e for e in bad.json()["errors"])
+
+
+def test_tdx_scan_endpoint(tmp_path, monkeypatch):
+    monkeypatch.setenv("SINAN_DATA_DIR", str(tmp_path))
+    import polars as pl
+
+    from sinan.data import store
+
+    cache = tmp_path / "cache"
+    for code, closes in [("600000.SH", [8.0, 9, 11]), ("600001.SH", [12.0, 13, 14])]:
+        store.write_dataset(
+            cache,
+            "price",
+            pl.DataFrame(
+                {
+                    "stock_code": [code] * 3,
+                    "trade_date": ["2024-01-01", "2024-01-02", "2024-01-03"],
+                    "open": closes,
+                    "high": [c + 1 for c in closes],
+                    "low": [c - 1 for c in closes],
+                    "close": closes,
+                    "volume": [1.0] * 3,
+                    "amount": [1.0] * 3,
+                }
+            ),
+        )
+    r = client.post("/engine/tdx/scan", json={"src": "建仓: CROSS(CLOSE, 10);", "signal": "建仓"})
+    assert r.status_code == 200
+    body = r.json()
+    assert body["asof"] == "2024-01-03" and body["scanned"] == 2
+    assert [h["stock_code"] for h in body["hits"]] == ["600000.SH"]
+    # 非法公式 → 422(诚实转发,不静默)
+    bad = client.post("/engine/tdx/scan", json={"src": "建仓: BOGUS(CLOSE);"})
+    assert bad.status_code == 422
+
+
 def test_cache_build_sse_stream(tmp_path, monkeypatch):
     monkeypatch.setenv("SINAN_DATA_DIR", str(tmp_path))
 
