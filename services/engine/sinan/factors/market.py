@@ -19,10 +19,15 @@ import polars as pl
 from ..data import DataLayer
 
 
-def _chg_table(dl: DataLayer, latest: str, prev: str) -> pl.DataFrame:
-    """每只(缓存有数据的)股票:最新收盘 / 昨收 → 当日涨跌幅(%)。"""
-    a = dl.latest_asof("price", latest, fields=["stock_code", "close"])
-    b = dl.latest_asof("price", prev, fields=["stock_code", "close"]).rename({"close": "prev"})
+def _chg_table(dl: DataLayer, latest: str, prev: str, codes=None) -> pl.DataFrame:
+    """每只(缓存有数据的)股票:最新收盘 / 昨收 → 当日涨跌幅(%)。
+
+    codes 给定时只物化这些股票的分区(板块下钻只需 ~十几只 → 不再整库物化,成倍提速)。
+    """
+    a = dl.latest_asof("price", latest, fields=["stock_code", "close"], codes=codes)
+    b = dl.latest_asof("price", prev, fields=["stock_code", "close"], codes=codes).rename(
+        {"close": "prev"}
+    )
     if a.is_empty() or b.is_empty():
         return pl.DataFrame()
     df = a.join(b, on="stock_code", how="inner").filter(
@@ -156,22 +161,42 @@ def market_live(
     return res
 
 
-def sector_constituents(dl: DataLayer, meta: Mapping[str, dict], industry: str) -> dict:
-    """板块成分股:现价 / 当日涨跌 / 换手(降序按涨跌)。无数据诚实空。"""
-    dates = dl.latest_dates("price", n=2)
-    if len(dates) < 2:
-        return {"industry": industry, "asof": None, "constituents": []}
-    latest, prev = dates[0], dates[1]
+def sector_constituents(
+    dl: DataLayer, meta: Mapping[str, dict], industry: str, quotes: Mapping[str, dict] | None = None
+) -> dict:
+    """板块成分股:现价 / 当日涨跌 / 换手(降序按涨跌)。无数据诚实空。
+
+    quotes 给定(实时报价)→ 用现价/昨收算当日涨跌(与实时行情主页同口径,~十几只瞬时);
+    否则回落缓存收盘价(只物化本板块成分,不再整库物化 → 提速)。
+    """
     codes = [c for c, m in meta.items() if (m.get("industry") or "") == industry]
     if not codes:
-        return {"industry": industry, "asof": latest, "constituents": []}
-    chg = _chg_table(dl, latest, prev)
-    if chg.is_empty():
-        return {"industry": industry, "asof": latest, "constituents": []}
-    chg = chg.filter(pl.col("stock_code").is_in(codes))
-    db = dl.latest_asof("daily_basic", latest, fields=["stock_code", "turnover_rate"])
-    if not db.is_empty():
-        chg = chg.join(db, on="stock_code", how="left")
+        return {"industry": industry, "asof": None, "constituents": [], "live": bool(quotes)}
+
+    rows: list[dict] = []
+    asof = None
+    if quotes:  # 实时:只算本板块成分(快、与主页一致)
+        for c in codes:
+            q = quotes.get(c)
+            if q and q.get("price") and q.get("prev_close"):
+                px, pc = float(q["price"]), float(q["prev_close"])
+                rows.append({"stock_code": c, "close": px, "chg": (px / pc - 1.0) * 100.0})
+    if rows:
+        # 实时路径只用现价/涨跌(瞬时);换手需 daily_basic(开万级文件,慢)→ 实时下不查,诚实留空。
+        chg = pl.DataFrame(rows)
+    else:  # 回落缓存收盘(按 codes 裁剪物化,不整库)
+        dates = dl.latest_dates("price", n=2, codes=codes)
+        if len(dates) < 2:
+            return {"industry": industry, "asof": None, "constituents": [], "live": False}
+        asof = dates[0]
+        chg = _chg_table(dl, dates[0], dates[1], codes=codes)
+        if chg.is_empty():
+            return {"industry": industry, "asof": asof, "constituents": [], "live": False}
+        db = dl.latest_asof(
+            "daily_basic", asof, fields=["stock_code", "turnover_rate"], codes=codes
+        )
+        if not db.is_empty():
+            chg = chg.join(db, on="stock_code", how="left")
     out = []
     for r in chg.sort("chg", descending=True, nulls_last=True).iter_rows(named=True):
         out.append(
@@ -183,4 +208,4 @@ def sector_constituents(dl: DataLayer, meta: Mapping[str, dict], industry: str) 
                 "turnover": r.get("turnover_rate"),
             }
         )
-    return {"industry": industry, "asof": latest, "constituents": out}
+    return {"industry": industry, "asof": asof, "constituents": out, "live": bool(rows)}

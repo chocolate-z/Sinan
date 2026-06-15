@@ -284,11 +284,19 @@ class MarketSectorReq(BaseModel):
 
 @app.post("/engine/market/sector", dependencies=[Depends(require_internal)])
 def market_sector_ep(req: MarketSectorReq) -> dict:
-    """板块成分股(现价/当日涨跌/换手)。无数据 → 诚实空。"""
+    """板块成分股(现价/当日涨跌/换手)。实时报价(只拉本板块成分,瞬时)→ 与实时主页同口径;
+    取不到实时 → 回落缓存收盘(按成分裁剪物化,不整库)。无数据 → 诚实空。"""
     from .factors.market import sector_constituents
 
     meta = _industry_meta(req.provider, req.token)
-    return sector_constituents(_market_datalayer(), meta, req.industry)
+    codes = [c for c, m in meta.items() if (m.get("industry") or "") == req.industry]
+    quotes: dict = {}
+    if codes:
+        try:
+            quotes = RealtimeProvider().realtime_quotes(codes)
+        except Exception:  # noqa: BLE001 — 实时不可达 → 回落缓存收盘
+            quotes = {}
+    return sector_constituents(_market_datalayer(), meta, req.industry, quotes=quotes or None)
 
 
 class MarketLiveReq(BaseModel):
