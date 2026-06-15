@@ -1,6 +1,6 @@
 [package]
 name = "sinan-desktop"
-version = "0.1.5"
+version = "0.1.6"
 edition = "2021"
 description = "司南桌面外壳(Tauri 2):双 sidecar 监护 / 端口探测 / 会话 token / 启动遮罩 / 托盘 / 单实例。"
 
