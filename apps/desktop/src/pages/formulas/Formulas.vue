@@ -1,7 +1,7 @@
 <script setup lang="ts">
 // 通达信/同花顺公式 · 检测扫描:粘贴公式 → 校验 → 选信号列 → 全市场扫今日触发的股票。
 // 诚实:布尔筛选(非打分排序);日频近似(不支持分时);仅研究,非投资建议。绘制语句(STICK/COLOR)仅识别不绘图。
-import { computed } from 'vue';
+import { computed, onMounted } from 'vue';
 import { useFormulasStore } from '../../stores/formulas';
 import PageHero from '../../ui/PageHero.vue';
 import RunningBar from '../../ui/RunningBar.vue';
@@ -10,6 +10,9 @@ import Icon from '../../shell/Icon.vue';
 const f = useFormulasStore();
 const v = computed(() => f.validateRes);
 const r = computed(() => f.scanRes);
+const canSave = computed(() => !!f.name.trim() && !!f.src.trim() && !f.saving);
+
+onMounted(() => f.loadSaved());
 
 function fmtVal(x: unknown): string {
   if (x === true) return '✓';
@@ -57,9 +60,45 @@ function fmtVal(x: unknown): string {
             <h3 class="card-title">公式</h3>
             <span class="card-sub">支持 := 临时变量 · : 输出线 · 中文标识符</span>
           </div>
-          <button class="btn btn-ghost btn-sm" @click="f.resetSample()">载入示例</button>
+          <div class="head-actions">
+            <button class="btn btn-ghost btn-sm" @click="f.newDraft()">新建</button>
+            <button class="btn btn-ghost btn-sm" @click="f.resetSample()">载入示例</button>
+          </div>
         </div>
+
+        <!-- 已保存公式库 -->
+        <div v-if="f.saved.length" class="saved-bar">
+          <span class="saved-lead cap">已存</span>
+          <div class="saved-chips">
+            <span
+              v-for="s in f.saved"
+              :key="s.id"
+              class="saved-chip"
+              :class="{ on: f.currentId === s.id }"
+            >
+              <button class="sc-load" :title="s.name" @click="f.loadFormula(s)">
+                {{ s.name }}
+              </button>
+              <button class="sc-del" title="删除" @click="f.deleteFormula(s.id)">✕</button>
+            </span>
+          </div>
+        </div>
+
         <div class="card-pad">
+          <!-- 保存:命名 + 保存(后端保存前再校验) -->
+          <div class="save-row">
+            <input
+              v-model="f.name"
+              class="input save-name"
+              placeholder="给公式起个名…"
+              @keyup.enter="f.save()"
+            />
+            <button class="btn btn-secondary btn-sm" :disabled="!canSave" @click="f.save()">
+              <Icon name="db" :size="12" />
+              {{ f.saving ? '保存中…' : f.currentId ? '更新' : '保存' }}
+            </button>
+          </div>
+
           <textarea
             v-model="f.src"
             class="editor mono"
@@ -216,6 +255,72 @@ function fmtVal(x: unknown): string {
   outline: none;
   border-color: var(--accent);
   box-shadow: 0 0 0 3px var(--accent-bg);
+}
+.head-actions {
+  display: flex;
+  gap: 6px;
+}
+.saved-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 16px;
+  border-top: 0.5px solid var(--border-faint);
+  border-bottom: 0.5px solid var(--border-faint);
+}
+.saved-lead {
+  flex: none;
+  color: var(--text-3);
+}
+.saved-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.saved-chip {
+  display: inline-flex;
+  align-items: center;
+  border-radius: var(--r-sm);
+  border: 0.5px solid var(--border);
+  background: var(--bg-base);
+  overflow: hidden;
+}
+.saved-chip.on {
+  border-color: var(--accent);
+  background: var(--accent-bg);
+}
+.sc-load {
+  border: 0;
+  background: transparent;
+  color: var(--text-1);
+  font-size: 11.5px;
+  padding: 3px 8px;
+  cursor: pointer;
+  max-width: 140px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sc-del {
+  border: 0;
+  border-left: 0.5px solid var(--border-faint);
+  background: transparent;
+  color: var(--text-3);
+  font-size: 10px;
+  padding: 3px 6px;
+  cursor: pointer;
+}
+.sc-del:hover {
+  color: var(--status-err);
+  background: var(--status-err-bg);
+}
+.save-row {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.save-name {
+  flex: 1;
 }
 .vres {
   margin-top: 12px;

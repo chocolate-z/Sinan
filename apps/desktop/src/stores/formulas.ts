@@ -31,6 +31,15 @@ VAR2:8;
 DRAWTEXT(CROSS(VAR1,VAR2),80,'建仓');
 建仓区: IF((EMA((CLOSE-LLV(LOW,27))/(HHV(HIGH,34)-LLV(LOW,27))*4,4)*25<10),80,100);`;
 
+export interface SavedFormula {
+  id: string;
+  name: string;
+  src: string;
+  signal: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
 interface State {
   src: string;
   validating: boolean;
@@ -40,6 +49,11 @@ interface State {
   startedAt: number;
   scanRes: TdxScan | null;
   error: string | null;
+  // 保存的公式库
+  saved: SavedFormula[];
+  currentId: string | null; // 当前加载的已保存公式(null=未保存草稿)
+  name: string; // 保存名
+  saving: boolean;
 }
 
 export const useFormulasStore = defineStore('formulas', {
@@ -52,6 +66,10 @@ export const useFormulasStore = defineStore('formulas', {
     startedAt: 0,
     scanRes: null,
     error: null,
+    saved: [],
+    currentId: null,
+    name: '',
+    saving: false,
   }),
   getters: {
     canScan(s): boolean {
@@ -78,6 +96,63 @@ export const useFormulasStore = defineStore('formulas', {
         this.validateRes = null;
       } finally {
         this.validating = false;
+      }
+    },
+    async loadSaved() {
+      try {
+        this.saved = (await api.tdxFormulasList()) as SavedFormula[];
+      } catch {
+        /* 列表失败不阻断 */
+      }
+    },
+    loadFormula(f: SavedFormula) {
+      this.src = f.src;
+      this.signal = f.signal ?? '';
+      this.name = f.name;
+      this.currentId = f.id;
+      this.validateRes = null;
+      this.scanRes = null;
+    },
+    newDraft() {
+      this.currentId = null;
+      this.name = '';
+    },
+    /** 保存:有 currentId 则更新,否则按 name 新建(后端保存前会再校验一次)。 */
+    async save() {
+      const nm = this.name.trim();
+      if (!nm || !this.src.trim() || this.saving) return;
+      this.saving = true;
+      this.error = null;
+      try {
+        if (this.currentId) {
+          await api.tdxFormulaUpdate(this.currentId, {
+            name: nm,
+            src: this.src,
+            signal: this.signal || null,
+          });
+        } else {
+          const r = await api.tdxFormulaCreate({
+            name: nm,
+            src: this.src,
+            signal: this.signal || null,
+          });
+          this.currentId = r?.id ?? null;
+        }
+        await this.loadSaved();
+      } catch (e: any) {
+        const d = e?.detail;
+        this.error = d && typeof d === 'object' && d.message ? d.message : String(d ?? e);
+      } finally {
+        this.saving = false;
+      }
+    },
+    async deleteFormula(id: string) {
+      try {
+        await api.tdxFormulaDelete(id);
+        if (this.currentId === id) this.newDraft();
+        await this.loadSaved();
+      } catch (e: any) {
+        this.error = String(e?.detail ?? e);
       }
     },
     async scan() {

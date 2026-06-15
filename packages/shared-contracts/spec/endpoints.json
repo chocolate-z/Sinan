@@ -59,6 +59,10 @@
     "custom_factors_delete": { "method": "DELETE", "path": "/custom-factors/:id" },
     "tdx_validate": { "method": "POST", "path": "/tdx/validate" },
     "tdx_scan": { "method": "POST", "path": "/tdx/scan" },
+    "tdx_formulas_create": { "method": "POST", "path": "/tdx/formulas" },
+    "tdx_formulas_list": { "method": "GET", "path": "/tdx/formulas" },
+    "tdx_formulas_update": { "method": "PUT", "path": "/tdx/formulas/:id" },
+    "tdx_formulas_delete": { "method": "DELETE", "path": "/tdx/formulas/:id" },
     "market_live": { "method": "GET", "path": "/market/live" }
   },
   "engine": {

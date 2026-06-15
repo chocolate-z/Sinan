@@ -931,6 +931,62 @@ export class Repository {
     return true;
   }
 
+  // ── 保存的通达信公式(检测扫描可加载)──────────────────────────────────────
+  tdxFormulaCreate(input: { name: string; src: string; signal?: string | null }): string {
+    const id = randomUUID();
+    const ts = now();
+    this.db.run(
+      'INSERT INTO tdx_formulas(id,name,src,signal,created_at,updated_at) VALUES (?,?,?,?,?,?)',
+      id,
+      input.name,
+      input.src,
+      input.signal ?? null,
+      ts,
+      ts,
+    );
+    return id;
+  }
+
+  tdxFormulaUpdate(
+    id: string,
+    patch: { name?: string; src?: string; signal?: string | null },
+  ): boolean {
+    const before = this.db.get<any>('SELECT id FROM tdx_formulas WHERE id=?', id);
+    if (!before) return false;
+    const sets: string[] = [];
+    const vals: unknown[] = [];
+    if (patch.name !== undefined) {
+      sets.push('name=?');
+      vals.push(patch.name);
+    }
+    if (patch.src !== undefined) {
+      sets.push('src=?');
+      vals.push(patch.src);
+    }
+    if (patch.signal !== undefined) {
+      sets.push('signal=?');
+      vals.push(patch.signal);
+    }
+    sets.push('updated_at=?');
+    vals.push(now());
+    vals.push(id);
+    this.db.run(`UPDATE tdx_formulas SET ${sets.join(',')} WHERE id=?`, ...vals);
+    return true;
+  }
+
+  tdxFormulasList(): any[] {
+    return this.db.all<any>(
+      'SELECT id,name,src,signal,created_at,updated_at FROM tdx_formulas ORDER BY updated_at DESC',
+    );
+  }
+
+  tdxFormulaDelete(id: string): boolean {
+    const before = this.db.get<any>('SELECT id FROM tdx_formulas WHERE id=?', id);
+    if (!before) return false;
+    this.db.run('DELETE FROM tdx_formulas WHERE id=?', id);
+    return true;
+  }
+
   /** 当前激活(running)模型的系数 JSON,供「模型出信号」;无激活模型则 null(退回等权因子)。 */
   activeModel(): Record<string, unknown> | null {
     const r = this.db.get<any>(

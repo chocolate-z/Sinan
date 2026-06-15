@@ -183,8 +183,15 @@ export const api = {
   deleteCustomFactor: (id: string) =>
     request<any>(API_ENDPOINTS.custom_factors_delete, { params: { id } }),
 
-  // ── 通达信/同花顺公式域(检测扫描)──────────────────────────────────────────
+  // ── 通达信/同花顺公式域(检测扫描 + 保存)────────────────────────────────────
   tdxValidate: (src: string) => request<any>(API_ENDPOINTS.tdx_validate, { body: { src } }),
   tdxScan: (body: { src: string; asof?: string; signal?: string; codes?: string[] }) =>
     request<any>(API_ENDPOINTS.tdx_scan, { body }),
+  tdxFormulasList: () => request<any[]>(API_ENDPOINTS.tdx_formulas_list),
+  tdxFormulaCreate: (body: { name: string; src: string; signal?: string | null }) =>
+    request<any>(API_ENDPOINTS.tdx_formulas_create, { body }),
+  tdxFormulaUpdate: (id: string, body: { name?: string; src?: string; signal?: string | null }) =>
+    request<any>(API_ENDPOINTS.tdx_formulas_update, { params: { id }, body }),
+  tdxFormulaDelete: (id: string) =>
+    request<any>(API_ENDPOINTS.tdx_formulas_delete, { params: { id } }),
 };
