@@ -599,4 +599,16 @@ labels.py   build_forward_return_labels(hfq[T+h]/hfq[T]-1,前向,尾 h 日 null)
 
 **③ 多基准指数 = done(akshare 免费源)。** 真相:缓存**从无 `index_ohlcv`**,连沪深300 基准线在真机都空;provider 只声明 INDEX_OHLCV 能力位、**无取数方法体**;用户 token 拉不到 tushare 指数。修:`base/akshare/tushare.index_bars`(akshare 复用东财 kline,secid 区分市场,**绕开 token 门槛**;tushare index_daily 无权限→CapabilityNotSupported→注册表降级 akshare);`cache/build.DEFAULT_INDICES`(沪深300/中证500/上证综指/深证成指/创业板指)+ `run()` 末尾 best-effort 拉指数落 index_ohlcv(两源皆无→诚实 degraded,绝不伪造净值=红线#3);前端回测页基准**自由文本→下拉**(5 指数 + 中文名,图例显示中文)。⚠ **akshare 走网络,无法在此环境实测**;用户需**重建一次缓存**(末尾自动拉指数)基准线才出。commit `1aa4873`。
 
-**本会话 commit 链(feat/v0.1.6-polish)**:`46689df`(行情行业 meta+合计)→`4ab42a5`(模型 vs 等权)→`c6749b3`(§11.15)→`c9901bb`(行情性能)→`1fa2cf7`+`e5fc72e`(TDX)→`1aa4873`(多基准)。**下一步可发 v0.1.6**(bump→merge→tag);或先让用户重建缓存验行情/基准 + 训模型验对比 + 真机验 TDX 扫描。
+**本会话 commit 链(feat/v0.1.6-polish)**:`46689df`(行情行业 meta+合计)→`4ab42a5`(模型 vs 等权)→`c6749b3`(§11.15)→`c9901bb`(行情性能)→`1fa2cf7`+`e5fc72e`(TDX)→`1aa4873`(多基准)。
+
+### 11.17 行情实时 + 公式存储 + 点股看 K 线/副图(同会话三连)
+
+**用户追加 3 个需求,均 done(feat/v0.1.6-polish)。⚠ akshare 取数与实时报价本环境【能出网,已实测通】(沪深300 收 4777、全市场实时 5208 只 1.6s);浏览器点验仍需运行态会话 token。**
+
+**① 行情页改实时(当日,非上一交易日)+ 15s 自动刷新(commit `cf44289`)。** 实时报价(现价/昨收)本就用于当日收益,扩到行情页一致——「日频不分时」红线管的是回测/信号/撮合,**不碰它们**(行情是展示)。`market.py` 抽 `_aggregate`(收盘/实时共用),新增 `market_live`(当日涨跌=现价/昨收-1,板块走势仍取缓存日线=日频);`/engine/market/live` 分批(400/次)拉全 A → **盘后/源不可达诚实回落收盘快照 live=false**。前端默认实时 + 15s 轮询(开抽屉暂停、静默刷新失败保留旧数据)+ 实时/收盘脉冲指示点。**实测全市场 1.6s,当日 +1.50%(区别于收盘 +1.10%,确为实时)。**
+
+**② 公式保存/加载/删除(commit `a6bbe59`)。** `tdx_formulas` 表(迁移 0009)+ repository CRUD + 契约 `tdx_formulas_*` + api `TdxController` CRUD(create/update 前 `tdxValidate`,非法→400 不落库)+ 前端公式页命名保存/更新行 + 已存公式 chips(加载/删除/当前态高亮)。
+
+**③ 扫描命中股票 → 点开看 K 线 + 公式副图(commit `9aad955`)。** `evaluate_one(dl, code, src, asof)` 在 ≤asof(裁剪年)全历史算(递归起步段才准),返末 N 根 K 线 + 公式各输出线 + 布尔信号位;`/engine/tdx/evaluate`(契约 `tdx_evaluate` + api 422 转发)。前端 `ui/charts/TdxSubChart.vue`(数值输出线共享自适应 Y 轴色环 + 布尔信号竖线 + 图例)+ 公式页结果行可点 → 抽屉上「日 K 线」(复用 Candles)下「公式副图」。**实测 000008.SZ:VAR1 末根 6.6 上穿 VAR2=8 → 建仓触发位含末根,与扫描命中一致。**
+
+**测试基线**:engine **201** · api **67** · 契约 Py6/TS10 · 前端 vitest 76 + typecheck/build/lint/prettier 全绿。**下一步**:bump→merge→`git tag v0.1.6`;或让用户在 dev 真机点验(行情实时刷新/公式保存/点股看 K 线副图,均需运行态)。剩:TDX 回测接入(v2)· 完整语言(v3)· 基金 ETF · 外壳崩溃自愈。
