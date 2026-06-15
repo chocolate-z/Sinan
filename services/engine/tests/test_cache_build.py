@@ -1,7 +1,10 @@
-"""cache_build 自测:断点续传无重复、增量跳过、北向降级。"""
+"""cache_build 自测:断点续传无重复、增量跳过、北向降级、基准指数。"""
 
-from sinan.cache.build import CacheBuilder
+import polars as pl
+
+from sinan.cache.build import DEFAULT_INDICES, CacheBuilder
 from sinan.data import DataLayer
+from sinan.providers.base import Capability, IDataProvider, Provider, ProviderHealth, ProviderStatus
 from sinan.providers.registry import ProviderRegistry
 from tests.helpers import FakeClock, FakePriceProvider
 
@@ -11,6 +14,53 @@ CODES = ["600519.SH", "000001.SZ", "600000.SH"]
 def _registry(provider):
     clk = FakeClock()
     return ProviderRegistry([provider], clock=clk, sleep=clk.sleep)
+
+
+class _IndexProvider(IDataProvider):
+    """只支持指数日线的 fake(模拟 akshare 免费源拉指数,绕开 token 门槛)。"""
+
+    id = Provider.AKSHARE
+    display_name = "idx"
+    needs_token = False
+    priority = 10
+
+    def capabilities(self) -> Capability:
+        return Capability.INDEX_OHLCV
+
+    def test_connection(self) -> ProviderHealth:
+        return ProviderHealth(status=ProviderStatus.OK, caps={})
+
+    def index_bars(self, code, start, end) -> pl.DataFrame:
+        return pl.DataFrame(
+            {
+                "stock_code": [code, code],
+                "trade_date": ["2024-01-02", "2024-01-03"],
+                "open": [1.0, 1.0],
+                "high": [1.0, 1.0],
+                "low": [1.0, 1.0],
+                "close": [10.0, 11.0],
+                "volume": [1.0, 1.0],
+                "amount": [1.0, 1.0],
+            }
+        )
+
+
+def test_build_indices_writes_index_ohlcv(tmp_path):
+    """基准指数:_build_indices 经注册表(免费源)拉默认指数 → 落 index_ohlcv,回测基准可读。"""
+    builder = CacheBuilder(tmp_path / "cache", _registry(_IndexProvider()))
+    built = builder._build_indices("2018-01-01", "2024-12-31")
+    assert set(built) == set(DEFAULT_INDICES)
+    df = DataLayer(tmp_path / "cache").latest_asof(
+        "index_ohlcv", "2024-12-31", fields=["stock_code", "close"]
+    )
+    assert df.height == len(DEFAULT_INDICES)
+    assert "000905.SH" in df["stock_code"].to_list()  # 中证500
+
+
+def test_build_indices_degrades_when_unsupported(tmp_path):
+    """无源支持指数(如只有受限 token)→ 诚实空,不崩,不影响主建缓存。"""
+    builder = CacheBuilder(tmp_path / "cache", _registry(FakePriceProvider()))
+    assert builder._build_indices("2018-01-01", "2024-12-31") == []
 
 
 def _params():

@@ -173,6 +173,24 @@ class TushareProvider(IDataProvider):
             pl.col("vol").alias("volume"),
         ).select("stock_code", "trade_date", "open", "high", "low", "close", "volume", "amount")
 
+    def index_bars(self, code: str, start: str, end: str) -> pl.DataFrame:
+        """指数日线(回测基准)。无权限/积分不足 → CapabilityNotSupported,注册表降级到 akshare 免费源。"""
+        try:
+            df = self._call(
+                "index_daily",
+                {"ts_code": normalize_code(code), "start_date": _fmt_in(start), "end_date": _fmt_in(end)},
+                "ts_code,trade_date,open,high,low,close,vol,amount",
+            )
+        except _PermissionDenied:
+            raise CapabilityNotSupported(str(self.id), Capability.INDEX_OHLCV)
+        if df.is_empty():
+            return pl.DataFrame(schema={c: pl.Utf8 for c in ("stock_code", "trade_date")})
+        return df.with_columns(
+            pl.lit(normalize_code(code)).alias("stock_code"),
+            pl.col("trade_date").map_elements(_fmt_out, return_dtype=pl.Utf8),
+            pl.col("vol").alias("volume"),
+        ).select("stock_code", "trade_date", "open", "high", "low", "close", "volume", "amount")
+
     def adj_factor(self, code: str, start: str, end: str) -> pl.DataFrame:
         df = self._call(
             "adj_factor",

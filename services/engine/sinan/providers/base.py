@@ -171,6 +171,10 @@ class IDataProvider(ABC):
     def northbound(self, code: str, start: str, end: str) -> pl.DataFrame:
         raise CapabilityNotSupported(str(self.id), Capability.NORTHBOUND)
 
+    def index_bars(self, code: str, start: str, end: str) -> pl.DataFrame:
+        """指数日线 OHLCV(回测基准用)。返回 stock_code/trade_date/open/high/low/close/volume/amount。"""
+        raise CapabilityNotSupported(str(self.id), Capability.INDEX_OHLCV)
+
     # ── 实时 ──────────────────────────────────────────────────────────────
     def realtime_quotes(self, codes: Sequence[str]) -> dict[str, dict]:
         raise CapabilityNotSupported(str(self.id), Capability.REALTIME_QUOTE)

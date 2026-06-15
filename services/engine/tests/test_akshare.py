@@ -35,6 +35,23 @@ def test_daily_bars_parses_eastmoney_klines():
     assert df.height == 2
 
 
+def test_index_bars_uses_eastmoney_kline_with_secid():
+    """指数日线(回测基准):secid 区分市场(沪 1./深 0.),复用 kline 解析。"""
+
+    def handler(request):
+        assert "push2his" in str(request.url)
+        assert "secid=1.000300" in str(request.url)  # 沪深300 在上交所 → market 1
+        return httpx.Response(
+            200,
+            json={"data": {"klines": ["2024-01-02,3900,3950,3960,3880,1e6,2e9"]}},
+        )
+
+    p = make_provider(handler)
+    df = p.index_bars("000300.SH", "2024-01-01", "2024-01-31")
+    r = df.row(0, named=True)
+    assert r["stock_code"] == "000300.SH" and r["close"] == 3950.0
+
+
 def test_capabilities_exclude_northbound():
     p = AkShareProvider()
     caps = p.capabilities()

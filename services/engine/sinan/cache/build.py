@@ -27,6 +27,16 @@ _DATASET_FETCH: dict[str, tuple[Capability, str]] = {
     "northbound": (Capability.NORTHBOUND, "northbound"),
 }
 
+# 回测基准默认指数(全市场建缓存末尾顺带拉,绕开 token 门槛走 akshare 免费源)。
+# 沪深300 / 中证500 / 上证综指 / 深证成指 / 创业板指。
+DEFAULT_INDICES: tuple[str, ...] = (
+    "000300.SH",
+    "000905.SH",
+    "000001.SH",
+    "399001.SZ",
+    "399006.SZ",
+)
+
 ProgressCb = Callable[[dict], None]
 ContinueCb = Callable[[], bool]
 
@@ -185,7 +195,31 @@ class CacheBuilder:
                 result.cursor = {"next_index": done}
             emit("fetching", done, f"{code} 完成", coverage=stock_cov)
 
+        # 末尾顺带拉回测基准指数(best-effort,失败不影响主建缓存)。tushare 无指数权限 → 注册表
+        # 降级到 akshare 免费源;两源皆无 → 诚实记入 degraded,基准线在回测里诚实空(红线#3)。
+        self._build_indices(start_date, end_date)
+
         result.status = "done"
         result.cursor = {"next_index": total}
         emit("done", total, "建缓存完成")
         return result
+
+    def _build_indices(self, start_date: str, end_date: str) -> list[str]:
+        """拉默认基准指数到 index_ohlcv(逐指数 best-effort)。返回成功落盘的指数代码。"""
+        built: list[str] = []
+        for code in DEFAULT_INDICES:
+            try:
+                res = self.registry.fetch(
+                    Capability.INDEX_OHLCV,
+                    lambda p, c=code: p.index_bars(c, start_date, end_date),
+                )
+            except Exception:  # noqa: BLE001 — 指数取数任何异常都不该拖垮主建缓存
+                continue
+            if isinstance(res, DegradedResult) or res is None or res.is_empty():
+                continue
+            try:
+                store.write_dataset(self.cache_root, "index_ohlcv", res)
+                built.append(code)
+            except Exception:  # noqa: BLE001 — 写盘异常忽略,主流程已完成
+                continue
+        return built

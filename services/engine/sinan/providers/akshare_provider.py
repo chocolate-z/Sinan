@@ -135,6 +135,11 @@ class AkShareProvider(IDataProvider):
             "stock_code", "trade_date", "open", "high", "low", "close", "volume", "amount"
         )
 
+    def index_bars(self, code: str, start: str, end: str) -> pl.DataFrame:
+        """指数日线(回测基准)。东方财富指数 kline 与个股同接口(secid 区分市场),复用解析。
+        免费源出路:用户 tushare 档位常拉不到指数,此处绕开 token 门槛拉沪深300/中证500/上证/深证等。"""
+        return self.daily_bars(code, start, end)
+
     def test_connection(self) -> ProviderHealth:
         caps = {c.name: False for c in Capability}
         t0 = time.monotonic()

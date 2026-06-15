@@ -32,12 +32,24 @@ const models = computed(() => bt.models);
 const selectedDay = computed(() => bt.selectedDay);
 const canRun = computed(() => bt.canRun);
 
+// 常用基准指数(= 建缓存末尾默认拉取的 index_ohlcv,akshare 免费源,绕开 token 门槛)。
+const BENCHMARKS: Array<{ code: string; label: string }> = [
+  { code: '000300.SH', label: '沪深300' },
+  { code: '000905.SH', label: '中证500' },
+  { code: '000001.SH', label: '上证综指' },
+  { code: '399001.SZ', label: '深证成指' },
+  { code: '399006.SZ', label: '创业板指' },
+];
+
 const SCORINGS: Array<{ k: Scoring; label: string }> = [
   { k: 'auto', label: '自动(镜像实盘)' },
   { k: 'model', label: '模型' },
   { k: 'custom', label: '自定义因子' },
   { k: 'equal_weight', label: '等权基线' },
 ];
+function benchLabel(code?: string): string {
+  return BENCHMARKS.find((b) => b.code === code)?.label || code || '基准';
+}
 function scoringLabel(s?: string): string {
   return (
     { model: '模型', custom: '自定义因子', equal_weight: '等权基线', auto: '自动' }[s ?? ''] ?? '—'
@@ -267,7 +279,7 @@ function fixed(v: number | null | undefined): string {
           <span class="cl"><i class="ln model" />模型</span>
           <span class="cl"><i class="ln equal" />等权基线</span>
           <span v-if="cmpBenchSeries.length" class="cl"
-            ><i class="ln bench" />{{ form.benchmark }}</span
+            ><i class="ln bench" />{{ benchLabel(form.benchmark) }}</span
           >
         </div>
         <CompareChart
@@ -346,7 +358,11 @@ function fixed(v: number | null | undefined): string {
             </div>
             <div class="field narrow">
               <label class="field-label">基准</label>
-              <input v-model="form.benchmark" class="input mono" />
+              <select v-model="form.benchmark" class="input mono">
+                <option v-for="b in BENCHMARKS" :key="b.code" :value="b.code">
+                  {{ b.label }} · {{ b.code }}
+                </option>
+              </select>
             </div>
             <div class="field field-wide">
               <label class="field-label"
@@ -470,7 +486,9 @@ function fixed(v: number | null | undefined): string {
             </div>
             <div class="legend">
               <span class="lg"><i class="ln port" />{{ scoringLabel(result.scoring) }}</span>
-              <span v-if="bench.length" class="lg"><i class="ln bench" />{{ form.benchmark }}</span>
+              <span v-if="bench.length" class="lg"
+                ><i class="ln bench" />{{ benchLabel(form.benchmark) }}</span
+              >
               <span class="lg"><i class="mk buy" />买</span>
               <span class="lg"><i class="mk sell" />卖</span>
             </div>
