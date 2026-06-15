@@ -222,6 +222,21 @@ onMounted(refresh);
                 ><span class="dot" />{{ d }}</span
               >
             </div>
+            <!-- 积分/能力提示(刚测过才有):直面 v1 关键风险——让用户看清自己 token 能拉到什么、预期上限。 -->
+            <p
+              v-if="
+                testState.for === selected.id &&
+                (testState.data?.points_hint || testState.data?.latency_ms != null)
+              "
+              class="probe-hint"
+            >
+              <template v-if="testState.data?.points_hint">{{
+                testState.data.points_hint
+              }}</template>
+              <template v-if="testState.data?.latency_ms != null">
+                · 延迟 {{ Math.round(testState.data.latency_ms) }}ms</template
+              >
+            </p>
           </div>
 
           <!-- 本地缓存(真实覆盖,无则诚实空)-->
@@ -260,7 +275,7 @@ onMounted(refresh);
             <span v-if="coverage?.last_date" class="live-dot" />
             <span class="mono row-val">{{ coverage?.last_date ?? '暂无数据' }}</span>
             <button class="btn btn-sm btn-secondary" @click="refresh">
-              <Icon name="refresh" :size="12" /> 刷新
+              <Icon name="refresh" :size="12" /> 立即刷新
             </button>
           </span>
         </div>
@@ -522,6 +537,12 @@ onMounted(refresh);
   flex-wrap: wrap;
   gap: 6px;
   margin-top: 12px;
+}
+.probe-hint {
+  margin: 10px 0 0;
+  font-size: var(--fs-cap);
+  color: var(--text-3);
+  line-height: 1.5;
 }
 
 .cache-bar {
