@@ -61,6 +61,8 @@ API_ENDPOINTS: dict[str, dict[str, str]] = {
     "custom_factors_list": {"method": "GET", "path": "/custom-factors"},
     "custom_factors_update": {"method": "PUT", "path": "/custom-factors/:id"},
     "custom_factors_delete": {"method": "DELETE", "path": "/custom-factors/:id"},
+    "tdx_validate": {"method": "POST", "path": "/tdx/validate"},
+    "tdx_scan": {"method": "POST", "path": "/tdx/scan"},
 }
 
 ENGINE_ENDPOINTS: dict[str, dict[str, str]] = {
@@ -79,6 +81,8 @@ ENGINE_ENDPOINTS: dict[str, dict[str, str]] = {
     "backtest": {"method": "POST", "path": "/engine/backtest"},
     "train": {"method": "POST", "path": "/engine/train"},
     "factors_quality": {"method": "POST", "path": "/engine/factors/quality"},
+    "tdx_validate": {"method": "POST", "path": "/engine/tdx/validate"},
+    "tdx_scan": {"method": "POST", "path": "/engine/tdx/scan"},
 }
 
 _PARAM_RE = re.compile(r":([A-Za-z_][A-Za-z0-9_]*)")

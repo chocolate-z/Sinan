@@ -144,6 +144,10 @@ export interface EngineClient {
   marketSnapshot(provider: string, token?: string, sparkDays?: number): Promise<any>;
   /** 行情页板块成分股。 */
   marketSector(provider: string, industry: string, token?: string): Promise<any>;
+  /** 通达信公式静态校验(语法/白名单/无未来函数)。 */
+  tdxValidate(src: string): Promise<any>;
+  /** 通达信公式全市场检测扫描(asof 当日触发信号的股票)。无缓存 → 诚实空;非法 → EngineError 422。 */
+  tdxScan(req: { src: string; asof?: string; signal?: string; codes?: string[] }): Promise<any>;
   /** 连接 engine cache/build SSE,逐事件回调。完成时 resolve。 */
   cacheBuild(req: CacheBuildRequest, onEvent: (ev: any) => void): Promise<void>;
   /** 盘后:出信号 + 模拟盘撮合记账(engine 计算,api 落库)。 */
@@ -382,6 +386,20 @@ export class HttpEngineClient implements EngineClient {
     });
     if (!res.ok) throw new Error(`engine market/sector ${res.status}`);
     return res.json();
+  }
+
+  async tdxValidate(src: string): Promise<any> {
+    return this.slowPost('/engine/tdx/validate', { src });
+  }
+
+  async tdxScan(req: {
+    src: string;
+    asof?: string;
+    signal?: string;
+    codes?: string[];
+  }): Promise<any> {
+    // 全市场扫描可达十余秒 → slowPost(无超时);非法公式 engine 422 → EngineError 转发。
+    return this.slowPost('/engine/tdx/scan', req);
   }
 
   async cacheBuild(req: CacheBuildRequest, onEvent: (ev: any) => void): Promise<void> {

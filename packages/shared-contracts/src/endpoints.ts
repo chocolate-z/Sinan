@@ -67,6 +67,8 @@ export const API_ENDPOINTS = {
   custom_factors_list: { method: 'GET', path: '/custom-factors' },
   custom_factors_update: { method: 'PUT', path: '/custom-factors/:id' },
   custom_factors_delete: { method: 'DELETE', path: '/custom-factors/:id' },
+  tdx_validate: { method: 'POST', path: '/tdx/validate' },
+  tdx_scan: { method: 'POST', path: '/tdx/scan' },
 } as const satisfies Record<string, EndpointDef>;
 
 /** api ↔ engine 内部(:59915,X-Sinan-Internal)。 */
@@ -86,6 +88,8 @@ export const ENGINE_ENDPOINTS = {
   backtest: { method: 'POST', path: '/engine/backtest' },
   train: { method: 'POST', path: '/engine/train' },
   factors_quality: { method: 'POST', path: '/engine/factors/quality' },
+  tdx_validate: { method: 'POST', path: '/engine/tdx/validate' },
+  tdx_scan: { method: 'POST', path: '/engine/tdx/scan' },
 } as const satisfies Record<string, EndpointDef>;
 
 /** 把含 :param 的路径模板填充为具体路径。 */

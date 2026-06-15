@@ -90,6 +90,27 @@ export class FakeEngineClient implements EngineClient {
     };
   }
 
+  async tdxValidate(src: string): Promise<any> {
+    const bad = /-\s*\d/.test(src) && /REF/i.test(src); // 粗模拟:REF 负参 → 不合法
+    return {
+      ok: !bad,
+      errors: bad ? ['负向引用会引入未来函数(红线#1),拒绝'] : [],
+      outputs: bad ? [] : ['建仓'],
+      temps: [],
+      signals: bad ? [] : ['建仓'],
+    };
+  }
+
+  async tdxScan(req: { src: string; signal?: string }): Promise<any> {
+    return {
+      asof: '2024-01-03',
+      signal: req.signal ?? '建仓',
+      outputs: ['建仓'],
+      scanned: 2,
+      hits: [{ stock_code: '600000.SH', date: '2024-01-03', value: true }],
+    };
+  }
+
   async indicatorsValidate(expr: string): Promise<any> {
     const banned = expr.includes('__');
     return {

@@ -16,6 +16,7 @@ import { MarketController } from './modules/market.js';
 import { BacktestController } from './modules/backtest.js';
 import { ModelsController } from './modules/models.js';
 import { IndicatorsController } from './modules/indicators.js';
+import { TdxController } from './modules/tdx.js';
 import { SchedulerService } from './modules/scheduler.js';
 import {
   CoverageController,
@@ -51,6 +52,7 @@ export class AppModule {
         BacktestController,
         ModelsController,
         IndicatorsController,
+        TdxController,
       ],
       providers: [
         // 会话 token 全局守卫(红线#4/#6):生产态要求前端带匹配 X-Sinan-Token。

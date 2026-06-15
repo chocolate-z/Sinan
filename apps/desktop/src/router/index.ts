@@ -34,6 +34,11 @@ const routes: RouteRecordRaw[] = [
     meta: { title: '模型', needsData: true },
   },
   {
+    path: '/formulas',
+    component: () => import('../pages/formulas/Formulas.vue'),
+    meta: { title: '公式', needsData: true },
+  },
+  {
     path: '/signals',
     component: () => import('../pages/signals/Signals.vue'),
     meta: { title: '信号', needsData: true },

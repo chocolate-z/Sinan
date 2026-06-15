@@ -56,7 +56,9 @@
     "custom_factors_create": { "method": "POST", "path": "/custom-factors" },
     "custom_factors_list": { "method": "GET", "path": "/custom-factors" },
     "custom_factors_update": { "method": "PUT", "path": "/custom-factors/:id" },
-    "custom_factors_delete": { "method": "DELETE", "path": "/custom-factors/:id" }
+    "custom_factors_delete": { "method": "DELETE", "path": "/custom-factors/:id" },
+    "tdx_validate": { "method": "POST", "path": "/tdx/validate" },
+    "tdx_scan": { "method": "POST", "path": "/tdx/scan" }
   },
   "engine": {
     "health": { "method": "GET", "path": "/healthz" },
@@ -73,6 +75,8 @@
     "paper_run": { "method": "POST", "path": "/engine/paper/run" },
     "backtest": { "method": "POST", "path": "/engine/backtest" },
     "train": { "method": "POST", "path": "/engine/train" },
-    "factors_quality": { "method": "POST", "path": "/engine/factors/quality" }
+    "factors_quality": { "method": "POST", "path": "/engine/factors/quality" },
+    "tdx_validate": { "method": "POST", "path": "/engine/tdx/validate" },
+    "tdx_scan": { "method": "POST", "path": "/engine/tdx/scan" }
   }
 }
