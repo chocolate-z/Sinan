@@ -6,6 +6,16 @@ import {
   buildPath,
   type EndpointDef,
 } from '@sinan/shared-contracts';
+import type {
+  BacktestResult,
+  Holding,
+  MarketSnapshot,
+  ModelVersion,
+  PricesResult,
+  QuotesResult,
+  SectorConstituents,
+  Trade,
+} from './types';
 
 export interface Runtime {
   api: number;
@@ -101,9 +111,10 @@ export const api = {
   health: () => request<any>(API_ENDPOINTS.health),
   onboardingState: () => request<any>(API_ENDPOINTS.onboarding_state),
   onboardingComplete: () => request<any>(API_ENDPOINTS.onboarding_complete, { body: {} }),
+  // providers/logs/signals/pnl 由各自 store 用更严类型(action 联合/必填字段)narrowing,client 保持宽松不冲突。
   providers: () => request<any[]>(API_ENDPOINTS.providers_list),
   setActiveProvider: (provider: string) =>
-    request<any>(API_ENDPOINTS.providers_active, { body: { provider } }),
+    request<{ ok?: boolean }>(API_ENDPOINTS.providers_active, { body: { provider } }),
   getCredential: (id: string) => request<any>(API_ENDPOINTS.credential_get, { params: { id } }),
   putCredential: (id: string, token: string) =>
     request<any>(API_ENDPOINTS.credential_put, { params: { id }, body: { token } }),
@@ -120,16 +131,16 @@ export const api = {
 
   // ── M1 交易域 ──────────────────────────────────────────────────────────
   signals: (date: string) => request<any[]>(API_ENDPOINTS.signals_list, { query: { date } }),
-  generateSignals: (body: unknown) => request<any>(API_ENDPOINTS.signals_generate, { body }),
-  paperRun: (body: unknown) => request<any>(API_ENDPOINTS.paper_run, { body }),
-  modelHoldings: () => request<any[]>(API_ENDPOINTS.portfolios_model_holdings),
-  personalHoldings: () => request<any[]>(API_ENDPOINTS.portfolios_personal_holdings),
+  generateSignals: (body: unknown) => request<unknown>(API_ENDPOINTS.signals_generate, { body }),
+  paperRun: (body: unknown) => request<unknown>(API_ENDPOINTS.paper_run, { body }),
+  modelHoldings: () => request<Holding[]>(API_ENDPOINTS.portfolios_model_holdings),
+  personalHoldings: () => request<Holding[]>(API_ENDPOINTS.portfolios_personal_holdings),
   addPersonalHolding: (body: unknown) =>
-    request<any[]>(API_ENDPOINTS.portfolios_personal_add, { body }),
+    request<Holding[]>(API_ENDPOINTS.portfolios_personal_add, { body }),
   deletePersonalHolding: (code: string) =>
-    request<any[]>(API_ENDPOINTS.portfolios_personal_delete, { params: { code } }),
+    request<Holding[]>(API_ENDPOINTS.portfolios_personal_delete, { params: { code } }),
   trades: (portfolio: 'model' | 'personal' = 'model', from?: string, to?: string) =>
-    request<any[]>(API_ENDPOINTS.trades_list, { query: { portfolio, from, to } }),
+    request<Trade[]>(API_ENDPOINTS.trades_list, { query: { portfolio, from, to } }),
   pnlDaily: (portfolio: 'model' | 'personal' = 'model') =>
     request<any[]>(API_ENDPOINTS.pnl_daily, { query: { portfolio } }),
   pnlToday: (portfolio: 'model' | 'personal' = 'model') =>
@@ -137,34 +148,37 @@ export const api = {
 
   // ── 行情域 ───────────────────────────────────────────────────────────────
   quotes: (codes: string[]) =>
-    request<{ degraded: boolean; quotes: any[] }>(API_ENDPOINTS.quotes_list, {
+    request<QuotesResult>(API_ENDPOINTS.quotes_list, {
       query: { codes: codes.join(',') },
     }),
   prices: (
     code: string,
     opts: { adjust?: 'qfq' | 'none'; limit?: number; start?: string; end?: string } = {},
-  ) => request<any>(API_ENDPOINTS.prices_get, { params: { code }, query: { ...opts } }),
+  ) => request<PricesResult>(API_ENDPOINTS.prices_get, { params: { code }, query: { ...opts } }),
   searchStocks: (q: string, limit = 20) =>
     request<{ stocks: { code: string; name: string }[] }>(API_ENDPOINTS.stocks_search, {
       query: { q, limit },
     }),
 
   // ── 行情域:全市场快照(板块视角)──────────────────────────────────────────
-  marketSnapshot: () => request<any>(API_ENDPOINTS.market_snapshot),
-  marketLive: () => request<any>(API_ENDPOINTS.market_live),
+  marketSnapshot: () => request<MarketSnapshot>(API_ENDPOINTS.market_snapshot),
+  marketLive: () => request<MarketSnapshot>(API_ENDPOINTS.market_live),
   marketSector: (industry: string) =>
-    request<any>(API_ENDPOINTS.market_sector, { query: { industry } }),
+    request<SectorConstituents>(API_ENDPOINTS.market_sector, { query: { industry } }),
 
   // ── 回测域(M2)────────────────────────────────────────────────────────────
-  createBacktest: (body: unknown) => request<any>(API_ENDPOINTS.backtests_create, { body }),
-  backtests: () => request<any[]>(API_ENDPOINTS.backtests_list),
-  backtest: (id: string) => request<any>(API_ENDPOINTS.backtests_get, { params: { id } }),
+  createBacktest: (body: unknown) =>
+    request<BacktestResult>(API_ENDPOINTS.backtests_create, { body }),
+  backtests: () => request<BacktestResult[]>(API_ENDPOINTS.backtests_list),
+  backtest: (id: string) =>
+    request<BacktestResult>(API_ENDPOINTS.backtests_get, { params: { id } }),
 
   // ── 模型域(M3)────────────────────────────────────────────────────────────
-  trainModel: (body: unknown) => request<any>(API_ENDPOINTS.models_train, { body }),
-  models: () => request<any[]>(API_ENDPOINTS.models_list),
-  model: (id: string) => request<any>(API_ENDPOINTS.models_get, { params: { id } }),
-  activateModel: (id: string) => request<any>(API_ENDPOINTS.models_activate, { params: { id } }),
+  trainModel: (body: unknown) => request<ModelVersion>(API_ENDPOINTS.models_train, { body }),
+  models: () => request<ModelVersion[]>(API_ENDPOINTS.models_list),
+  model: (id: string) => request<ModelVersion>(API_ENDPOINTS.models_get, { params: { id } }),
+  activateModel: (id: string) =>
+    request<{ ok?: boolean }>(API_ENDPOINTS.models_activate, { params: { id } }),
 
   // ── 指标 / 因子质检域(M4)──────────────────────────────────────────────────
   indicatorsQuality: (q: {

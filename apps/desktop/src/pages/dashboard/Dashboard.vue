@@ -37,7 +37,7 @@ onMounted(async () => {
   trading.fetchLivePnl();
   try {
     const list = await api.backtests(); // 按 created_at 倒序
-    if (list.length) equity.value = await api.backtest(list[0].id);
+    if (list[0]?.id) equity.value = await api.backtest(list[0].id);
   } catch {
     equity.value = null;
   }
