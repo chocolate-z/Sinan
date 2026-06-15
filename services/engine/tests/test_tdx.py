@@ -9,7 +9,7 @@
 import polars as pl
 import pytest
 
-from sinan.tdx import scan, validate
+from sinan.tdx import evaluate_one, scan, validate
 from sinan.tdx.errors import TdxUnsafeError
 from sinan.tdx.evaluator import compile_program
 
@@ -183,3 +183,39 @@ def test_scan_returns_triggered_stocks(tmp_path):
     assert res["asof"] == "2024-01-03"
     assert [h["stock_code"] for h in res["hits"]] == ["600000.SH"]  # 只 A 触发
     assert res["scanned"] == 2
+
+
+def test_evaluate_one_returns_bars_and_lines(tmp_path):
+    """单股求值:K 线 + 公式各输出线(供 K 线 + 副图叠加)。"""
+    from sinan.data import DataLayer, store
+
+    closes = [8, 9, 11, 10]  # 第 3 根 CLOSE 上穿 10
+    store.write_dataset(
+        tmp_path,
+        "price",
+        pl.DataFrame(
+            {
+                "stock_code": ["600000.SH"] * 4,
+                "trade_date": ["2024-01-01", "2024-01-02", "2024-01-03", "2024-01-04"],
+                "open": closes,
+                "high": [c + 1 for c in closes],
+                "low": [c - 1 for c in closes],
+                "close": list(map(float, closes)),
+                "volume": [1.0] * 4,
+                "amount": [1.0] * 4,
+            }
+        ),
+    )
+    res = evaluate_one(
+        DataLayer(tmp_path),
+        "600000.SH",
+        "线: MA(CLOSE,2); 建仓: CROSS(CLOSE, 10);",
+        "2024-01-04",
+        display_bars=10,
+    )
+    assert res["code"] == "600000.SH" and len(res["bars"]) == 4
+    assert res["bars"][-1]["close"] == 10.0
+    assert "线" in res["lines"] and "建仓" in res["lines"]
+    assert "建仓" in res["signal_outputs"]
+    # CROSS 在第 3 根(index 2)为真
+    assert [i for i, x in enumerate(res["lines"]["建仓"]) if x] == [2]

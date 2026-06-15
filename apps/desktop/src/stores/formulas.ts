@@ -54,6 +54,10 @@ interface State {
   currentId: string | null; // 当前加载的已保存公式(null=未保存草稿)
   name: string; // 保存名
   saving: boolean;
+  // 点击命中股票 → 单股 K 线 + 公式副图
+  selStock: string | null;
+  evalRes: any | null;
+  loadingEval: boolean;
 }
 
 export const useFormulasStore = defineStore('formulas', {
@@ -70,6 +74,9 @@ export const useFormulasStore = defineStore('formulas', {
     currentId: null,
     name: '',
     saving: false,
+    selStock: null,
+    evalRes: null,
+    loadingEval: false,
   }),
   getters: {
     canScan(s): boolean {
@@ -154,6 +161,23 @@ export const useFormulasStore = defineStore('formulas', {
       } catch (e: any) {
         this.error = String(e?.detail ?? e);
       }
+    },
+    /** 点命中股票 → 单股求值(K 线 + 公式各输出线,供副图叠加)。 */
+    async pickStock(code: string) {
+      this.selStock = code;
+      this.loadingEval = true;
+      this.evalRes = null;
+      try {
+        this.evalRes = await api.tdxEvaluate({ code, src: this.src });
+      } catch (e: any) {
+        this.error = String(e?.detail ?? e);
+      } finally {
+        this.loadingEval = false;
+      }
+    },
+    closeStock() {
+      this.selStock = null;
+      this.evalRes = null;
     },
     async scan() {
       if (!this.src.trim() || this.scanning) return;

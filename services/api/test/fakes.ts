@@ -132,6 +132,20 @@ export class FakeEngineClient implements EngineClient {
     };
   }
 
+  async tdxEvaluate(req: { code: string; src: string }): Promise<any> {
+    return {
+      code: req.code,
+      asof: '2024-01-04',
+      bars: [
+        { trade_date: '2024-01-03', open: 9, high: 12, low: 8, close: 11, volume: 1 },
+        { trade_date: '2024-01-04', open: 11, high: 11, low: 9, close: 10, volume: 1 },
+      ],
+      lines: { 线: [10, 10.5], 建仓: [true, false] },
+      outputs: ['线', '建仓'],
+      signal_outputs: ['建仓'],
+    };
+  }
+
   async indicatorsValidate(expr: string): Promise<any> {
     const banned = expr.includes('__');
     return {

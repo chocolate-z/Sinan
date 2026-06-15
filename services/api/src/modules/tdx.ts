@@ -71,6 +71,30 @@ export class TdxController {
     return result;
   }
 
+  @Post('tdx/evaluate')
+  async evaluate(
+    @Body() body: { code?: string; src?: string; asof?: string; bars?: number },
+  ): Promise<any> {
+    if (!body?.code?.trim() || !body?.src?.trim()) {
+      throw new BadRequestException('code / src 必填');
+    }
+    try {
+      return await this.engine.tdxEvaluate({
+        code: body.code,
+        src: body.src,
+        asof: body.asof,
+        bars: body.bars,
+      });
+    } catch (e) {
+      if (e instanceof EngineError && e.status === 422) {
+        throw new UnprocessableEntityException(
+          typeof e.detail === 'string' ? e.detail : JSON.stringify(e.detail),
+        );
+      }
+      throw e;
+    }
+  }
+
   // ── 保存的公式 CRUD(保存前经 engine 解析器校验,绝不存非法/不安全公式)──────────
   @Post('tdx/formulas')
   async createFormula(

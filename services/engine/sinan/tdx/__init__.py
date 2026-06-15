@@ -21,6 +21,7 @@ from .evaluator import CompiledFormula, compile_program, trigger_expr
 __all__ = [
     "validate",
     "scan",
+    "evaluate_one",
     "compile_program",
     "CompiledFormula",
     "TdxError",
@@ -98,4 +99,41 @@ def scan(
             {"stock_code": r["stock_code"], "date": r["trade_date"], "value": r["_v"]}
             for r in hits.iter_rows(named=True)
         ],
+    }
+
+
+def evaluate_one(dl, code: str, src: str, asof: str, *, display_bars: int = 120) -> dict:
+    """单股求值:返回最近 display_bars 根 K 线 + 公式各输出线(供 K 线 + 副图叠加)。
+
+    在 ≤asof 全(裁剪年)历史上算(递归 SMA/EMA 起步段才准),只返末 display_bars 根用于显示。
+    """
+    c = compile_program(src)
+    px = dl.asof("price", asof, codes=[code], fields=_PANEL_FIELDS)
+    empty = {"code": code, "asof": None, "bars": [], "lines": {}, "outputs": [], "signal_outputs": []}
+    if px.is_empty():
+        return empty
+    panel = px.sort(["stock_code", "trade_date"])
+    names = list(c.outputs.keys())
+    base_cols = ["trade_date", "open", "high", "low", "close", "volume"]
+    exprs = [c.outputs[n].expr.alias(f"_o{i}") for i, n in enumerate(names)]
+    tail = panel.select(base_cols + exprs).tail(display_bars)
+    if tail.is_empty():
+        return empty
+    bars = list(tail.select(base_cols).iter_rows(named=True))
+    lines: dict[str, list] = {}
+    signal_outputs: list[str] = []
+    for i, n in enumerate(names):
+        col = tail[f"_o{i}"].to_list()
+        if c.outputs[n].is_bool:
+            lines[n] = [bool(x) if x is not None else False for x in col]
+            signal_outputs.append(n)
+        else:
+            lines[n] = [None if x is None else round(float(x), 4) for x in col]
+    return {
+        "code": code,
+        "asof": tail["trade_date"].to_list()[-1],
+        "bars": bars,
+        "lines": lines,
+        "outputs": names,
+        "signal_outputs": signal_outputs,
     }

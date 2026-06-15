@@ -374,6 +374,33 @@ def tdx_scan_ep(req: TdxScanReq) -> dict:
         raise HTTPException(status_code=422, detail=str(e))
 
 
+class TdxEvaluateReq(BaseModel):
+    code: str
+    src: str
+    asof: Optional[str] = None
+    bars: int = 120
+
+
+@app.post("/engine/tdx/evaluate", dependencies=[Depends(require_internal)])
+def tdx_evaluate_ep(req: TdxEvaluateReq) -> dict:
+    """单股求值:K 线 + 公式各输出线(供前端 K 线 + 副图叠加)。无缓存→诚实空;非法→422。"""
+    from .data import DataLayer
+    from .data.layout import available_years
+    from .tdx import TdxError, evaluate_one
+
+    cache = config.cache_dir()
+    years = available_years(cache, "price")
+    dl = DataLayer(cache, years=years[-2:] if years else None)
+    asof = req.asof
+    if not asof:
+        dates = dl.latest_dates("price", n=1)
+        asof = dates[0] if dates else "9999-12-31"
+    try:
+        return evaluate_one(dl, req.code, req.src, asof, display_bars=max(20, min(req.bars, 500)))
+    except TdxError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+
+
 # ── 盘后:出信号 + 模拟盘撮合记账(run_eod)────────────────────────────────
 class PaperPosition(BaseModel):
     code: str

@@ -194,4 +194,6 @@ export const api = {
     request<any>(API_ENDPOINTS.tdx_formulas_update, { params: { id }, body }),
   tdxFormulaDelete: (id: string) =>
     request<any>(API_ENDPOINTS.tdx_formulas_delete, { params: { id } }),
+  tdxEvaluate: (body: { code: string; src: string; asof?: string; bars?: number }) =>
+    request<any>(API_ENDPOINTS.tdx_evaluate, { body }),
 };

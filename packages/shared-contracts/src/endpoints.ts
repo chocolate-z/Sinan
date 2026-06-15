@@ -73,6 +73,7 @@ export const API_ENDPOINTS = {
   tdx_formulas_list: { method: 'GET', path: '/tdx/formulas' },
   tdx_formulas_update: { method: 'PUT', path: '/tdx/formulas/:id' },
   tdx_formulas_delete: { method: 'DELETE', path: '/tdx/formulas/:id' },
+  tdx_evaluate: { method: 'POST', path: '/tdx/evaluate' },
   market_live: { method: 'GET', path: '/market/live' },
 } as const satisfies Record<string, EndpointDef>;
 
@@ -95,6 +96,7 @@ export const ENGINE_ENDPOINTS = {
   factors_quality: { method: 'POST', path: '/engine/factors/quality' },
   tdx_validate: { method: 'POST', path: '/engine/tdx/validate' },
   tdx_scan: { method: 'POST', path: '/engine/tdx/scan' },
+  tdx_evaluate: { method: 'POST', path: '/engine/tdx/evaluate' },
   market_live: { method: 'POST', path: '/engine/market/live' },
 } as const satisfies Record<string, EndpointDef>;
 

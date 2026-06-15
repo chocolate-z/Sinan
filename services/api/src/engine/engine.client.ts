@@ -150,6 +150,8 @@ export interface EngineClient {
   tdxValidate(src: string): Promise<any>;
   /** 通达信公式全市场检测扫描(asof 当日触发信号的股票)。无缓存 → 诚实空;非法 → EngineError 422。 */
   tdxScan(req: { src: string; asof?: string; signal?: string; codes?: string[] }): Promise<any>;
+  /** 单股求值:K 线 + 公式各输出线(供 K 线 + 副图叠加)。非法 → EngineError 422。 */
+  tdxEvaluate(req: { code: string; src: string; asof?: string; bars?: number }): Promise<any>;
   /** 连接 engine cache/build SSE,逐事件回调。完成时 resolve。 */
   cacheBuild(req: CacheBuildRequest, onEvent: (ev: any) => void): Promise<void>;
   /** 盘后:出信号 + 模拟盘撮合记账(engine 计算,api 落库)。 */
@@ -407,6 +409,15 @@ export class HttpEngineClient implements EngineClient {
   }): Promise<any> {
     // 全市场扫描可达十余秒 → slowPost(无超时);非法公式 engine 422 → EngineError 转发。
     return this.slowPost('/engine/tdx/scan', req);
+  }
+
+  async tdxEvaluate(req: {
+    code: string;
+    src: string;
+    asof?: string;
+    bars?: number;
+  }): Promise<any> {
+    return this.slowPost('/engine/tdx/evaluate', req);
   }
 
   async cacheBuild(req: CacheBuildRequest, onEvent: (ev: any) => void): Promise<void> {

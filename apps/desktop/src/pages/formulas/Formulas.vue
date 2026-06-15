@@ -5,12 +5,26 @@ import { computed, onMounted } from 'vue';
 import { useFormulasStore } from '../../stores/formulas';
 import PageHero from '../../ui/PageHero.vue';
 import RunningBar from '../../ui/RunningBar.vue';
+import Candles from '../../ui/charts/Candles.vue';
+import TdxSubChart from '../../ui/charts/TdxSubChart.vue';
 import Icon from '../../shell/Icon.vue';
 
 const f = useFormulasStore();
 const v = computed(() => f.validateRes);
 const r = computed(() => f.scanRes);
 const canSave = computed(() => !!f.name.trim() && !!f.src.trim() && !f.saving);
+
+// 单股 K 线 + 公式副图(点命中股票打开)
+const ev = computed(() => f.evalRes);
+const candleData = computed(() =>
+  (ev.value?.bars ?? []).map((b: any) => ({
+    o: b.open,
+    h: b.high,
+    l: b.low,
+    c: b.close,
+    v: b.volume ?? 0,
+  })),
+);
 
 onMounted(() => f.loadSaved());
 
@@ -151,14 +165,22 @@ function fmtVal(x: unknown): string {
                 <th>代码</th>
                 <th class="num">信号值</th>
                 <th>触发日</th>
+                <th style="width: 24px" />
               </tr>
             </thead>
             <tbody>
-              <tr v-for="(h, i) in r.hits" :key="h.stock_code">
+              <tr
+                v-for="(h, i) in r.hits"
+                :key="h.stock_code"
+                class="hit-row"
+                :class="{ sel: f.selStock === h.stock_code }"
+                @click="f.pickStock(h.stock_code)"
+              >
                 <td class="dim mono">{{ i + 1 }}</td>
                 <td class="col-code">{{ h.stock_code }}</td>
                 <td class="num mono">{{ fmtVal(h.value) }}</td>
                 <td class="dim col-code">{{ h.date }}</td>
+                <td class="c-chev">›</td>
               </tr>
             </tbody>
           </table>
@@ -180,6 +202,38 @@ function fmtVal(x: unknown): string {
       公式在本地缓存的日线上逐股求值(收盘价口径,日频);SMA 为中国式递归加权(α=M/N),CROSS
       为上穿瞬间。结果仅供研究参考,非投资建议;请配合模拟盘前向验证。
     </p>
+
+    <!-- 点命中股票 → K 线 + 公式副图抽屉 -->
+    <template v-if="f.selStock">
+      <div class="drawer-scrim" @click="f.closeStock()" />
+      <aside class="drawer card">
+        <div class="drawer-head">
+          <div class="dh-title">
+            <span class="dh-name col-code">{{ f.selStock }}</span>
+            <span v-if="ev?.asof" class="dh-sub">{{ ev.asof }} · 日K + 公式副图</span>
+          </div>
+          <button class="dh-close" title="关闭" @click="f.closeStock()">✕</button>
+        </div>
+        <div class="drawer-body">
+          <div v-if="f.loadingEval" class="empty"><div class="empty-title">求值中…</div></div>
+          <template v-else-if="ev && ev.bars && ev.bars.length">
+            <div class="chart-cap cap">日 K 线(前 {{ ev.bars.length }} 根)</div>
+            <Candles :data="candleData" :height="260" :ma="[5, 10, 20]" />
+            <div class="chart-cap cap">公式副图 · {{ ev.outputs.join(' / ') }}</div>
+            <TdxSubChart
+              :lines="ev.lines"
+              :signal-outputs="ev.signal_outputs"
+              :n="ev.bars.length"
+              :height="160"
+            />
+          </template>
+          <div v-else class="empty">
+            <div class="empty-icon"><Icon name="db" :size="20" /></div>
+            <div class="empty-title">本地无该股日线缓存</div>
+          </div>
+        </div>
+      </aside>
+    </template>
   </div>
 </template>
 
@@ -376,6 +430,88 @@ function fmtVal(x: unknown): string {
   color: var(--text-3);
   font-size: var(--fs-cap);
   line-height: 1.6;
+}
+.hit-row {
+  cursor: pointer;
+}
+.c-chev {
+  color: var(--text-3);
+  text-align: center;
+}
+
+/* K 线 + 副图 抽屉 */
+.drawer-scrim {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.4);
+  z-index: 60;
+}
+.drawer {
+  position: fixed;
+  top: var(--titlebar-h);
+  right: 0;
+  bottom: var(--statusbar-h);
+  width: 640px;
+  max-width: 92vw;
+  z-index: 61;
+  display: flex;
+  flex-direction: column;
+  border-radius: 0;
+  animation: drawer-in 160ms var(--ease-out);
+}
+@keyframes drawer-in {
+  from {
+    transform: translateX(20px);
+    opacity: 0.6;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+.drawer-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 18px;
+  border-bottom: 0.5px solid var(--border);
+}
+.dh-title {
+  flex: 1;
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+.dh-name {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-1);
+}
+.dh-sub {
+  font-size: 11.5px;
+  color: var(--text-3);
+}
+.dh-close {
+  width: 30px;
+  height: 30px;
+  border-radius: var(--r-sm);
+  border: none;
+  background: transparent;
+  color: var(--text-2);
+  cursor: pointer;
+}
+.dh-close:hover {
+  background: var(--bg-elevated);
+  color: var(--text-1);
+}
+.drawer-body {
+  flex: 1;
+  overflow: auto;
+  padding: 14px 18px;
+}
+.chart-cap {
+  color: var(--text-3);
+  margin: 10px 0 4px;
 }
 @media (max-width: 1080px) {
   .cols {
