@@ -419,8 +419,16 @@ onBeforeUnmount(() => {
   flex-wrap: nowrap;
   gap: 8px;
   width: 100%;
-  height: 30px; /* 显式锁高 + box-sizing,不靠 .input,杜绝任何元素/webview 撑高成竖排 */
+  /* 三重锁高:height + min/max + box-sizing → 物理上不可能超 30px(根治"被撑成竖排高框")。
+     flex:none + align-self:center → 不被 flex/grid 父容器的 align stretch 纵向拉伸。 */
+  height: 30px;
+  min-height: 30px;
+  max-height: 30px;
   box-sizing: border-box;
+  flex: none;
+  align-self: center;
+  line-height: 1;
+  overflow: hidden;
   cursor: pointer;
   text-align: left;
   transition:
@@ -429,6 +437,12 @@ onBeforeUnmount(() => {
 }
 .dp-trigger.is-empty .dp-val {
   color: var(--text-3);
+}
+.dp-val {
+  /* 占位/值过长在窄列里不换行(换行会顶高内容,曾是撑高元凶之一)。 */
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .dp-trigger.on {
   border-color: var(--accent);
