@@ -60,6 +60,12 @@ function st(s: string) {
 function ic(v: number | null | undefined): string {
   return v == null ? '—' : (v >= 0 ? '' : '−') + Math.abs(v).toFixed(3);
 }
+// 上线日期:从真实 created_at(epoch ms 或 ISO)取 YYYY-MM-DD;缺失诚实空。
+function since(v: number | string | null | undefined): string {
+  if (v == null) return '';
+  const d = new Date(typeof v === 'number' ? v : v);
+  return Number.isNaN(d.getTime()) ? '' : d.toISOString().slice(0, 10);
+}
 
 onMounted(() => ms.fetchModels());
 
@@ -241,9 +247,31 @@ const BT_RULES = [
               <div class="mc-k">夏普<span class="lyr">分层</span></div>
               <div class="mc-v mono">{{ m.layered_sharpe_oos?.toFixed(2) ?? '—' }}</div>
             </div>
+            <div class="mc-kv">
+              <div class="mc-k">年化<span class="lyr">分层</span></div>
+              <div
+                class="mc-v mono"
+                :class="
+                  m.layered_annual_return_oos != null
+                    ? app.pnlClass(m.layered_annual_return_oos)
+                    : ''
+                "
+              >
+                {{
+                  m.layered_annual_return_oos != null
+                    ? fmtPct(m.layered_annual_return_oos * 100)
+                    : '—'
+                }}
+              </div>
+            </div>
           </div>
           <div class="mc-foot">
-            <span class="mc-range mono">{{ m.train_start }} ~ {{ m.train_end }}</span>
+            <span class="mc-note">
+              <span class="mc-range mono">{{ m.train_start }} ~ {{ m.train_end }}</span>
+              <template v-if="since(m.created_at)">
+                · 上线 <span class="mono">{{ since(m.created_at) }}</span>
+              </template>
+            </span>
             <span v-if="m.oos_clean" class="badge badge-ok mc-honest"
               ><span class="dot" />诚实样本外</span
             >
@@ -581,13 +609,13 @@ const BT_RULES = [
 /* 模型版本卡 */
 .model-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
   gap: 16px;
 }
 .model-card {
   text-align: left;
   cursor: pointer;
-  padding: 16px;
+  padding: 18px;
   border-radius: var(--r-lg);
   background: var(--glass-card);
   -webkit-backdrop-filter: var(--glass-blur);
@@ -618,7 +646,8 @@ const BT_RULES = [
 }
 .mc-metrics {
   display: flex;
-  gap: 20px;
+  flex-wrap: wrap;
+  gap: 12px 18px;
 }
 .mc-k {
   font-size: 10.5px;
@@ -628,7 +657,7 @@ const BT_RULES = [
   align-items: center;
 }
 .mc-v {
-  font-size: 15px;
+  font-size: 14px;
   font-weight: 600;
   color: var(--text-1);
 }
@@ -638,8 +667,15 @@ const BT_RULES = [
   justify-content: space-between;
   gap: 8px;
 }
+.mc-note {
+  font-size: 11px;
+  color: var(--text-3);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 .mc-range {
-  font-size: 10.5px;
+  font-size: 11px;
   color: var(--text-3);
 }
 .mc-honest {
@@ -816,14 +852,14 @@ const BT_RULES = [
   gap: 20px;
 }
 .rules {
-  padding: 6px 22px 14px;
+  padding: 4px 22px 14px;
 }
 .rule {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 16px;
-  padding: 10px 0;
+  padding: 12px 4px;
   border-bottom: 0.5px solid var(--border-faint);
 }
 .rule:last-child {

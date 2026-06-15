@@ -267,7 +267,7 @@ onMounted(refresh);
         <div class="grow">
           <div class="row-main">
             <div class="row-label">自动刷新频率</div>
-            <div class="row-desc">盘中行情自动拉取间隔(打包默认 / SQLite 设置)</div>
+            <div class="row-desc">盘中行情自动拉取间隔</div>
           </div>
           <span class="badge badge-idle"
             ><span class="dot" />{{
@@ -310,9 +310,7 @@ onMounted(refresh);
         <div class="grow">
           <div class="row-main">
             <div class="row-label">涨跌配色</div>
-            <div class="row-desc">
-              A股惯例为红涨绿跌 · 可反转为欧美惯例(绿涨红跌)· 与系统蓝严格解耦
-            </div>
+            <div class="row-desc">A股惯例为红涨绿跌 · 可反转为欧美惯例(绿涨红跌)</div>
           </div>
           <div class="invert-side">
             <span class="preview">

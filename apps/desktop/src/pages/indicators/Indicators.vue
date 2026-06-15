@@ -138,15 +138,6 @@ function pct(v: number | null | undefined): string {
   </PageHero>
 
   <div class="page-body">
-    <!-- 色彩通道说明 -->
-    <div class="ch-legend">
-      <span class="ch-tag"
-        ><i style="background: var(--text-2)" />IC / ICIR / 覆盖度 = 中性通道</span
-      >
-      <span class="ch-tag"><i style="background: var(--pnl-up)" />分层收益 = PnL 通道</span>
-      <span class="ch-tag"><i style="background: var(--accent)" />IC 时序正负 = Accent / 中性</span>
-    </div>
-
     <!-- 质检参数 -->
     <div class="card">
       <div class="card-head">
@@ -324,7 +315,6 @@ function pct(v: number | null | undefined): string {
               {{ report.n_codes }} 标的</span
             >
           </div>
-          <span class="ch-tag"><i style="background: var(--text-2)" />中性</span>
         </div>
         <div class="factor-filter">
           <div class="segmented">
@@ -332,6 +322,11 @@ function pct(v: number | null | undefined): string {
               {{ c }}
             </button>
           </div>
+          <span class="ch-legend">
+            <span class="ch-tag"><i style="background: var(--text-2)" />IC/ICIR=中性</span>
+            <span class="ch-tag"><i style="background: var(--pnl-up)" />分层收益=PnL</span>
+            <span class="ch-tag"><i style="background: var(--accent)" />启用=Accent</span>
+          </span>
         </div>
         <table class="dt">
           <thead>
@@ -469,9 +464,10 @@ function pct(v: number | null | undefined): string {
   gap: 20px;
 }
 .ch-legend {
+  margin-left: auto;
   display: flex;
-  flex-wrap: wrap;
-  gap: 16px;
+  align-items: center;
+  gap: 14px;
 }
 .ch-tag {
   display: inline-flex;
@@ -479,7 +475,6 @@ function pct(v: number | null | undefined): string {
   gap: 5px;
   font-size: var(--fs-cap);
   color: var(--text-3);
-  font-family: var(--font-mono);
 }
 .ch-tag i {
   width: 7px;
@@ -686,7 +681,7 @@ function pct(v: number | null | undefined): string {
 
 .cols {
   display: grid;
-  grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1.45fr) minmax(0, 1fr);
   gap: 20px;
   align-items: start;
 }
@@ -708,6 +703,10 @@ function pct(v: number | null | undefined): string {
   color: var(--text-3);
 }
 .factor-filter {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
   margin-bottom: 12px;
 }
 .factor-desc {

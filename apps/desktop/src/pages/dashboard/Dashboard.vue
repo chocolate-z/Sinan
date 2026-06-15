@@ -82,6 +82,20 @@ const eqMarkers = computed(() => {
 });
 const hasEquity = computed(() => eqModel.value.length >= 2);
 
+// 图例实时净值数值(区间归一化后末值,真实数据;无则诚实留空)。
+const modelNavLast = computed(() => {
+  const v = eqModel.value;
+  return v.length ? v[v.length - 1] : null;
+});
+const benchNavLast = computed(() => {
+  const v = eqBench.value;
+  return v.length ? v[v.length - 1] : null;
+});
+const maxDDPct = computed(() => {
+  const d = eqDD.value;
+  return d.length ? Math.min(...d) : null;
+});
+
 // ── 风控闸:从真实模型持仓算可计算的约束(集中度/持仓占用/当日回撤);行业/波动待数据接入 ──────
 const hasRisk = computed(() => trading.modelHoldings.length > 0);
 const maxHolding = computed(() =>
@@ -258,7 +272,7 @@ function pct(v: number | null | undefined, dec = 2): string {
             <div>
               <h3 class="card-title">模型净值 vs 沪深300</h3>
               <span class="card-sub">{{
-                hasEquity ? '最近一次回测 · 样本外 · 含回撤' : '累计净值 · 前复权 · 含回撤'
+                hasEquity ? '最近一次回测 · 前复权 · 含回撤' : '累计净值 · 前复权 · 含回撤'
               }}</span>
             </div>
             <div v-if="hasEquity" class="segmented">
@@ -273,11 +287,22 @@ function pct(v: number | null | undefined, dec = 2): string {
             </div>
           </div>
           <div v-if="hasEquity" class="eq-legend">
-            <span class="lg"><i class="ln model" />模型净值</span>
-            <span class="lg"><i class="ln bench" />沪深300</span>
-            <span class="lg"><i class="sw dd" />回撤</span>
-            <span class="lg"><i class="mk buy" />买</span>
-            <span class="lg"><i class="mk sell" />卖</span>
+            <span class="lg">
+              <i class="ln model" />模型净值
+              <b v-if="modelNavLast != null" class="lg-v mono">{{ modelNavLast.toFixed(3) }}</b>
+            </span>
+            <span class="lg">
+              <i class="ln bench" />沪深300
+              <b v-if="benchNavLast != null" class="lg-v mono">{{ benchNavLast.toFixed(3) }}</b>
+            </span>
+            <span class="lg">
+              <i class="sw dd" />最大回撤
+              <b v-if="maxDDPct != null" class="lg-v mono">{{ maxDDPct.toFixed(1) }}%</b>
+            </span>
+            <span class="lg lg-marks">
+              <span class="lg"><i class="mk buy" />买</span>
+              <span class="lg"><i class="mk sell" />卖</span>
+            </span>
           </div>
           <div class="card-pad">
             <EquityChart
@@ -286,7 +311,7 @@ function pct(v: number | null | undefined, dec = 2): string {
               :bench="eqBench"
               :dd="eqDD"
               :markers="eqMarkers"
-              :height="232"
+              :height="252"
             />
             <div v-else class="empty">
               <div class="empty-icon"><Icon name="market" :size="20" /></div>
@@ -442,19 +467,28 @@ function pct(v: number | null | undefined, dec = 2): string {
   font-weight: 500;
 }
 
-/* 净值卡图例 */
+/* 净值卡图例(单行;实时净值数值;买卖标记靠右) */
 .eq-legend {
   display: flex;
   align-items: center;
-  gap: 16px;
-  padding: 12px 22px 0;
+  gap: 22px;
+  padding: 14px 22px 0;
   font-size: var(--fs-sub);
   color: var(--text-2);
 }
 .lg {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
+  gap: 7px;
+}
+.lg-v {
+  font-size: var(--fs-sub);
+  font-weight: 500;
+  color: var(--text-1);
+}
+.lg-marks {
+  margin-left: auto;
+  gap: 12px;
 }
 .ln {
   width: 14px;

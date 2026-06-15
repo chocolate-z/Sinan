@@ -509,9 +509,9 @@ const buildPct = computed(() => Math.round(build.progress * 100));
   display: grid;
   place-items: center;
   margin-bottom: var(--sp-4);
-  /* 紫渐变软底 + 描边 + accent 发光:贴设计「品牌发光」,同时保留四色花朵 logo。 */
-  background: var(--accent-grad-soft);
-  border: 0.5px solid var(--accent);
+  /* 紫渐变实底 + accent 发光,贴 spec line 31(background:accent-grad);
+     内部仍用四色花朵 logo(保留品牌增强,非纯指南针)。 */
+  background: var(--accent-grad);
   box-shadow: var(--accent-glow);
 }
 .brand-title {
@@ -556,10 +556,12 @@ const buildPct = computed(() => Math.round(build.progress * 100));
     color var(--t-med) var(--ease),
     border-color var(--t-med) var(--ease);
 }
+/* 当前步:系统色不混品牌 —— 用中性高对比(描边 + 主文本)标出「在此步」,
+   accent 紫只保留给「已完成」勾选,避免品牌色当系统态用。 */
 .step.on .node {
-  background: var(--accent-bg);
-  color: var(--accent);
-  border-color: var(--accent);
+  background: var(--bg-panel-2);
+  color: var(--text-1);
+  border-color: var(--border-strong);
 }
 .step.done .node {
   background: var(--accent);
@@ -573,13 +575,15 @@ const buildPct = computed(() => Math.round(build.progress * 100));
   transition: color var(--t-med) var(--ease);
 }
 .step.on .lbl {
-  color: var(--accent);
+  color: var(--text-1);
+  font-weight: 500;
 }
 .link {
   flex: 1;
-  height: 1px;
+  height: 0.5px;
   min-width: 8px;
   background: var(--border);
+  /* 上边距对齐 26px 节点圆心(半径 13px),0 8px 横向间隙贴 spec line 52 */
   margin: 13px var(--sp-2) 0;
   transition: background var(--t-med) var(--ease);
 }
@@ -629,7 +633,7 @@ const buildPct = computed(() => Math.round(build.progress * 100));
   align-items: center;
   gap: var(--sp-3);
   cursor: pointer;
-  padding: 14px;
+  padding: 12px 14px;
   border-radius: var(--r-md);
   border: 0.5px solid var(--border);
   background: var(--bg-panel-2);

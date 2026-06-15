@@ -147,6 +147,14 @@ const ddSeries = computed(() => {
   return drawdownSeries(navs).map((v) => v * 100); // 百分数(≤0)
 });
 const maxDD = computed(() => (ddSeries.value.length ? Math.min(0, ...ddSeries.value) : 0));
+// 图例末值(归一化净值;起点=1):对齐设计稿「模型 1.682 / 沪深300 1.241」的数值展示。
+// 诚实:取真实序列末值,无数据则为 null(图例不渲染数值)。
+const modelEndNav = computed<number | null>(() =>
+  model.value.length ? (model.value[model.value.length - 1] ?? null) : null,
+);
+const benchEndNav = computed<number | null>(() =>
+  bench.value.length ? (bench.value[bench.value.length - 1] ?? null) : null,
+);
 
 // 买卖点 → {i:在 nav_curve 中的索引, t:'buy'|'sell'}(方向用系统色,不用盈亏色)。
 const trades = computed<any[]>(() => result.value?.trades ?? []);
@@ -485,9 +493,17 @@ function fixed(v: number | null | undefined): string {
               >
             </div>
             <div class="legend">
-              <span class="lg"><i class="ln port" />{{ scoringLabel(result.scoring) }}</span>
+              <span class="lg"
+                ><i class="ln port" />{{ scoringLabel(result.scoring)
+                }}<b v-if="modelEndNav != null" class="lg-val mono">{{
+                  modelEndNav.toFixed(3)
+                }}</b></span
+              >
               <span v-if="bench.length" class="lg"
-                ><i class="ln bench" />{{ benchLabel(form.benchmark) }}</span
+                ><i class="ln bench" />{{ benchLabel(form.benchmark)
+                }}<b v-if="benchEndNav != null" class="lg-val mono">{{
+                  benchEndNav.toFixed(3)
+                }}</b></span
               >
               <span class="lg"><i class="mk buy" />买</span>
               <span class="lg"><i class="mk sell" />卖</span>
@@ -541,10 +557,10 @@ function fixed(v: number | null | undefined): string {
               <thead>
                 <tr>
                   <th>日期</th>
+                  <th>标的</th>
                   <th>方向</th>
-                  <th>代码</th>
                   <th class="num">股数</th>
-                  <th class="num">成交价</th>
+                  <th class="num">价格</th>
                   <th class="num">金额</th>
                   <th class="num">成本</th>
                   <th>原因</th>
@@ -553,13 +569,13 @@ function fixed(v: number | null | undefined): string {
               <tbody>
                 <tr v-for="(t, i) in trades" :key="i">
                   <td class="col-code">{{ t.trade_date }}</td>
+                  <td class="col-code">{{ t.code }}</td>
                   <td>
                     <span class="badge" :class="t.side === 'buy' ? 'badge-ok' : 'badge-warn'"
                       ><span style="font-size: 9px">{{ t.side === 'buy' ? '▲' : '▼' }}</span
                       >{{ actionLabel(t.side) }}</span
                     >
                   </td>
-                  <td class="col-code">{{ t.code }}</td>
                   <td class="num">{{ fmtInt(t.shares) }}</td>
                   <td class="num">{{ fmt(t.price) }}</td>
                   <td class="num">{{ fmtInt(Math.round(t.amount ?? 0)) }}</td>
@@ -1000,6 +1016,10 @@ function fixed(v: number | null | undefined): string {
   gap: 8px;
   margin-bottom: 10px;
 }
+/* 角标 note(ANN/ALPHA…):对齐设计稿 9px 微角标,不抢主数值视觉。 */
+.kpi-top .cap {
+  font-size: 9px;
+}
 .kpi-k {
   font-size: 11.5px;
   color: var(--text-2);
@@ -1062,6 +1082,14 @@ function fixed(v: number | null | undefined): string {
   display: inline-flex;
   align-items: center;
   gap: 5px;
+}
+/* 图例末值(归一化净值):对齐设计稿,主文本色 + 中性,不带盈亏色(非涨跌语义)。 */
+.lg-val {
+  margin-left: 3px;
+  font-size: var(--fs-sub);
+  font-weight: 600;
+  color: var(--text-1);
+  letter-spacing: -0.01em;
 }
 .ln {
   width: 14px;
