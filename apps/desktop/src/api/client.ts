@@ -151,6 +151,7 @@ export const api = {
 
   // ── 行情域:全市场快照(板块视角)──────────────────────────────────────────
   marketSnapshot: () => request<any>(API_ENDPOINTS.market_snapshot),
+  marketLive: () => request<any>(API_ENDPOINTS.market_live),
   marketSector: (industry: string) =>
     request<any>(API_ENDPOINTS.market_sector, { query: { industry } }),
 

@@ -99,6 +99,19 @@ export class ProvidersController {
     }
   }
 
+  /** GET /market/live — 实时全市场快照(当日涨跌取自实时报价)。盘后/源不可达 → engine 回落
+   *  收盘快照(live=false);整体异常 → 诚实空。 */
+  @Get('market/live')
+  async marketLive(): Promise<any> {
+    const provider = (this.repo.settingGet('active_provider') as string) || 'tushare';
+    const token = this.creds.getToken(provider) ?? undefined;
+    try {
+      return await this.engine.marketLive(provider, token);
+    } catch {
+      return { asof: null, breadth: null, sectors: [], live: false };
+    }
+  }
+
   /** GET /market/sector?industry= — 板块成分股。 */
   @Get('market/sector')
   async marketSector(@Query('industry') industry?: string): Promise<any> {

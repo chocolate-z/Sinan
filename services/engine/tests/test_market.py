@@ -84,6 +84,37 @@ def test_sector_constituents_no_meta_is_honest(tmp_path):
     assert res["industry"] == "银行" and res["constituents"] == []
 
 
+def test_market_live_uses_realtime_quotes(tmp_path):
+    """实时快照:当日涨跌取自实时报价(现价 vs 昨收),板块走势仍取缓存日线。"""
+    from sinan.factors.market import market_live
+
+    # 缓存日线(供板块走势 Sparkline)
+    _write(tmp_path, "600000.SH", [("2024-01-02", 10.0), ("2024-01-03", 10.5)])
+    _write(tmp_path, "601398.SH", [("2024-01-02", 5.0), ("2024-01-03", 5.1)])
+    _write(tmp_path, "600519.SH", [("2024-01-02", 100.0), ("2024-01-03", 99.0)])
+    # 实时报价:现价 vs 昨收 → 今日涨跌(与缓存收盘无关)
+    quotes = {
+        "600000.SH": {"price": 11.0, "prev_close": 10.0},  # +10%
+        "601398.SH": {"price": 5.2, "prev_close": 5.0},  # +4%
+        "600519.SH": {"price": 90.0, "prev_close": 100.0},  # -10%
+    }
+    res = market_live(DataLayer(tmp_path), META, quotes, spark_days=5, asof="LIVE")
+    assert res["live"] is True and res["asof"] == "LIVE"
+    assert (res["breadth"]["total"], res["breadth"]["up"], res["breadth"]["down"]) == (3, 2, 1)
+    # 银行(+10%/+4% 均 +7%)> 白酒(-10%):用实时涨跌排序
+    assert [s["name"] for s in res["sectors"]] == ["银行", "白酒"]
+    assert abs(res["sectors"][0]["chg"] - 7.0) < 1e-6
+
+
+def test_market_live_no_quotes_is_honest(tmp_path):
+    """无有效实时报价(盘后/源不可达)→ breadth=None,调用方据此回落收盘快照。"""
+    from sinan.factors.market import market_live
+
+    _write(tmp_path, "600000.SH", [("2024-01-02", 10.0), ("2024-01-03", 10.5)])
+    res = market_live(DataLayer(tmp_path), META, {}, spark_days=5, asof="LIVE")
+    assert res["breadth"] is None and res["sectors"] == [] and res["live"] is True
+
+
 def test_datalayer_year_pruning(tmp_path):
     """行情快照提速地基:DataLayer(years=) 只物化指定 year 分区,跨年只看裁剪内的年份。
     全市场多年缓存里只读最近两年可成倍提速(避免 glob 上万分股文件),asof 在裁剪内仍正确。"""

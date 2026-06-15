@@ -58,7 +58,8 @@
     "custom_factors_update": { "method": "PUT", "path": "/custom-factors/:id" },
     "custom_factors_delete": { "method": "DELETE", "path": "/custom-factors/:id" },
     "tdx_validate": { "method": "POST", "path": "/tdx/validate" },
-    "tdx_scan": { "method": "POST", "path": "/tdx/scan" }
+    "tdx_scan": { "method": "POST", "path": "/tdx/scan" },
+    "market_live": { "method": "GET", "path": "/market/live" }
   },
   "engine": {
     "health": { "method": "GET", "path": "/healthz" },
@@ -77,6 +78,7 @@
     "train": { "method": "POST", "path": "/engine/train" },
     "factors_quality": { "method": "POST", "path": "/engine/factors/quality" },
     "tdx_validate": { "method": "POST", "path": "/engine/tdx/validate" },
-    "tdx_scan": { "method": "POST", "path": "/engine/tdx/scan" }
+    "tdx_scan": { "method": "POST", "path": "/engine/tdx/scan" },
+    "market_live": { "method": "POST", "path": "/engine/market/live" }
   }
 }

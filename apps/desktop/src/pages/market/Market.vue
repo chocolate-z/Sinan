@@ -2,7 +2,7 @@
 // 行情 · 板块视角(全市场快照):全A涨跌广度 + 行业板块卡网格 + 涨跌排行 + 下钻抽屉
 // (板块→成分股→个股日K)。数据全来自 api 全市场快照(engine 按 PIT 聚合);缺数据诚实空。
 // 注:个股叶子用日K(Candles);北向「主力净流入」需 moneyflow(无),v1 不展示资金流向卡。
-import { computed, onMounted, ref } from 'vue';
+import { computed, onMounted, onUnmounted, ref } from 'vue';
 import { api } from '../../api/client';
 import { useAppStore } from '../../stores/app';
 import { fmt } from '../../lib/format';
@@ -37,6 +37,9 @@ const asof = ref<string | null>(null);
 const breadth = ref<Breadth | null>(null);
 const sectors = ref<Sector[]>([]);
 const sort = ref<'desc' | 'asc'>('desc'); // 涨幅优先 / 跌幅优先
+const live = ref(true); // 当前数据是否实时(false=盘后/源不可达,回落收盘快照)
+const REFRESH_MS = 15000; // 实时自动刷新间隔
+let pollTimer: ReturnType<typeof setInterval> | undefined;
 
 // 下钻抽屉:板块 → 成分股 → 个股日K
 const openSector = ref<Sector | null>(null);
@@ -56,18 +59,22 @@ const consBreadth = computed(() => ({
   down: constituents.value.filter((c) => (c.chg ?? 0) < 0).length,
 }));
 
-async function loadSnapshot() {
-  loading.value = true;
+// silent=true:自动轮询刷新(不显 loading、失败保留旧数据,避免闪烁)。
+async function loadSnapshot(silent = false) {
+  if (!silent) loading.value = true;
   error.value = null;
   try {
-    const r = await api.marketSnapshot();
+    const r = await api.marketLive();
     asof.value = r?.asof ?? null;
     breadth.value = r?.breadth ?? null;
     sectors.value = r?.sectors ?? [];
+    live.value = r?.live ?? false;
   } catch (e) {
-    error.value = String(e);
-    breadth.value = null;
-    sectors.value = [];
+    if (!silent) {
+      error.value = String(e);
+      breadth.value = null;
+      sectors.value = [];
+    }
   } finally {
     loading.value = false;
   }
@@ -126,15 +133,25 @@ const candleData = computed(() =>
 );
 
 onMounted(() => {
-  if (app.onboardingDone) loadSnapshot();
+  if (!app.onboardingDone) return;
+  loadSnapshot();
+  // 实时自动刷新(开抽屉下钻时暂停,避免打断查看)。
+  pollTimer = setInterval(() => {
+    if (app.onboardingDone && !openSector.value) loadSnapshot(true);
+  }, REFRESH_MS);
+});
+onUnmounted(() => {
+  if (pollTimer) clearInterval(pollTimer);
 });
 </script>
 
 <template>
-  <PageHero title="行情" sub="沪深A股 · 行业板块视角 · 收盘后全市场快照">
+  <PageHero title="行情" sub="沪深A股 · 行业板块视角 · 实时全市场快照(当日)">
     <template #right>
-      <span v-if="asof" class="mono src-tag">{{ asof }} 收盘</span>
-      <button class="btn btn-secondary btn-sm" :disabled="loading" @click="loadSnapshot">
+      <span v-if="asof" class="mono src-tag">
+        <span class="live-dot" :class="{ off: !live }" />{{ live ? '实时 ·' : '收盘 ·' }} {{ asof }}
+      </span>
+      <button class="btn btn-secondary btn-sm" :disabled="loading" @click="loadSnapshot()">
         <Icon name="refresh" :size="13" /> {{ loading ? '刷新中…' : '刷新' }}
       </button>
     </template>
@@ -385,8 +402,34 @@ onMounted(() => {
   position: relative;
 }
 .src-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   font-size: var(--fs-sub);
   color: var(--text-3);
+}
+.live-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--status-ok);
+  box-shadow: 0 0 0 0 color-mix(in srgb, var(--status-ok) 60%, transparent);
+  animation: live-pulse 1.8s ease-out infinite;
+}
+.live-dot.off {
+  background: var(--text-3);
+  animation: none;
+}
+@keyframes live-pulse {
+  0% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--status-ok) 55%, transparent);
+  }
+  70% {
+    box-shadow: 0 0 0 5px transparent;
+  }
+  100% {
+    box-shadow: 0 0 0 0 transparent;
+  }
 }
 .banner {
   margin: 0;

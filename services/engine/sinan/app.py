@@ -291,6 +291,47 @@ def market_sector_ep(req: MarketSectorReq) -> dict:
     return sector_constituents(_market_datalayer(), meta, req.industry)
 
 
+class MarketLiveReq(BaseModel):
+    provider: str
+    token: Optional[str] = None
+    spark_days: int = 20
+
+
+@app.post("/engine/market/live", dependencies=[Depends(require_internal)])
+def market_live_ep(req: MarketLiveReq) -> dict:
+    """实时全市场快照:当日涨跌取自实时报价(现价 vs 昨收),分批拉全 A。盘后/源不可达 →
+    诚实回落收盘快照(live=False)。仅当日展示,不入因子/信号/回测(红线:日频不分时)。"""
+    from datetime import datetime
+
+    from .factors.market import market_live, market_snapshot
+
+    dl = _market_datalayer()
+    meta = _industry_meta(req.provider, req.token)
+    dates = dl.latest_dates("price", n=1)
+    if not dates:
+        return {"asof": None, "breadth": None, "sectors": [], "spark_days": req.spark_days, "live": False}
+    codes = dl.latest_asof("price", dates[0], fields=["stock_code"])["stock_code"].to_list()
+
+    rt = RealtimeProvider()
+    quotes: dict = {}
+    batch = 400  # 新浪单次可承数百;~5200 只约 13 次请求
+    try:
+        for i in range(0, len(codes), batch):
+            quotes.update(rt.realtime_quotes(codes[i : i + batch]))
+    except Exception:  # noqa: BLE001 — 实时源不可达 → 回落收盘快照(诚实)
+        quotes = {}
+
+    res = market_live(
+        dl, meta, quotes, spark_days=req.spark_days,
+        asof=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+    )
+    if res.get("breadth") is None:  # 无有效实时(盘后/源不可达)→ 诚实回落收盘快照
+        snap = market_snapshot(dl, meta, spark_days=req.spark_days)
+        snap["live"] = False
+        return snap
+    return res
+
+
 # ── 通达信(TDX)公式:校验 + 全市场检测扫描 ───────────────────────────────────
 class TdxValidateReq(BaseModel):
     src: str

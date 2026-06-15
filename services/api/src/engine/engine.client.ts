@@ -144,6 +144,8 @@ export interface EngineClient {
   marketSnapshot(provider: string, token?: string, sparkDays?: number): Promise<any>;
   /** 行情页板块成分股。 */
   marketSector(provider: string, industry: string, token?: string): Promise<any>;
+  /** 行情页实时快照(当日涨跌取自实时报价;盘后/源不可达 → engine 诚实回落收盘快照 live=false)。 */
+  marketLive(provider: string, token?: string, sparkDays?: number): Promise<any>;
   /** 通达信公式静态校验(语法/白名单/无未来函数)。 */
   tdxValidate(src: string): Promise<any>;
   /** 通达信公式全市场检测扫描(asof 当日触发信号的股票)。无缓存 → 诚实空;非法 → EngineError 422。 */
@@ -386,6 +388,11 @@ export class HttpEngineClient implements EngineClient {
     });
     if (!res.ok) throw new Error(`engine market/sector ${res.status}`);
     return res.json();
+  }
+
+  async marketLive(provider: string, token?: string, sparkDays = 20): Promise<any> {
+    // 全市场实时(~5200 只分批拉报价)约 2s → slowPost 无超时,稳妥。
+    return this.slowPost('/engine/market/live', { provider, token, spark_days: sparkDays });
   }
 
   async tdxValidate(src: string): Promise<any> {

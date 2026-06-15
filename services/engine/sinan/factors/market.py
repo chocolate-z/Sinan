@@ -45,18 +45,20 @@ def _meta_frame(meta: Mapping[str, dict]) -> pl.DataFrame:
     )
 
 
-def market_snapshot(dl: DataLayer, meta: Mapping[str, dict], *, spark_days: int = 20) -> dict:
-    """全市场快照:全A广度 + 按行业聚合的板块卡(降序按板块涨跌)。"""
-    dates = dl.latest_dates("price", n=spark_days + 1)  # 降序
-    if len(dates) < 2:
-        return {"asof": dates[0] if dates else None, "breadth": None, "sectors": [], "spark_days": spark_days}
-    latest, prev, earliest = dates[0], dates[1], dates[-1]
-    chg = _chg_table(dl, latest, prev)
-    if chg.is_empty():
-        return {"asof": latest, "breadth": None, "sectors": [], "spark_days": spark_days}
+def _aggregate(
+    dl: DataLayer,
+    chg: pl.DataFrame,
+    meta: Mapping[str, dict],
+    *,
+    asof,
+    spark_range: tuple[str, str] | None,
+    spark_days: int,
+) -> dict:
+    """共享聚合:chg(stock_code/close/chg)→ 全A广度 + 按行业板块卡(收盘快照与实时共用)。
 
+    板块走势 Sparkline 仍取自缓存日线(spark_range);实时模式只换「当日涨跌」来源,走势保持日频。
+    """
     chg = chg.join(_meta_frame(meta), on="stock_code", how="left")
-    # 全 A 广度(用全部有涨跌的票,无论是否有行业)。
     up = int((chg["chg"] > 0).sum())
     down = int((chg["chg"] < 0).sum())
     total = chg.height
@@ -70,23 +72,28 @@ def market_snapshot(dl: DataLayer, meta: Mapping[str, dict], *, spark_days: int 
 
     sec = chg.filter(pl.col("industry").is_not_null() & (pl.col("industry") != ""))
     if sec.is_empty():
-        return {"asof": latest, "breadth": breadth, "sectors": [], "spark_days": spark_days}
+        return {"asof": asof, "breadth": breadth, "sectors": [], "spark_days": spark_days}
 
-    # 近 N 日板块走势:窗口内每股收盘 → 按行业逐日等权均值 → 归一化到首日。
-    win = dl.window("price", earliest, latest, fields=["stock_code", "trade_date", "close"])
-    win = win.join(_meta_frame(meta).select("stock_code", "industry"), on="stock_code", how="inner")
-    win = win.filter(pl.col("industry").is_not_null() & (pl.col("industry") != ""))
+    # 近 N 日板块走势:缓存日线窗口内每股收盘 → 按行业逐日等权均值 → 归一化到首日。
     sector_spark: dict[str, list[float]] = {}
-    if not win.is_empty():
-        daily = (
-            win.group_by(["industry", "trade_date"])
-            .agg(pl.col("close").mean().alias("c"))
-            .sort(["industry", "trade_date"])
+    if spark_range is not None:
+        win = dl.window(
+            "price", spark_range[0], spark_range[1], fields=["stock_code", "trade_date", "close"]
         )
-        for (ind,), g in daily.group_by(["industry"], maintain_order=True):
-            vals = g["c"].to_list()
-            base = vals[0] if vals and vals[0] else 0.0
-            sector_spark[ind] = [round(v / base, 4) for v in vals] if base else []
+        win = win.join(
+            _meta_frame(meta).select("stock_code", "industry"), on="stock_code", how="inner"
+        )
+        win = win.filter(pl.col("industry").is_not_null() & (pl.col("industry") != ""))
+        if not win.is_empty():
+            daily = (
+                win.group_by(["industry", "trade_date"])
+                .agg(pl.col("close").mean().alias("c"))
+                .sort(["industry", "trade_date"])
+            )
+            for (ind,), g in daily.group_by(["industry"], maintain_order=True):
+                vals = g["c"].to_list()
+                base = vals[0] if vals and vals[0] else 0.0
+                sector_spark[ind] = [round(v / base, 4) for v in vals] if base else []
 
     sectors = []
     for (ind,), grp in sec.group_by(["industry"]):
@@ -106,7 +113,47 @@ def market_snapshot(dl: DataLayer, meta: Mapping[str, dict], *, spark_days: int 
             }
         )
     sectors.sort(key=lambda s: s["chg"], reverse=True)
-    return {"asof": latest, "breadth": breadth, "sectors": sectors, "spark_days": spark_days}
+    return {"asof": asof, "breadth": breadth, "sectors": sectors, "spark_days": spark_days}
+
+
+def market_snapshot(dl: DataLayer, meta: Mapping[str, dict], *, spark_days: int = 20) -> dict:
+    """收盘快照:全A广度 + 按行业聚合的板块卡(用缓存最新交易日 vs 昨日)。"""
+    dates = dl.latest_dates("price", n=spark_days + 1)  # 降序
+    if len(dates) < 2:
+        return {"asof": dates[0] if dates else None, "breadth": None, "sectors": [], "spark_days": spark_days}
+    latest, prev, earliest = dates[0], dates[1], dates[-1]
+    chg = _chg_table(dl, latest, prev)
+    if chg.is_empty():
+        return {"asof": latest, "breadth": None, "sectors": [], "spark_days": spark_days}
+    return _aggregate(dl, chg, meta, asof=latest, spark_range=(earliest, latest), spark_days=spark_days)
+
+
+def market_live(
+    dl: DataLayer,
+    meta: Mapping[str, dict],
+    quotes: Mapping[str, dict],
+    *,
+    spark_days: int = 20,
+    asof: str | None = None,
+) -> dict:
+    """实时快照:当日涨跌取自实时报价(现价 vs 昨收),板块走势仍取缓存日线。
+
+    quotes:{code: {price 现价, prev_close 昨收, ...}}(RealtimeProvider)。无有效报价 → 诚实空,
+    调用方据此回落收盘快照(market_snapshot)。仅当日展示用,不入因子/信号/回测(红线:日频不分时)。
+    """
+    rows = [
+        {"stock_code": c, "close": float(q["price"]), "chg": (float(q["price"]) / float(q["prev_close"]) - 1.0) * 100.0}
+        for c, q in quotes.items()
+        if q.get("price") and q.get("prev_close")
+    ]
+    if not rows:
+        return {"asof": asof, "breadth": None, "sectors": [], "spark_days": spark_days, "live": True}
+    chg = pl.DataFrame(rows)
+    dates = dl.latest_dates("price", n=spark_days + 1)
+    spark_range = (dates[-1], dates[0]) if len(dates) >= 2 else None
+    res = _aggregate(dl, chg, meta, asof=asof, spark_range=spark_range, spark_days=spark_days)
+    res["live"] = True
+    return res
 
 
 def sector_constituents(dl: DataLayer, meta: Mapping[str, dict], industry: str) -> dict:

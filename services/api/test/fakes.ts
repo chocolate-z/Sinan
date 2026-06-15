@@ -90,6 +90,27 @@ export class FakeEngineClient implements EngineClient {
     };
   }
 
+  async marketLive(_provider: string, _token?: string, _sparkDays?: number): Promise<any> {
+    return {
+      asof: '2024-01-03 14:30:00',
+      live: true,
+      breadth: { total: 2, up: 2, down: 0, flat: 0, avg_chg: 1.5 },
+      sectors: [
+        {
+          name: '银行',
+          chg: 1.5,
+          count: 2,
+          up: 2,
+          down: 0,
+          lead: '招商银行',
+          lead_chg: 2.0,
+          spark: [1.0, 1.01],
+        },
+      ],
+      spark_days: 20,
+    };
+  }
+
   async tdxValidate(src: string): Promise<any> {
     const bad = /-\s*\d/.test(src) && /REF/i.test(src); // 粗模拟:REF 负参 → 不合法
     return {
