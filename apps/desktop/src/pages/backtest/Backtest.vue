@@ -42,7 +42,7 @@ const BENCHMARKS: Array<{ code: string; label: string }> = [
 ];
 
 const SCORINGS: Array<{ k: Scoring; label: string }> = [
-  { k: 'auto', label: '自动(镜像实盘)' },
+  { k: 'auto', label: '自动' },
   { k: 'model', label: '模型' },
   { k: 'custom', label: '自定义因子' },
   { k: 'equal_weight', label: '等权基线' },
@@ -902,7 +902,7 @@ function fixed(v: number | null | undefined): string {
 /* ── 参数 + 绩效双栏:左 300px 参数竖列,右 1fr(KPI 网格 + 净值)──────────────── */
 .bt-cols {
   display: grid;
-  grid-template-columns: 300px minmax(0, 1fr);
+  grid-template-columns: 380px minmax(0, 1fr);
   gap: 20px;
   align-items: start;
 }
@@ -940,6 +940,11 @@ function fixed(v: number | null | undefined): string {
 }
 .bt-cols .field.btn-cell .btn {
   width: 100%;
+}
+/* 窄左栏:380px 下「自动/模型/自定义因子/等权基线」一行从容放下(「自动」已去掉镜像实盘后缀,
+   hint 里说明口径与实盘一致)。flex:1 + min-width:0 → 四按钮严格等宽,不挤压不溢出。 */
+.bt-cols .seg-btn {
+  min-width: 0;
 }
 
 /* 打分口径:分段控件(选中态用 accent 品牌色,符合三通道解耦)+ 模型版本下拉 */

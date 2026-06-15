@@ -451,6 +451,14 @@ onBeforeUnmount(() => {
   align-items: center;
   gap: 4px;
   width: 100%;
+  /* 三重锁高 + box-sizing + flex:none(与 DatePicker 一致)→ 窄左栏里物理不可能被撑高,
+     overflow:hidden 兜底:两段日期 + 箭头 + 日历挤不下时按段省略,不溢出卡片。 */
+  height: 30px;
+  min-height: 30px;
+  max-height: 30px;
+  box-sizing: border-box;
+  flex: none;
+  overflow: hidden;
   cursor: pointer;
   transition:
     border-color var(--t-fast) var(--ease),
@@ -462,8 +470,12 @@ onBeforeUnmount(() => {
 }
 .rp-seg {
   flex: 1;
+  min-width: 0;
   font-size: 13px;
   text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
   padding: 1px 4px;
   border-radius: var(--r-xs);
 }
