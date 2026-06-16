@@ -758,3 +758,13 @@ labels.py   build_forward_return_labels(hfq[T+h]/hfq[T]-1,前向,尾 h 日 null)
 - 🔴 **红线坑 1(PIT)**:基金持仓是**滞后披露**(Q1 持仓 4 月底才公告)。必须按**披露日 `ann_date`** 做 PIT(同现有 `FINANCIAL_PIT` 用 ann_date),不能按报告期 `end_date`,否则未来函数。两次披露间持仓陈旧 → 诚实标注。
 - 🔴 **红线坑 2(覆盖率)**:公募季报只披露前十大重仓(占净值约 30–70%),不是全持仓。穿透天然**部分** → 必须显示「已披露覆盖 X% 净值」,绝不脑补补全(红线#3)。
 - **工作量 L**:新数据集(`fund_basic` / `fund_portfolio`)+ Provider 取数 + 缓存构建 + ann_date PIT 取数 + 穿透聚合(基金×权重→股票级→行业 rollup)+ 新页面。算新里程碑,不是一刀。属偏「组合分析」而非选股核心,M5 档。
+
+### 11.28 内置因子库扩充 5→13 + 自动挖因子设计备忘(未发版,已提交未推)
+
+用户嫌「因子太少」。拍板「先扩库,自动挖因子作为后续」。扩库已做(`5bb84e3`,engine-only,没推)。
+
+- **关键认知**:司南有两套「内置」——`factors/library.py DEFAULT_FACTORS`(Python 函数因子)才是真正驱动**选股/质检/ICIR定权/模型特征**的,用户感觉「太少」就是这个(原 5 个);`indicators/builtin.py BUILTIN_INDICATORS`(12 个 DSL 技术指标)只供自定义编辑器引用、**没接进打分**。
+- **做了什么**:`DEFAULT_FACTORS` 加 8 个经典可解释因子,全用**已缓存字段**(OHLCV/`ps_ttm`/`dv_ttm`/`circ_mv`/`turnover_rate`/`north_hold_ratio`),不接任何新数据,自动进质检/打分/ICIR定权/模型 + 因子库 UI(`/factors` 读注册表,api `seedFactorConfig` 自动补缺省 → 前端表自动多出来、类别 tab 自动派生):价值 SP/DY、规模 size(ln 流通市值,direction=−1)、动量 mom60、反转 reversal5(−1)、波动 vol20(−1)、流动性 turn20(−1)、资金流 north_chg20。
+- **lookback 是这刀的技术核心**:特征面板窗口 = 所有因子 `max(lookback)+5`,且**所有因子共用这个窗**。`mom60` 把窗从 25 抬到 65(取数稍多但仍有界)。rolling 型因子(vol20/turn20)必须 `tail(20)` 显式取最近 N、不能靠窗口大小,否则「有界==无界」黄金测试会炸。新测 `test_expanded_factors_…` 三件套(全生效 / 有界窗口==无界 / 截断未来==全量)钉死正确性。
+- **改了一批硬编旧 5 因子的老测试** → 全改成按 `DEFAULT_FACTORS` 动态断言(`{f.name for f in DEFAULT_FACTORS}` / `max(f.lookback)+5`),下次再扩库不会炸。短窗测试(`_dates(30)`)凡涉及 coverage==1.0 / 全因子生效的,都抬到 `_dates(70)` 让 mom60 也生效。engine **213** 全绿,curl `/factors` + preview 实测 13 因子 + 8 类别 tab 都对。
+- **🟡 自动挖因子(公式搜索,用户要的后续,没做)**:DSL(`indicators/operators.py`)已是现成的公式化 alpha 引擎(ts_mean/ts_std/ts_delta/ema/rsi/rank/zscore/where… × 字段),足以生成候选表达式。挖法 = 生成候选 → 各自跑 `factor_quality` 算 IC/ICIR → 排序。🔴 **红线大坑**:多重检验/数据窥探 —— 搜几千个公式挑最高 IC,纯噪声也能挑出高 IC,当「有效因子」=造假(红线#3)。**必须**:搜索只在训练窗、报告只在搜索从没碰过的 OOS 窗、加数据窥探警示(可考虑 deflated Sharpe / Bonferroni 口径)。工作量 L,结果天然脆。建议产出限定数量候选 + 强制 OOS holdout 展示,别做成「一键挖一堆高 IC」的假象。
