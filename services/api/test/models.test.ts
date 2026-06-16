@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createApp } from '../src/bootstrap.js';
 import { MemorySecretStore } from '../src/secrets/secret-store.js';
+import { JobBus } from '../src/modules/jobs.js';
 import { FakeEngineClient } from './fakes.js';
 
 const TRAIN = {
@@ -147,6 +148,30 @@ test('GET /models/:id 不存在 → 404', async () => {
   try {
     const r = await fastify.inject({ method: 'GET', url: '/api/v1/models/nope' });
     assert.equal(r.statusCode, 404);
+  } finally {
+    await app.close();
+  }
+});
+
+test('训练把 engine 流式进度按 progress_id 广播到 JobBus(确定式进度条 + ETA 数据源)', async () => {
+  const { app, fastify } = await build(TRAIN);
+  try {
+    const bus = app.get(JobBus);
+    const pid = 'prog-train-1';
+    const got: any[] = [];
+    const sub = bus.observable(pid).subscribe((ev) => got.push(ev));
+    const r = await fastify.inject({
+      method: 'POST',
+      url: '/api/v1/models/train',
+      payload: { train_start: '2023-01-01', train_end: '2024-06-30', progress_id: pid },
+    });
+    sub.unsubscribe();
+    assert.equal(r.statusCode, 201);
+    // 特征面板 done/total 是进度条 + ETA 的真实数据源
+    assert.ok(
+      got.some((e) => e.stage === 'features' && e.total > 0),
+      '应按 progress_id 广播特征面板进度事件',
+    );
   } finally {
     await app.close();
   }

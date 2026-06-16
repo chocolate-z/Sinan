@@ -177,7 +177,12 @@ function pct(v: number | null | undefined): string {
           </button>
         </div>
         <p v-if="error" class="msg-err"><Icon name="alert" :size="14" /> {{ error }}</p>
-        <RunningBar :active="loading" :since="ind.startedAt" label="质检中 · 逐日 RankIC" />
+        <RunningBar
+          :active="loading"
+          :since="ind.startedAt"
+          :progress="ind.progress"
+          label="质检中 · 逐日 RankIC"
+        />
       </div>
     </div>
 

@@ -1,7 +1,8 @@
 // 指标页状态 store:质检表单/报告/选中因子 + DSL 编辑器(表达式/名称/权重/校验/已存列表),
 // 全部留存,切菜单再回原样恢复;长质检的 run() 由 store 拥有 → 离开页面不中断、报告照常回填。
 import { defineStore } from 'pinia';
-import { api, ApiError } from '../api/client';
+import { api, ApiError, subscribeJob } from '../api/client';
+import { reduceProgress, type RunProgress } from '../lib/progress';
 
 export interface QualityForm {
   start: string;
@@ -15,6 +16,7 @@ interface IndicatorsState {
   selectedName: string | null;
   loading: boolean;
   startedAt: number; // 质检开始 epoch ms(跨导航留存,供 RunningBar 真实计时)
+  progress: RunProgress | null; // 质检实时进度(SSE 真实 done/total,驱动确定式进度条 + ETA)
   error: string | null;
   // 自定义因子 DSL 编辑器
   expr: string;
@@ -39,6 +41,7 @@ export const useIndicatorsStore = defineStore('indicators', {
     selectedName: null,
     loading: false,
     startedAt: 0,
+    progress: null,
     error: null,
     expr: 'zscore(-pe_ttm) + rank(roe)',
     factorName: '',
@@ -110,14 +113,23 @@ export const useIndicatorsStore = defineStore('indicators', {
       if (!this.form.start || !this.form.end) return;
       this.loading = true;
       this.startedAt = Date.now();
+      this.progress = null;
       this.error = null;
+      // 进度通道:前端生成 id,订阅 SSE,随 query 下发给 api → api 把 engine 流式进度按此 id 广播回来。
+      const progressId = crypto.randomUUID();
+      let unsub: (() => void) | null = null;
       try {
-        this.report = await api.indicatorsQuality({ ...this.form });
+        unsub = subscribeJob(progressId, (ev) => {
+          this.progress = reduceProgress(this.progress, ev, Date.now());
+        });
+        this.report = await api.indicatorsQuality({ ...this.form, progress_id: progressId });
         this.selectedName = this.report?.factors?.[0]?.name ?? null;
       } catch (e) {
         this.error = detailStr(e);
         this.report = null;
       } finally {
+        if (unsub) unsub();
+        this.progress = null;
         this.loading = false;
       }
     },

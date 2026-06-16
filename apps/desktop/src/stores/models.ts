@@ -1,7 +1,8 @@
 // 模型页状态 store:训练表单 + 表单展开态 + 版本列表 + 选中/详情 + 训练态/错误,全部留存,
 // 切菜单再回原样恢复;长训练的 train() 由 store 拥有 → 离开页面不中断、结果照常回填。
 import { defineStore } from 'pinia';
-import { api } from '../api/client';
+import { api, subscribeJob } from '../api/client';
+import { reduceProgress, type RunProgress } from '../lib/progress';
 
 export interface TrainForm {
   train_start: string;
@@ -23,6 +24,7 @@ interface ModelsState {
   detail: any | null;
   training: boolean;
   startedAt: number; // 训练开始 epoch ms(跨导航留存,供 RunningBar 真实计时)
+  progress: RunProgress | null; // 训练实时进度(SSE 真实 done/total,驱动确定式进度条 + ETA)
   error: string | null;
 }
 
@@ -45,6 +47,7 @@ export const useModelsStore = defineStore('models', {
     detail: null,
     training: false,
     startedAt: 0,
+    progress: null,
     error: null,
   }),
   actions: {
@@ -70,11 +73,18 @@ export const useModelsStore = defineStore('models', {
       if (!f.train_start || !f.train_end) return;
       this.training = true;
       this.startedAt = Date.now();
+      this.progress = null;
       this.error = null;
+      // 进度通道:前端生成 id,订阅 SSE,随请求体下发给 api → api 把 engine 流式进度按此 id 广播回来。
+      const progressId = crypto.randomUUID();
+      let unsub: (() => void) | null = null;
       try {
+        unsub = subscribeJob(progressId, (ev) => {
+          this.progress = reduceProgress(this.progress, ev, Date.now());
+        });
         // codeNames 仅前端展示,不下发;空股票池 → 省略(engine 用全 A);feature_workers null → 省略(auto)。
         const { codeNames: _drop, codes, feature_workers, ...rest } = f;
-        const body: Record<string, unknown> = { ...rest };
+        const body: Record<string, unknown> = { ...rest, progress_id: progressId };
         if (codes && codes.length) body.codes = codes;
         if (feature_workers != null) body.feature_workers = feature_workers;
         const created = await api.trainModel(body);
@@ -85,6 +95,8 @@ export const useModelsStore = defineStore('models', {
         const d = e?.detail;
         this.error = d && typeof d === 'object' ? JSON.stringify(d) : String(d ?? e);
       } finally {
+        if (unsub) unsub();
+        this.progress = null;
         this.training = false;
       }
     },

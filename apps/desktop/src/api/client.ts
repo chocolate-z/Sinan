@@ -186,6 +186,7 @@ export const api = {
     end: string;
     label_horizon?: number;
     n_deciles?: number;
+    progress_id?: string; // 进度通道 id(api 据此把 engine 流式进度广播回前端);非取数参数
   }) => request<any>(API_ENDPOINTS.indicators_quality, { query: q }),
   validateIndicator: (expr: string) =>
     request<any>(API_ENDPOINTS.indicators_validate, { body: { expr } }),

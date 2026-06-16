@@ -642,3 +642,20 @@ labels.py   build_forward_return_labels(hfq[T+h]/hfq[T]-1,前向,尾 h 日 null)
 **正确性**:并行度/内存预算只改「怎么物化/溢写/分核」,不改「取哪些数据」——黄金测试 `并行==串行`、`截断不变式`、`物化下界不改打分` 守护;每日 asof 独立、PIT 不变。**验证**:`test_datalayer.py` 8 passed(含新增 `_resolve_mem_mb` 优先级 + `memory_limit` 真生效 2 测);全引擎 `--continue-on-collection-errors` **179 passed**(所有 DataLayer 消费方:回测/行情/因子/runner/store/kline/tdx/cache 无回归);`features.py` 经 sklearn 桩载入 + `_per_worker_mb` 断言通过。新增 `_per_worker_mb` 测 + 既有 `并行==串行` 黄金测试在 CI(可用 sklearn)兜底。
 
 **⚠ 本机 dev `.venv` 的 sklearn 1.9.0 坏了**(`KeyError: '__reduce_cython__'` / DLL load failed = numpy/scipy/Cython ABI 错配,疑似被 hook 自动升级所致)→ `pnpm dev` 跑训练/质检会 500(凡 import `sinan.training` 的测试本地也收集失败);**装机的 beta(PyInstaller 冻结 engine,自带可用 sklearn)不受影响**,故用户能训练。要在 dev 验本次内存修复需先修 venv:`.venv` 内重装兼容的 `scikit-learn`/`scipy`/`numpy`(或重建 venv)。**本修复要送到用户手上需进下一次构建(冻结 engine)**——发 `v0.1.7-beta` 或随后续修复批量重 tag。
+
+### 11.21 训练/质检确定式进度条 + 预计剩余时间(ETA)(未发版)
+
+**用户报:质检/训练要「百分之多少 + 预计时间」的进度条,不只是日志行。** 仍在 `feat/v0.1.6-polish`。这正是 §11.8 留的余项(engine 早已流式发 `{stage, done/total}`,只是前端没接成进度条)。
+
+**链路(复用既有 jobs+SSE 轨道,零新基建):** engine SSE(`features` 逐日 done/total · `folds`/`fold` · `scoring`/`factor`)→ api `ModelsController`/`IndicatorsController` 在消费 engine SSE 的 onEvent 里,除写日志外**按前端给的 `progress_id` 广播到既有 `JobBus`**(`bus.emit(pid, ev)`,结束 `bus.complete(pid)`)→ 前端用既有 `subscribeJob`(`EventSource /events/jobs/:id`)订阅 → store 经 `reduceProgress` 归一成 `{label, done, total, phaseSince}` → `RunningBar` 确定式实心条 + 真实 % + **ETA(本阶段已用时/已完成×剩余,线性外推,标「约剩」不谎报)**。
+
+**落点(13 文件):**
+
+- 新 `lib/progress.ts`:`RunProgress` 类型 + 纯函数 `reduceProgress(prev, ev, now)`(特征面板/折/因子三阶段归一,换阶段重置 phaseSince、同阶段保留以按整段速率估 ETA)。
+- `ui/RunningBar.vue`:加 `progress` prop → 有真实 done/total 走确定式(实心条 + 「{阶段} {pct}% · 约剩 mm:ss · 已运行 mm:ss」),否则退回原不定式(回测页不传 → 行为不变)。
+- `stores/{models,indicators}.ts`:`train()`/`run()` 生成 `crypto.randomUUID()` 作 `progress_id`,`subscribeJob` 订阅、随请求体/query 下发,`reduceProgress` 更新 `progress` 状态,`finally` 取消订阅 + 清空。
+- api `modules/{models,indicators}.ts`:注入 `JobBus`(本就在 AppModule 扁平 providers,免重构),读 `progress_id`(body / `@Query`),onEvent `bus.emit`,`finally bus.complete`。**无引擎契约改动**(progress_id 纯 api↔前端);**无严格校验冲突**(控制器宽松读、无全局 ValidationPipe)。
+- `api/client.ts`:`indicatorsQuality` query 类型加 `progress_id`(`trainModel` body 是 `unknown` 透传)。
+- 测试:`test/progress.test.ts`(5 测 `reduceProgress`)+ api `fakes.ts` 让 fake train/quality 回放进度事件 + `models/indicators.test.ts` 各 1 测「按 progress_id 广播到 JobBus」。
+
+**红线**:ETA 是线性外推估计、标注「约剩」,非伪造数据(红线#3 管的是数据/业绩不造假,估计时间标注清楚不算谎报);进度全来自 engine 真实 `done/total`。**验证**:前端 typecheck 0 + vitest **81 passed**(+5);api **69 passed**(+2 广播测)。⚠ 同样**因 dev venv sklearn 坏、本地跑不起真训练**,确定式条的端到端目视需进构建后在装机端验(reducer + api 广播已单测;SSE/EventSource 轨道是 cache_build 已验证的同一套)。**与 §11.20 内存修复一起进下一次构建(v0.1.7-beta)。**

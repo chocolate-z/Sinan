@@ -157,7 +157,12 @@ export class FakeEngineClient implements EngineClient {
     };
   }
 
-  async factorQuality(req: FactorQualityRequest): Promise<any> {
+  async factorQuality(req: FactorQualityRequest, onEvent?: (ev: any) => void): Promise<any> {
+    // 回放几条 SSE 流式进度(供「确定式进度条 + ETA」路径测试):特征面板 → 逐因子。
+    onEvent?.({ stage: 'features', done: 1, total: 2, date: req.start });
+    onEvent?.({ stage: 'features', done: 2, total: 2, date: req.end });
+    onEvent?.({ stage: 'scoring', n_factors: 1 });
+    onEvent?.({ stage: 'factor', name: 'mom20' });
     if (this.qualityResult && this.qualityResult.__error) {
       throw new EngineError(this.qualityResult.__error.status, this.qualityResult.__error.detail);
     }
@@ -184,7 +189,11 @@ export class FakeEngineClient implements EngineClient {
     );
   }
 
-  async train(req: TrainRequest): Promise<any> {
+  async train(req: TrainRequest, onEvent?: (ev: any) => void): Promise<any> {
+    // 回放几条 SSE 流式进度(供「确定式进度条 + ETA」路径测试):特征面板 → 折。
+    onEvent?.({ stage: 'features', done: 1, total: 2, date: req.train_start });
+    onEvent?.({ stage: 'features', done: 2, total: 2, date: req.train_end });
+    onEvent?.({ stage: 'folds', n_folds: 3 });
     // 测试守卫转发:trainResult 形如 {__error:{status,detail}} → 抛 EngineError。
     if (this.trainResult && this.trainResult.__error) {
       throw new EngineError(this.trainResult.__error.status, this.trainResult.__error.detail);

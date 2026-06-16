@@ -13,6 +13,7 @@ import {
 import { UnprocessableEntityException } from '@nestjs/common';
 import { Repository } from '../db/repository.js';
 import { ENGINE_CLIENT, EngineError, type EngineClient } from '../engine/engine.client.js';
+import { JobBus } from './jobs.js';
 
 interface TrainInput {
   train_start?: string;
@@ -32,6 +33,7 @@ interface TrainInput {
   feature_workers?: number | null;
   strategy_id?: string;
   name?: string;
+  progress_id?: string; // 进度通道 id(前端订阅 /events/jobs/:id);非训练参数,只用于把流式进度广播回前端
 }
 
 @Controller()
@@ -39,6 +41,7 @@ export class ModelsController {
   constructor(
     private readonly repo: Repository,
     @Inject(ENGINE_CLIENT) private readonly engine: EngineClient,
+    private readonly bus: JobBus,
   ) {}
 
   /** 把训练 SSE 进度事件落统一日志(日志页=可观测面):特征面板进度 + 逐折样本内/外 IC。 */
@@ -69,6 +72,7 @@ export class ModelsController {
     if (!body?.train_start || !body?.train_end) {
       throw new BadRequestException('train_start / train_end 必填');
     }
+    const pid = body.progress_id;
     const t0 = Date.now();
     this.repo.logInsert({
       level: 'info',
@@ -95,7 +99,10 @@ export class ModelsController {
           device: body.device,
           feature_workers: body.feature_workers, // 特征面板多核数(省略 → engine 'auto')
         },
-        (ev) => this.logTrainProgress(ev), // SSE 流式:特征面板 + 逐折 IC 实时写日志
+        (ev) => {
+          this.logTrainProgress(ev); // SSE 流式:特征面板 + 逐折 IC 实时写日志
+          if (pid) this.bus.emit(pid, ev); // 同时按 progress_id 广播回前端(确定式进度条 + ETA)
+        },
       );
     } catch (e) {
       const detail =
@@ -110,6 +117,8 @@ export class ModelsController {
         if (e.status === 400) throw new BadRequestException(detail);
       }
       throw e;
+    } finally {
+      if (pid) this.bus.complete(pid); // 结束进度流(成功/失败都收尾,前端 EventSource 据此停止)
     }
     const id = this.repo.insertModelVersion(
       { strategy_id: body.strategy_id ?? null, name: body.name ?? null },

@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createApp } from '../src/bootstrap.js';
 import { MemorySecretStore } from '../src/secrets/secret-store.js';
+import { JobBus } from '../src/modules/jobs.js';
 import { FakeEngineClient } from './fakes.js';
 
 async function build(qualityResult: any) {
@@ -36,6 +37,32 @@ test('GET /indicators/quality 代理 engine 因子质检(真实 IC/分层)', asy
     const msgs = logs.json().map((l: { message: string }) => l.message);
     assert.ok(msgs.some((m: string) => m.includes('因子质检开始')));
     assert.ok(msgs.some((m: string) => m.includes('因子质检完成')));
+  } finally {
+    await app.close();
+  }
+});
+
+test('质检把 engine 流式进度按 progress_id 广播到 JobBus(确定式进度条 + ETA 数据源)', async () => {
+  const { app, fastify } = await build(null);
+  try {
+    const bus = app.get(JobBus);
+    const pid = 'prog-quality-1';
+    const got: any[] = [];
+    const sub = bus.observable(pid).subscribe((ev) => got.push(ev));
+    const r = await fastify.inject({
+      method: 'GET',
+      url: `/api/v1/indicators/quality?start=2023-01-01&end=2024-06-30&progress_id=${pid}`,
+    });
+    sub.unsubscribe();
+    assert.equal(r.statusCode, 200);
+    assert.ok(
+      got.some((e) => e.stage === 'features' && e.total > 0),
+      '应按 progress_id 广播特征面板进度事件',
+    );
+    assert.ok(
+      got.some((e) => e.stage === 'factor'),
+      '应广播逐因子进度事件',
+    );
   } finally {
     await app.close();
   }

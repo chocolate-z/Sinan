@@ -16,6 +16,7 @@ import {
 } from '@nestjs/common';
 import { Repository } from '../db/repository.js';
 import { ENGINE_CLIENT, EngineError, type EngineClient } from '../engine/engine.client.js';
+import { JobBus } from './jobs.js';
 
 /** 合成权重:有限非负数(0=从合成剔除;方向由因子 direction 处理,故不收负权重避免双重反向歧义)。 */
 function validWeight(w: unknown): w is number {
@@ -27,6 +28,7 @@ export class IndicatorsController {
   constructor(
     private readonly repo: Repository,
     @Inject(ENGINE_CLIENT) private readonly engine: EngineClient,
+    private readonly bus: JobBus,
   ) {}
 
   /** 把质检 SSE 进度事件落统一日志:特征面板进度 + 逐因子 IC/ICIR/覆盖度。 */
@@ -59,6 +61,7 @@ export class IndicatorsController {
     @Query('end') end?: string,
     @Query('label_horizon') labelHorizon?: string,
     @Query('n_deciles') nDeciles?: string,
+    @Query('progress_id') progressId?: string,
   ): Promise<any> {
     if (!start || !end) throw new BadRequestException('start / end 必填');
     const t0 = Date.now();
@@ -77,7 +80,10 @@ export class IndicatorsController {
           n_deciles: nDeciles ? Number(nDeciles) : undefined,
           custom: this.repo.customFactorsForQuality(), // 启用的自定义因子与内置并列计算
         },
-        (ev) => this.logQualityProgress(ev), // SSE 流式:特征面板 + 逐因子 IC 实时写日志
+        (ev) => {
+          this.logQualityProgress(ev); // SSE 流式:特征面板 + 逐因子 IC 实时写日志
+          if (progressId) this.bus.emit(progressId, ev); // 同时按 progress_id 广播回前端(进度条 + ETA)
+        },
       );
     } catch (e) {
       const detail =
@@ -93,6 +99,8 @@ export class IndicatorsController {
       });
       if (e instanceof EngineError && e.status === 400) throw new BadRequestException(detail);
       throw e;
+    } finally {
+      if (progressId) this.bus.complete(progressId); // 结束进度流(成功/失败都收尾)
     }
     this.repo.logInsert({
       level: 'info',
