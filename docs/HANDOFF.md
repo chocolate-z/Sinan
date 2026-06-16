@@ -741,3 +741,20 @@ labels.py   build_forward_return_labels(hfq[T+h]/hfq[T]-1,前向,尾 h 日 null)
 - **关键测试(`test_lightgbm.py`)**:① **金标准**——`predict_trees` 纯遍历 == `lightgbm.predict(raw_score=True)`,只差一个 init 常数(`std(diff)<1e-6`)+ 排名完全一致 → 证明无 lightgbm 的推理逐叶精确;② 端到端训出纯 JSON 树模型(`trees` 在、无 `coef`);③ **无未来函数**——固定树模型,`asof(T)` 打分在「全量(含 >T 未来行)」与「截断到 T」两份缓存上**逐值相等**。engine 212→**215**(+3)、api 74、契约 TS10/Py6/SQL2、前端 typecheck/vitest 81/build/lint 全绿;起栈 preview 实测训练表单选 LightGBM 真出树超参字段。
 
 **⚠ 接手注意:** ① dev `.venv` 现已装 `lightgbm==4.5.0`(`--no-deps`,没动 numpy/scipy/sklearn 的锁);若重建 venv 记得 `pip install -e "services/engine[test]"` 会带上 lightgbm。② 打包(M6):若要装机端也能训 LightGBM,构建时得把 lightgbm 一并冻进 engine sidecar(它有原生 .so/.dll;**只影响训练**,推理不需要);不冻则装机端只能训 ElasticNet,选 LightGBM 会在 engine 报 import 失败(可加个更友好的「未装 lightgbm」提示,目前是 raw ImportError)。③ lightgbm 训练默认 `random_state=42 + deterministic=True + force_col_wise` 求可复现。
+
+### 11.27 因子库「按 ICIR 自动定权」+ 基金穿透设计备忘(未发版,已提交未推)
+
+用户问「因子权重能不能靠数据自动算」,拍板先做轻量的 ICIR 自动定权(`f016ec5`,纯前端,没推)。
+
+- **做了什么**:指标页因子库表头加「按 ICIR 自动定权」按钮(跑过质检才可点)。点了就用质检报告里每个因子的 ICIR 给**启用**因子定权:`w = max(ICIR, 0)` 归一到均值 1.0,纯前端编排、复用已有 `PUT /factors/:name` + `PUT /custom-factors/:id` 写回(**不动后端**)。质检面板**已 ×direction**(反向因子取负),所以正 ICIR = 真有稳定预测力;ICIR≤0 给 0 权(不二次翻向、不硬凑),全 ≤0 则一个不改并如实说明。
+- **红线**:🔴 据历史 IC 定权**不是样本外** —— 按钮成功后 UI 明确提醒「拿去回测重叠区间会偏乐观」。要干净 OOS 仍走模型路径(ElasticNet/LightGBM 本来就 walk-forward 学权重)。
+- **代码**:定权逻辑抽成纯函数 `apps/desktop/src/lib/factorWeights.ts`(`icirWeightPlan`)+ `test/factorWeights.test.ts` 5 测(按比例归一 / 负 ICIR 置 0 / 全负不改 / 禁用与不在报告跳过 / 自定义按 id 纳入);store `autoWeightByICIR` 调它再写回。前端 **86** 测(+5)+ build + lint 绿;起栈 preview 实测按钮在表头、无报告时正确禁用。
+- **后续(没做,可选)**:严谨版「滚动自动定权」—— 回测每次调仓只用之前数据算 ICIR 定权(真 OOS),工作量 M,要进 engine 回测路径;目前这版只够做研究基线。
+
+**🟡 基金穿透(用户也提了,还没做,先记设计,动手前必看):**
+
+- **是什么**:把基金/ETF 拆到底层成分股,看真实股票级 / 行业级暴露,可跨多只基金汇总。
+- **数据**:需基金持仓(Tushare `fund_portfolio`,带 `ann_date`,要积分;或 AkShare 东财)。BYO + 拿不到诚实降级 —— **动手前先确认用户数据源 / 积分拿不拿得到**(同财务、指数日线那批高门槛接口)。
+- 🔴 **红线坑 1(PIT)**:基金持仓是**滞后披露**(Q1 持仓 4 月底才公告)。必须按**披露日 `ann_date`** 做 PIT(同现有 `FINANCIAL_PIT` 用 ann_date),不能按报告期 `end_date`,否则未来函数。两次披露间持仓陈旧 → 诚实标注。
+- 🔴 **红线坑 2(覆盖率)**:公募季报只披露前十大重仓(占净值约 30–70%),不是全持仓。穿透天然**部分** → 必须显示「已披露覆盖 X% 净值」,绝不脑补补全(红线#3)。
+- **工作量 L**:新数据集(`fund_basic` / `fund_portfolio`)+ Provider 取数 + 缓存构建 + ann_date PIT 取数 + 穿透聚合(基金×权重→股票级→行业 rollup)+ 新页面。算新里程碑,不是一刀。属偏「组合分析」而非选股核心,M5 档。
