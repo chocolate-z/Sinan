@@ -1,21 +1,21 @@
-# 交给 Claude Code 的 Prompt(复制以下全部内容)
+# 项目说明 / 初始 Prompt
 
-> 用法:把本 `design_handoff_sinan/` 整个文件夹放进你的新项目根目录,在该目录打开 Claude Code,然后把下面分割线内的全部内容作为首条消息发给它。
+> 用法:把本 `design_handoff_sinan/` 整个文件夹放进新项目根目录,作为实现的起点。下面分割线内是这个项目要做的事的完整说明。
 
 ---
 
-你是一名资深桌面应用工程师。请**严格按照本仓库 `design_handoff_sinan/` 内的设计稿,1:1 还原并实现一个名为「司南 Sinan」的本机量化研究桌面应用**。这是一个面向中国 A 股个人投资者的本地软件,核心价值是「诚实、纪律化、可解释、数据隐私本地化」。
+目标:**严格按照本仓库 `design_handoff_sinan/` 内的设计稿,1:1 还原并实现一个名为「司南 Sinan」的本机量化研究桌面应用**。这是一个面向中国 A 股个人投资者的本地软件,核心价值是「诚实、纪律化、可解释、数据隐私本地化」。
 
 ## 第一步:先读设计稿(必须,不要跳过)
 按顺序读完并理解,再动手:
-1. `design_handoff_sinan/README.md` —— 完整设计说明:9 个页面逐屏规格、配色三通道铁律、布局框架、组件状态、交互行为、数据契约。**这是你的需求基准。**
+1. `design_handoff_sinan/README.md` —— 完整设计说明:9 个页面逐屏规格、配色三通道铁律、布局框架、组件状态、交互行为、数据契约。**这是需求基准。**
 2. `design_handoff_sinan/design_source/assets/tokens.css` —— 全部设计 token(深/浅双主题:颜色、字体、字号、间距、圆角、玻璃、阴影、动效)。**逐一迁移,不要自创数值。**
 3. `design_handoff_sinan/design_source/assets/components.css` —— 组件类(卡片/按钮/徽章/Chip/分段控件/开关/表格/侧栏项/抽屉等)。
 4. `design_handoff_sinan/design_source/src/` —— React 参考实现:`data.jsx`(数据契约)、`ui.jsx`(格式化/图标/基础组件)、`charts.jsx`(全部图表)、`shell.jsx`(框架:标题栏/侧栏/状态栏/路由表)、`app.jsx`、`pages/*.jsx`(9 个页面)。
 5. 用浏览器打开 `design_handoff_sinan/司南 Sinan (预览·离线单文件).html`,**亲眼过一遍所有页面与交互**(尤其行情页:点板块卡片 → 成分股抽屉 → 点个股 → 当日分时图)。再打开 `司南 Sinan — 设计规范.html` 核对 token。
 
 ## 技术栈
-- **Tauri 2(Rust 后端)+ React + TypeScript + Vite** 为首选。若你判断团队更适合 Vue/Svelte,可替换前端框架,但**设计 token、配色铁律、布局、交互必须完全一致**。
+- **Tauri 2(Rust 后端)+ React + TypeScript + Vite** 为首选。若团队更适合 Vue/Svelte,可替换前端框架,但**设计 token、配色铁律、布局、交互必须完全一致**。
 - 状态管理用轻量方案(Zustand 或 Context 即可)。
 - **图表**:参考稿是纯手写 SVG。生产实现可继续用 SVG 组件,或换 ECharts / TradingView Lightweight Charts,但**视觉规格必须还原**(配色通道、细描边、回撤阴影、买卖点 ▲▼、分时昨收基准虚线 + 均价线 + 量子图、紧凑金融表格)。
 - token 落地为 CSS 变量(保留 `tokens.css` 的变量名)或等价的 TS 主题对象;`data-theme` 切换深浅,`data-pnl` 切换红绿。
@@ -46,7 +46,7 @@
 
 ## 数据与后端
 - 参考稿数据在 `src/data.jsx`,**字段结构即建议的数据契约**(行情 QUOTES/SECTORS/INDICES、成分股 SECTOR_STOCKS+enrichStocks、分时 genIntraday、因子 FACTORS、模型 MODELS、信号 SIGNALS、持仓 HOLDINGS、回测 genDaily/TRADES/MONTHLY 等)。
-- 先用这些 mock 数据让 UI 完整跑起来;再用 Rust 侧命令(Tauri `invoke`)接真实数据源(Tushare / AkShare),token 与缓存**仅存本机**,绝不上传。
+- 先用这些 mock 数据让 UI 完整跑起来,再用 Rust 侧命令(Tauri `invoke`)接真实数据源(Tushare / AkShare),token 与缓存**仅存本机**,绝不上传。
 - 行情轮询/盘后批量/回测异步任务进度,按 README「State Management」组织。
 
 ## 验收标准
@@ -55,6 +55,6 @@
 - 控制台无报错;`npm run tauri dev` 可启动。
 
 ## 工作方式
-先搭项目骨架(Tauri + Vite + 主题 token + 路由 + 框架壳),再逐页实现,**每完成一页就和 `司南 Sinan (预览·离线单文件).html` 对照核验**。遇到设计上的歧义,以 README 与离线预览为准;确实无法判断时,先按参考稿实现并在该处留 `// TODO 确认` 注释,继续推进,最后汇总向我提问。
+先搭项目骨架(Tauri + Vite + 主题 token + 路由 + 框架壳),再逐页实现,**每完成一页就和 `司南 Sinan (预览·离线单文件).html` 对照核验**。遇到设计上的歧义,以 README 与离线预览为准;确实无法判断时,先按参考稿实现并在该处留 `// TODO 确认` 注释,继续推进,最后汇总成待确认清单。
 
-现在开始:先读完上述文件,给我一份**实现计划 + 项目结构**,确认无误后再开始写代码。
+落地顺序:先读完上述文件,整理出**实现计划 + 项目结构**,确认无误后再开始写代码。

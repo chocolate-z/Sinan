@@ -669,3 +669,27 @@ labels.py   build_forward_return_labels(hfq[T+h]/hfq[T]-1,前向,尾 h 日 null)
 **🔴 关键:这不止是 dev 烦恼——会让构建回归。** engine `pyproject.toml` 只写 `scikit-learn>=1.4` 无上界 → CI 全新 `pip install` 会装上**同一坏组合**冻进 PyInstaller → 装机端训练/质检直接崩。**修 = 给科学栈加上界锁**(`services/engine/pyproject.toml`):`numpy>=2.0,<2.3` · `scipy>=1.13,<1.16` · `scikit-learn>=1.4,<1.7`。实测「区间内最高版」解析仍落在 1.6.1/2.2.6/1.15.3 且 import 通过 → **CI 全新构建拿到的就是已验证可用栈**,不再回归。
 
 **收益**:① dev 现已可跑真训练/质检(本机已装 2025 档);② §11.20 内存修复 + §11.21 进度条**现可在 dev 端到端目视验**(不必等构建);③ v0.1.7-beta 构建训练不会崩。**⚠ 自动升级 hook 仍可能把本机 venv 再顶过上界 → dev 再坏;但 pyproject 上界锁保护 CI/构建不受 hook 影响。dev 再坏就 `.venv` 内重装区间内版本。** 解锁科学栈上界前,务必在 Windows+py3.13 真验 `import sklearn.linear_model`。
+
+### 11.23 接手须知(最新一轮:dev 提速/修复 + AI 痕迹清理 + v2 因子库开工)
+
+**分支 `feat/v0.1.6-polish`。v0.1.6-beta 之后又攒了 9 个本地提交(都没推;push 的只有 main + v0.1.6-beta 标签,停在 `c56596b`)。** 干净树。
+
+**这轮做了什么(都已提交、都跑过测):**
+
+- **训练/质检内存爆炸卡死根治**(`741d2e2`,§11.20):多核每 worker 各物化一份全 A → N 倍内存 → 没等溢写就 swap 卡死。改默认串行 + 多核按 worker 均分内存预算。
+- **进度条 + ETA**(`fd70999`,§11.21)+ **起步即发 0%**(`1dc6dca`):训练/质检确定式进度条,SSE 真实 done/total,ETA 线性外推。
+- **dev token 落钥匙串持久**(`acdcffb`):`pnpm dev` 不再每次重输 token。
+- **科学栈上界锁**(`8625f4d`,§11.22)。
+- **取数窗口裁剪 + 恢复多核默认**(`86d51a3`):质检/训练特征物化只载 `[首日-缓冲, 末日]`(上界=末日恒准,特征不取未来);多核默认回归(窗口裁剪+预算均分+核数封顶三护栏)。⚠ 前向标签**没裁上界**(悬挂股恢复在远期,裁了会改值);所以质检里「特征面板 100%」之后算标签那段**没有进度条**,看着像卡住——已知待修。全 A 全历史质检本身仍慢(窗口裁的是取数不是计算量)。
+
+- **文档去 AI/Claude 痕迹**(`a1d90b2`):清掉「Claude」「Co-Authored-By」「多智能体/五专家评审」等字眼,`CLAUDE_CODE_PROMPT.md` → `PROJECT_PROMPT.md`。**两条铁律(用户要求,继续遵守):① 提交信息结尾绝不加任何署名/Co-Authored-By;② 新写注释口语化接地气、别 AI 腔(短、像人随手写,该警示照样警示但换人话)。**
+
+**v2 已开工(用户要按 v2.4 设计稿做,见用户贴的 mockup):因子库升级 + 删除模型——后端已打通(`7948605` 引擎 + `4cd5d94` api):**
+
+- 引擎:`Factor` 加 `label/category/desc` + `factor_meta()` 注册表;`GET /engine/factors/meta`;`score_universe(builtin={名:权重})` 让内置因子可逐个启用/调权(`builtin=None` 旧行为不变)。
+- api:迁移 `0010` `factor_config` 表;契约三绑定加 `factors_list`/`factors_update`/`models_delete`(+engine `factors_meta`);repo `factorConfig*` + `modelVersionDelete`;`GET /factors`/`PUT /factors/:name`/`DELETE /models/:id`。
+- **🔴 下一步(优先级最高,没做):** ① 前端因子库表(指标页:内置因子从 `GET /factors` + 自定义从 `/custom-factors` 并一张表 —— 类别 tab / IC·ICIR·覆盖 / 权重条 / 启用开关 / 选中详情面板);② 删除模型按钮(模型页,带确认,删生产模型提示);③ **把启用的内置因子配置串进打分**(`run_eod`/`run_backtest` 经 api 把 `builtin` 下发引擎,否则开关/调权只是 UI 摆设、信号/回测不生效);④ 前端 `client.ts`/store 加 `factors`/`updateFactor`/`deleteModel`。
+
+**v2 整体(用户 v2.4 愿景,逐页差距大):** 因子库(11 因子/类别/可配)、模型管理(卡片/流水线图/克隆/删除)、信号可解释(逐因子贡献+入选原因+风控拦截)、回测参数更全、设置扩展。**代码注释「全面改写成接地气」也是 v2 待办**(~164 源文件;前端注释清理推迟到 v2 UI 重做后免白清,后端可先清)。
+
+**dev 环境坑(接手必看):** ① `pnpm dev` Ctrl+C 只杀壳、不杀 sidecar 子树 → 每次重启堆孤儿、占默认端口 59914/59915 → 新会话连到旧死代码 api。重启前先 `Get-Process node,python,sinan-desktop | Stop-Process -Force` 清掉(根治没做:可让 `dev.mjs` 退出时 `taskkill /T` 整树)。② 改 engine/api 后必须重启 `pnpm dev`(api 跑编译后 dist)。③ dev `.venv` 的 sklearn 可能被自动升级 hook 再顶坏 → 训练/质检 500;重装 `scikit-learn==1.6.1 numpy==2.2.6 scipy==1.15.3`。④ 本机无 `gh`;PowerShell 跑 venv python 用绝对路径 `& "D:\Personal\Sinan\.venv\Scripts\python.exe"`。⑤ token 用户在引导页输,绝不贴对话;六红线不可破。
