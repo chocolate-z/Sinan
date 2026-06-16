@@ -148,6 +148,39 @@ def test_score_universe_with_custom_factor(tmp_path):
     assert "evil" not in bad.effective
 
 
+def test_score_universe_builtin_subset_and_weight(tmp_path):
+    """v2 因子库:builtin={名:权重} 只用列出的内置因子,开关/调权真正生效;None=全部内置等权(老行为)。"""
+    dates = _dates(30)
+    T = dates[24]
+    cache = tmp_path / "c"
+    _write(cache, _build_frames(dates))
+
+    def ctx():
+        return FactorContext(DataLayer(cache), T, CODES)
+
+    # 子集:只启用 ep/bp,其余内置不进合成(开关生效)。
+    sub = score_universe(ctx(), builtin={"ep": 1.0, "bp": 1.0})
+    assert set(sub.effective) == {"ep", "bp"}
+    assert sub.coverage == 1.0  # 应有 2 个、生效 2 个
+    assert sub.scores["score"].drop_nulls().len() == len(CODES)
+
+    # 空配置 = 全部禁用 → 诚实空打分,绝不造分(红线#3)。
+    none = score_universe(ctx(), builtin={})
+    assert none.effective == []
+    assert none.scores["score"].drop_nulls().len() == 0
+
+    # 调权真正进合成:压不同权重 → 综合分变化(否则调权只是 UI 摆设)。
+    equal = score_universe(ctx(), builtin={"ep": 1.0, "bp": 1.0})
+    tilted = score_universe(ctx(), builtin={"ep": 5.0, "bp": 1.0})
+    a = equal.scores.sort("stock_code")["score"].to_list()
+    b = tilted.scores.sort("stock_code")["score"].to_list()
+    assert a != b
+
+    # builtin=None → 老行为:全部内置等权。
+    full = score_universe(ctx())
+    assert set(full.effective) == {"ep", "bp", "roe", "mom20", "north_chg5"}
+
+
 def test_composite_score_weighting():
     """加权合成(M4 自定义因子权重):按行跳 null 的加权均值;weight=0 剔除;全 0 退回等权。"""
     import pytest

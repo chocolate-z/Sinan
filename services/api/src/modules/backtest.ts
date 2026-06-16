@@ -126,6 +126,8 @@ export class BacktestController {
         initial_cash: body.initial_cash,
         model: modelMeta?.model ?? null,
         custom,
+        // 无模型时把启用的内置因子(及权重)下发,口径与实盘一致(因子库开关/调权在回测里也生效)。
+        builtin: modelMeta ? undefined : this.repo.builtinFactorsForScoring(),
       });
     } catch (e) {
       const detail =

@@ -117,6 +117,32 @@ test('POST /models/:id/activate 置为 running', async () => {
   }
 });
 
+test('DELETE /models/:id 删版本;删生产模型清掉策略 active 引用;不存在 → 404', async () => {
+  const { app, fastify } = await build(TRAIN);
+  try {
+    const created = (
+      await fastify.inject({
+        method: 'POST',
+        url: '/api/v1/models/train',
+        payload: { train_start: '2023-01-01', train_end: '2024-06-30' },
+      })
+    ).json();
+    // 先激活成生产模型,再删 —— 应顺手清掉策略 active 引用,不留悬挂
+    await fastify.inject({ method: 'POST', url: `/api/v1/models/${created.id}/activate` });
+    const del = await fastify.inject({ method: 'DELETE', url: `/api/v1/models/${created.id}` });
+    assert.equal(del.statusCode, 200);
+    assert.equal(del.json().ok, true);
+    // 版本库清空
+    const list = (await fastify.inject({ method: 'GET', url: '/api/v1/models' })).json();
+    assert.equal(list.length, 0);
+    // 再删一次 → 404
+    const again = await fastify.inject({ method: 'DELETE', url: `/api/v1/models/${created.id}` });
+    assert.equal(again.statusCode, 404);
+  } finally {
+    await app.close();
+  }
+});
+
 test('POST /models/train 必填校验 400', async () => {
   const { app, fastify } = await build(TRAIN);
   try {

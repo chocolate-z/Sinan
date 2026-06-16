@@ -34,6 +34,7 @@ export interface PaperRunRequest {
   fill?: boolean;
   model?: Record<string, unknown> | null; // 激活的 ML 模型系数;在场则模型打分(M3)
   custom?: Array<{ name: string; expr: string; group?: string; weight?: number }>; // 启用的自定义因子(无模型时进等权,M4 v3;weight 合成加权)
+  builtin?: Record<string, number> | null; // 启用的内置因子及权重 {名:权重}(v2 因子库);null/省略=全部内置等权
 }
 
 export interface Quote {
@@ -81,6 +82,7 @@ export interface BacktestRequest {
   initial_cash?: number;
   model?: Record<string, unknown> | null; // 激活/指定模型系数;在场则模型线性打分(口径与实盘一致)
   custom?: Array<{ name: string; expr: string; group?: string; weight?: number }>; // 启用的自定义因子(无模型时进等权;weight 合成加权)
+  builtin?: Record<string, number> | null; // 启用的内置因子及权重 {名:权重}(v2 因子库,口径与实盘一致)
 }
 
 export interface TrainRequest {

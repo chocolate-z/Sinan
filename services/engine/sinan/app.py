@@ -436,6 +436,7 @@ class PaperRunReq(BaseModel):
     fill: bool = True
     model: Optional[dict] = None  # 激活的 ML 模型系数(api 下发);在场则模型打分,否则等权
     custom: Optional[list[dict]] = None  # 启用的自定义 DSL 因子(无模型时进等权合成)
+    builtin: Optional[dict] = None  # 启用的内置因子及权重 {名:权重};None=全部内置等权(老行为)
 
 
 def _price_map(dl, dataset: str, asof: str, field: str, codes) -> dict[str, float]:
@@ -489,7 +490,7 @@ def paper_run(req: PaperRunReq) -> dict:
         data=dl, codes=codes, today=req.today, effective_date=req.effective_date, account=acc,
         bench_closes=bench_closes, prices_today=prices_today, open_prices_next=open_next,
         params=req.params, prev_nav=req.prev_nav, peak_nav=req.peak_nav, fill=req.fill,
-        model=req.model, custom=req.custom,
+        model=req.model, custom=req.custom, builtin=req.builtin,
     )
 
     return {
@@ -522,6 +523,7 @@ class BacktestReq(BaseModel):
     initial_cash: float = 1_000_000.0
     model: Optional[dict] = None  # 激活/指定模型系数(api 下发);在场则模型线性打分,口径与实盘一致
     custom: Optional[list[dict]] = None  # 启用的自定义 DSL 因子(无模型时进等权合成)
+    builtin: Optional[dict] = None  # 启用的内置因子及权重 {名:权重};None=全部内置等权(口径与实盘一致)
 
 
 @app.post("/engine/backtest", dependencies=[Depends(require_internal)])
@@ -551,6 +553,7 @@ def backtest(req: BacktestReq) -> dict:
             initial_cash=req.initial_cash,
             model=req.model,
             custom=req.custom,
+            builtin=req.builtin,
         )
     except BacktestGuardError as e:
         # 422:语义合法但违反诚实样本外硬守卫(红线#2)。

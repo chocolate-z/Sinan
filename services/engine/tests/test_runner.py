@@ -49,6 +49,26 @@ def test_eod_opens_topn_and_blocks_overflow(tmp_path):
     assert res.account["daily_return"] is not None
 
 
+def test_eod_builtin_restricts_factors(tmp_path):
+    """v2 因子库:run_eod 透传 builtin → 只启用的内置因子进打分,信号因子分解里不出现禁用的因子。"""
+    data, T, eff = _setup(tmp_path)
+    acc = SimAccount(cash=1_000_000)
+    res = run_eod(
+        data=data, codes=CODES, today=T, effective_date=eff, account=acc,
+        bench_closes=_rising(),
+        prices_today={c: 20.0 for c in CODES},
+        open_prices_next={c: 20.0 for c in CODES},
+        params={"buy_threshold": 0.0, "max_holdings": 5},
+        prev_nav=1_000_000,
+        builtin={"ep": 1.0, "bp": 1.0},  # 只启用 ep/bp
+    )
+    buys = [s for s in res.signals if s.action == "buy" and not s.blocked]
+    assert buys, "应有买入信号"
+    for s in buys:
+        assert set(s.factor_breakdown) <= {"ep", "bp"}, "禁用的内置因子不应进入打分"
+    assert any(s.factor_breakdown for s in buys)  # 启用的因子确有贡献
+
+
 def test_eod_market_filter_clears_and_blocks(tmp_path):
     data, T, eff = _setup(tmp_path)
     acc = SimAccount(cash=1_000_000)

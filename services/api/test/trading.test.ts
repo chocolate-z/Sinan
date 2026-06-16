@@ -201,6 +201,59 @@ test('bad portfolio / missing dates rejected', async () => {
   }
 });
 
+test('paper/run 下发启用的内置因子(builtin),禁用项不下发(v2 因子库真正生效)', async () => {
+  const engine = new FakeEngineClient(null, [], PAPER_RESULT);
+  const app = await createApp({
+    dbPath: ':memory:',
+    secretStore: new MemorySecretStore(),
+    engineClient: engine,
+  });
+  await app.init();
+  const fastify = app.getHttpAdapter().getInstance();
+  await fastify.ready();
+  try {
+    // 先列一次因子库(seed 全量配置:mom20/ep),再禁用 mom20
+    await fastify.inject({ method: 'GET', url: '/api/v1/factors' });
+    await fastify.inject({
+      method: 'PUT',
+      url: '/api/v1/factors/mom20',
+      payload: { enabled: false },
+    });
+    const r = await fastify.inject({
+      method: 'POST',
+      url: '/api/v1/paper/run',
+      payload: { today: '2024-01-25', effective_date: '2024-01-26' },
+    });
+    assert.equal(r.statusCode, 201);
+    // 只下发启用的 ep(权重 1.0),禁用的 mom20 不在内
+    assert.deepEqual(engine.lastPaperReq?.builtin, { ep: 1 });
+  } finally {
+    await app.close();
+  }
+});
+
+test('paper/run 未配置因子库时不限制内置(builtin=null,老行为不变)', async () => {
+  const engine = new FakeEngineClient(null, [], PAPER_RESULT);
+  const app = await createApp({
+    dbPath: ':memory:',
+    secretStore: new MemorySecretStore(),
+    engineClient: engine,
+  });
+  await app.init();
+  const fastify = app.getHttpAdapter().getInstance();
+  await fastify.ready();
+  try {
+    await fastify.inject({
+      method: 'POST',
+      url: '/api/v1/paper/run',
+      payload: { today: '2024-01-25', effective_date: '2024-01-26' },
+    });
+    assert.equal(engine.lastPaperReq?.builtin ?? null, null);
+  } finally {
+    await app.close();
+  }
+});
+
 test('pnl/today 实时当日收益 = Σ 持仓 × (现价 − 昨收)', async () => {
   const engine = new FakeEngineClient(null, [], PAPER_RESULT, {
     '600519.SH': { price: 21, prev_close: 20 },
