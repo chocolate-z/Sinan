@@ -25,6 +25,11 @@ class Factor:
     # None=未知/需全历史(自定义 DSL 因子可写任意窗口)。build_feature_panel 据此决定逐日窗口:
     # 全部已知 → 取 max 裁剪历史(提速);任一 None → 不裁剪(保正确,绝不少取致静默降级,红线#3)。
     lookback: int | None = 0
+    # 展示用元数据(因子库 UI 用,不影响计算):中文名、类别、一句话说明。category 是给用户看的归类,
+    # 比内部 group 细(动量/价值/质量/成长/情绪/波动/资金流/反转);留空则前端回退用 group。
+    label: str = ""
+    category: str = ""
+    desc: str = ""
 
     def compute(self, ctx: FactorContext) -> pl.DataFrame:
         df = self.fn(ctx)
@@ -102,9 +107,32 @@ def _north_chg5(ctx: FactorContext) -> pl.DataFrame:
 
 DEFAULT_FACTORS: list[Factor] = [
     # ep/bp/roe 只用 latest 截面(无需历史窗口)→ lookback=0;mom20 需 20 日前收盘、north_chg5 需 5 日前。
-    Factor("ep", "value", +1, Capability.DAILY_BASIC, _ep, lookback=0),
-    Factor("bp", "value", +1, Capability.DAILY_BASIC, _bp, lookback=0),
-    Factor("roe", "quality", +1, Capability.FUNDAMENTAL, _roe, lookback=0),
-    Factor("mom20", "momentum", +1, Capability.DAILY_OHLCV, _mom20, lookback=20),
-    Factor("north_chg5", "northbound", +1, Capability.NORTHBOUND, _north_chg5, lookback=5),
+    # 末三项是给因子库 UI 看的:中文名 / 类别 / 一句话。
+    Factor("ep", "value", +1, Capability.DAILY_BASIC, _ep, lookback=0,
+           label="盈利收益率 EP", category="价值", desc="1/PE,越高越便宜"),
+    Factor("bp", "value", +1, Capability.DAILY_BASIC, _bp, lookback=0,
+           label="账面市值比 BP", category="价值", desc="1/PB,越高越便宜"),
+    Factor("roe", "quality", +1, Capability.FUNDAMENTAL, _roe, lookback=0,
+           label="ROE 质量", category="质量", desc="净资产收益率,越高质量越好"),
+    Factor("mom20", "momentum", +1, Capability.DAILY_OHLCV, _mom20, lookback=20,
+           label="20日动量", category="动量", desc="过去 20 日累计涨幅"),
+    Factor("north_chg5", "northbound", +1, Capability.NORTHBOUND, _north_chg5, lookback=5,
+           label="北向变动", category="资金流", desc="近 5 日北向持股比例变动"),
 ]
+
+
+def factor_meta() -> list[dict]:
+    """因子库元数据(给 api/前端列因子用,不含计算逻辑)。每项:名、中文名、类别、内部组、方向、说明、
+    所需数据能力(缺则该因子会降级)。前端据此画因子库表(类别分组 + 名 + 说明)。"""
+    return [
+        {
+            "name": f.name,
+            "label": f.label or f.name,
+            "category": f.category or f.group,
+            "group": f.group,
+            "direction": f.direction,
+            "desc": f.desc,
+            "required_cap": f.required_caps.name,
+        }
+        for f in DEFAULT_FACTORS
+    ]

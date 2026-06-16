@@ -118,15 +118,23 @@ def score_universe(
     ctx: FactorContext,
     factors: list[Factor] = DEFAULT_FACTORS,
     custom: list[dict] | None = None,
+    builtin: dict[str, float] | None = None,
 ) -> ScoreResult:
     """多因子合成打分。custom = 启用的自定义 DSL 因子,与内置因子并列(M4 v3)。
 
-    权重(M4 自定义因子权重):内置因子恒 1.0;自定义因子用各自 weight(缺省 1.0)。
+    builtin(v2 内置因子可配):{因子名: 权重} = 启用的内置因子及其权重。None → 全部内置启用、各 1.0
+    (旧行为完全不变);给了就只用其中列出的内置因子,并按各自权重合成(内置/自定义统一走加权)。
+
+    权重口径:内置取 builtin 里的值(None 时恒 1.0);自定义取各自 weight(缺省 1.0)。
     全为 1.0 时退回等权路径(零回归);存在 ≠1.0 权重才走加权合成。
     """
-    all_factors, custom_degraded = _with_custom(factors, custom)
+    base = [f for f in factors if f.name in builtin] if builtin is not None else factors
+    all_factors, custom_degraded = _with_custom(base, custom)
     matrix, effective, degraded = compute_factor_matrix(ctx, all_factors)
-    weights = {c["name"]: float(c.get("weight", 1.0)) for c in (custom or [])}
+    weights: dict[str, float] = {}
+    if builtin:
+        weights.update({n: float(w) for n, w in builtin.items()})
+    weights.update({c["name"]: float(c.get("weight", 1.0)) for c in (custom or [])})
     use_weights = any(w != 1.0 for w in weights.values())
     scored = composite_score(matrix, effective, weights if use_weights else None)
     coverage = len(effective) / len(all_factors) if all_factors else 0.0
