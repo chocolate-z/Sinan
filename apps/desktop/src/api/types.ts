@@ -178,10 +178,18 @@ export interface Sector {
   lead_chg: number;
   spark: number[];
 }
+export interface IndexBar {
+  code: string;
+  name: string;
+  close: number | null;
+  chg: number | null; // 涨跌幅 %;缺 prev/数据时 null(诚实显「—」)
+  trade_date: string;
+}
 export interface MarketSnapshot {
   asof: string | null;
   breadth: Breadth | null;
   sectors: Sector[];
+  indices?: IndexBar[]; // 大盘指数条(沪深300/中证500/上证/深证/创业板),来自缓存 index_ohlcv
   spark_days?: number;
   live?: boolean;
 }

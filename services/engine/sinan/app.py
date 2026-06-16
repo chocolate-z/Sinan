@@ -269,11 +269,14 @@ def _market_datalayer():
 
 @app.post("/engine/market/snapshot", dependencies=[Depends(require_internal)])
 def market_snapshot_ep(req: MarketSnapshotReq) -> dict:
-    """全 A 广度 + 板块卡(真实板块视角)。无缓存/无行业 → 诚实空。"""
-    from .factors.market import market_snapshot
+    """全 A 广度 + 板块卡(真实板块视角)+ 大盘指数条。无缓存/无行业 → 诚实空。"""
+    from .factors.market import market_indices, market_snapshot
 
     meta = _industry_meta(req.provider, req.token)
-    return market_snapshot(_market_datalayer(), meta, spark_days=req.spark_days)
+    dl = _market_datalayer()
+    res = market_snapshot(dl, meta, spark_days=req.spark_days)
+    res["indices"] = market_indices(dl)["indices"]  # 大盘指数条(读缓存 index_ohlcv,无则空)
+    return res
 
 
 class MarketSectorReq(BaseModel):
@@ -311,13 +314,14 @@ def market_live_ep(req: MarketLiveReq) -> dict:
     诚实回落收盘快照(live=False)。仅当日展示,不入因子/信号/回测(红线:日频不分时)。"""
     from datetime import datetime
 
-    from .factors.market import market_live, market_snapshot
+    from .factors.market import market_indices, market_live, market_snapshot
 
     dl = _market_datalayer()
     meta = _industry_meta(req.provider, req.token)
+    indices = market_indices(dl)["indices"]  # 大盘指数条:日频 EOD,与实时报价无关,各路径都带上
     dates = dl.latest_dates("price", n=1)
     if not dates:
-        return {"asof": None, "breadth": None, "sectors": [], "spark_days": req.spark_days, "live": False}
+        return {"asof": None, "breadth": None, "sectors": [], "spark_days": req.spark_days, "live": False, "indices": indices}
     codes = dl.latest_asof("price", dates[0], fields=["stock_code"])["stock_code"].to_list()
 
     rt = RealtimeProvider()
@@ -336,7 +340,9 @@ def market_live_ep(req: MarketLiveReq) -> dict:
     if res.get("breadth") is None:  # 无有效实时(盘后/源不可达)→ 诚实回落收盘快照
         snap = market_snapshot(dl, meta, spark_days=req.spark_days)
         snap["live"] = False
+        snap["indices"] = indices
         return snap
+    res["indices"] = indices
     return res
 
 

@@ -12,11 +12,62 @@
 
 from __future__ import annotations
 
-from typing import Mapping
+from typing import Mapping, Sequence
 
 import polars as pl
 
 from ..data import DataLayer
+
+# 大盘指数条用的默认基准指数(与 cache.build.DEFAULT_INDICES 同一批,回测基准同源)。
+INDEX_NAMES: dict[str, str] = {
+    "000300.SH": "沪深300",
+    "000905.SH": "中证500",
+    "000001.SH": "上证指数",
+    "399001.SZ": "深证成指",
+    "399006.SZ": "创业板指",
+}
+
+
+def market_indices(dl: DataLayer, codes: Sequence[str] | None = None) -> dict:
+    """大盘指数条:每只基准指数最新收盘 + 涨跌幅(最新 vs 昨收)。
+
+    读缓存里已有的 index_ohlcv(回测基准同源),每只指数 PIT 取最近 2 行算涨跌(只见 ≤asof,
+    无未来函数)。免费源没拉指数 → index_ohlcv 为空 → indices 空,前端诚实显「—」/隐藏(红线#3)。
+    指数是日频 EOD 收盘价、非实时报价,每项带 trade_date,展示侧自明白是收盘口径。
+    """
+    order = list(codes) if codes else list(INDEX_NAMES.keys())
+    # 不按 codes 过滤物化:index_ohlcv 本就只有几只指数(全集很小),整读再挑要展示的,
+    # 省得给不存在分区的指数代码 glob 报「无文件匹配」。
+    df = dl.recent_asof(
+        "index_ohlcv", "9999-12-31", 2, fields=["stock_code", "trade_date", "close"]
+    )
+    indices: list[dict] = []
+    asof: str | None = None
+    if not df.is_empty():
+        for code in order:
+            g = df.filter(pl.col("stock_code") == code).sort("trade_date")
+            if g.is_empty():
+                continue
+            rows = g.to_dicts()
+            close = rows[-1]["close"]
+            prev = rows[-2]["close"] if len(rows) >= 2 else None
+            chg = (
+                (close / prev - 1.0) * 100.0
+                if (close is not None and prev not in (None, 0))
+                else None
+            )
+            td = rows[-1]["trade_date"]
+            asof = max(asof, td) if asof else td
+            indices.append(
+                {
+                    "code": code,
+                    "name": INDEX_NAMES.get(code, code),
+                    "close": round(float(close), 2) if close is not None else None,
+                    "chg": round(float(chg), 4) if chg is not None else None,
+                    "trade_date": td,
+                }
+            )
+    return {"asof": asof, "indices": indices}
 
 
 def _chg_table(dl: DataLayer, latest: str, prev: str, codes=None) -> pl.DataFrame:

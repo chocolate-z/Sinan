@@ -30,12 +30,20 @@ interface Breadth {
   flat: number;
   avg_chg: number;
 }
+interface IndexBar {
+  code: string;
+  name: string;
+  close: number | null;
+  chg: number | null;
+  trade_date: string;
+}
 
 const loading = ref(false);
 const error = ref<string | null>(null);
 const asof = ref<string | null>(null);
 const breadth = ref<Breadth | null>(null);
 const sectors = ref<Sector[]>([]);
+const indices = ref<IndexBar[]>([]); // 大盘指数条(缓存 index_ohlcv 的 EOD 收盘)
 const sort = ref<'desc' | 'asc'>('desc'); // 涨幅优先 / 跌幅优先
 const live = ref(true); // 当前数据是否实时(false=盘后/源不可达,回落收盘快照)
 const REFRESH_MS = 15000; // 实时自动刷新间隔
@@ -68,6 +76,7 @@ async function loadSnapshot(silent = false) {
     asof.value = r?.asof ?? null;
     breadth.value = r?.breadth ?? null;
     sectors.value = r?.sectors ?? [];
+    indices.value = r?.indices ?? [];
     live.value = r?.live ?? false;
   } catch (e) {
     if (!silent) {
@@ -160,7 +169,20 @@ onUnmounted(() => {
   <div class="page-body">
     <p v-if="error" class="banner banner-err">{{ error }}</p>
 
-    <!-- 全 A 涨跌广度(替代大盘指数条;真实) -->
+    <!-- 大盘指数条(沪深300/中证500/上证/深证/创业板;读缓存 index_ohlcv 的 EOD 收盘,无则不显) -->
+    <div v-if="indices.length" class="indexbar card">
+      <div v-for="ix in indices" :key="ix.code" class="ix-cell">
+        <span class="ix-name">{{ ix.name }}</span>
+        <div class="ix-row">
+          <span class="ix-close mono">{{ ix.close == null ? '—' : fmt(ix.close) }}</span>
+          <span class="ix-chg mono" :class="ix.chg == null ? '' : app.pnlClass(ix.chg)">
+            {{ pctTxt(ix.chg) }}
+          </span>
+        </div>
+      </div>
+    </div>
+
+    <!-- 全 A 涨跌广度(大盘指数条的补充:全市场宽度) -->
     <div v-if="breadth" class="breadth card">
       <div class="bd-cell">
         <div class="bd-k">全 A 平均涨跌</div>
@@ -441,6 +463,43 @@ onUnmounted(() => {
   color: var(--status-err);
   background: var(--status-err-bg);
   border: 0.5px solid var(--status-err);
+}
+
+/* 大盘指数条 */
+.indexbar {
+  display: flex;
+  padding: 0;
+  overflow-x: auto;
+}
+.ix-cell {
+  flex: 1;
+  min-width: 132px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 13px 18px;
+  border-right: 0.5px solid var(--border-faint);
+}
+.ix-cell:last-child {
+  border-right: none;
+}
+.ix-name {
+  font-size: var(--fs-cap);
+  color: var(--text-3);
+}
+.ix-row {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+.ix-close {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-1);
+}
+.ix-chg {
+  font-size: 12px;
+  font-weight: 600;
 }
 
 /* 全A广度条 */

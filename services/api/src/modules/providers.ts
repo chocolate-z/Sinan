@@ -95,7 +95,7 @@ export class ProvidersController {
     try {
       return await this.engine.marketSnapshot(provider, token);
     } catch {
-      return { asof: null, breadth: null, sectors: [] };
+      return { asof: null, breadth: null, sectors: [], indices: [] };
     }
   }
 
@@ -108,7 +108,7 @@ export class ProvidersController {
     try {
       return await this.engine.marketLive(provider, token);
     } catch {
-      return { asof: null, breadth: null, sectors: [], live: false };
+      return { asof: null, breadth: null, sectors: [], live: false, indices: [] };
     }
   }
 
