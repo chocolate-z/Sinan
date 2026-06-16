@@ -4,6 +4,7 @@ import {
   BadRequestException,
   Body,
   Controller,
+  Delete,
   Get,
   Inject,
   NotFoundException,
@@ -149,5 +150,12 @@ export class ModelsController {
     const r = this.repo.modelVersionActivate(id);
     if (!r) throw new NotFoundException('模型版本不存在');
     return r;
+  }
+
+  // 删除模型版本(删生产模型会顺手清掉策略的 active_model_id,见 repo)。
+  @Delete('models/:id')
+  delete(@Param('id') id: string): any {
+    if (!this.repo.modelVersionDelete(id)) throw new NotFoundException('模型版本不存在');
+    return { ok: true };
   }
 }

@@ -736,6 +736,14 @@ def factors_quality(req: FactorQualityReq) -> StreamingResponse:
     return _sse_compute(compute)
 
 
+@app.get("/engine/factors/meta", dependencies=[Depends(require_internal)])
+def factors_meta() -> dict:
+    """因子库元数据:内置因子的名/中文名/类别/方向/说明/所需数据能力(给 api 列因子库)。引擎是唯一真源。"""
+    from .factors.library import factor_meta
+
+    return {"factors": factor_meta()}
+
+
 # ── 缓存覆盖 ────────────────────────────────────────────────────────────
 @app.get("/engine/cache/coverage", dependencies=[Depends(require_internal)])
 def coverage() -> dict:

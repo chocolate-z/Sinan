@@ -168,6 +168,8 @@ export interface EngineClient {
   factorQuality(req: FactorQualityRequest, onEvent?: (ev: any) => void): Promise<any>;
   /** 自定义因子 DSL 校验(白名单 + 回看算子,结构上防未来函数)。返回 ok/errors/fields/functions。 */
   indicatorsValidate(expr: string): Promise<any>;
+  /** 因子库元数据(内置因子名/中文名/类别/方向/说明/所需数据)。给 api 列因子库,引擎是唯一真源。 */
+  factorsMeta(): Promise<{ factors: any[] }>;
 }
 
 export const ENGINE_CLIENT = Symbol('ENGINE_CLIENT');
@@ -490,5 +492,13 @@ export class HttpEngineClient implements EngineClient {
     });
     if (!res.ok) throw new EngineError(res.status, await res.text());
     return res.json();
+  }
+
+  async factorsMeta(): Promise<{ factors: any[] }> {
+    const res = await fetch(`${config.engineBaseUrl()}/engine/factors/meta`, {
+      headers: this.headers(),
+    });
+    if (!res.ok) throw new EngineError(res.status, await res.text());
+    return res.json() as Promise<{ factors: any[] }>;
   }
 }

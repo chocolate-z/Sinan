@@ -931,6 +931,61 @@ export class Repository {
     return true;
   }
 
+  // ── v2 内置因子配置(启用 / 权重)。因子算法在 engine,本表只存每个内置因子的开关与权重 ──────
+  factorConfigAll(): Record<string, { enabled: boolean; weight: number }> {
+    const rows = this.db.all<any>('SELECT name, enabled, weight FROM factor_config');
+    const out: Record<string, { enabled: boolean; weight: number }> = {};
+    for (const r of rows) out[r.name] = { enabled: !!r.enabled, weight: r.weight };
+    return out;
+  }
+
+  /** 按 engine 注册表补齐缺省行(全启用、权重 1.0),新内置因子首次列出时就有配置。 */
+  seedFactorConfig(names: string[]): void {
+    const ts = now();
+    for (const name of names) {
+      this.db.run(
+        'INSERT OR IGNORE INTO factor_config(name, enabled, weight, updated_at) VALUES (?,1,1.0,?)',
+        name,
+        ts,
+      );
+    }
+  }
+
+  factorConfigUpdate(name: string, patch: { enabled?: boolean; weight?: number }): void {
+    // upsert:不存在先补默认行再改(避免改一个还没 seed 的因子时丢失)。
+    this.db.run(
+      'INSERT OR IGNORE INTO factor_config(name, enabled, weight, updated_at) VALUES (?,1,1.0,?)',
+      name,
+      now(),
+    );
+    const sets: string[] = [];
+    const vals: unknown[] = [];
+    if (patch.enabled !== undefined) {
+      sets.push('enabled=?');
+      vals.push(patch.enabled ? 1 : 0);
+    }
+    if (patch.weight !== undefined) {
+      sets.push('weight=?');
+      vals.push(patch.weight);
+    }
+    if (!sets.length) return;
+    sets.push('updated_at=?');
+    vals.push(now());
+    vals.push(name);
+    this.db.run(`UPDATE factor_config SET ${sets.join(',')} WHERE name=?`, ...vals);
+  }
+
+  /** 打分用:启用的内置因子 {名:权重}。空配置(从没动过)→ null,让 engine 用全部内置(默认),
+   *  绝不把「没配置」误判成「全禁用」。下发 engine 的 builtin 参数。 */
+  builtinFactorsForScoring(): Record<string, number> | null {
+    const total = this.db.get<{ c: number }>('SELECT COUNT(*) AS c FROM factor_config')?.c ?? 0;
+    if (!total) return null;
+    const rows = this.db.all<any>('SELECT name, weight FROM factor_config WHERE enabled=1');
+    const out: Record<string, number> = {};
+    for (const r of rows) out[r.name] = r.weight;
+    return out;
+  }
+
   // ── 保存的通达信公式(检测扫描可加载)──────────────────────────────────────
   tdxFormulaCreate(input: { name: string; src: string; signal?: string | null }): string {
     const id = randomUUID();
@@ -1030,5 +1085,23 @@ export class Repository {
       }
     });
     return this.modelVersionGet(id);
+  }
+
+  /** 删除某模型版本。若删的是当前生产(running)模型且挂了策略,顺手清掉策略的 active_model_id,
+   *  免得留个悬挂引用(信号还指着一个已删的模型)。返回是否删到。 */
+  modelVersionDelete(id: string): boolean {
+    const r = this.db.get<any>('SELECT id, strategy_id, status FROM model_versions WHERE id=?', id);
+    if (!r) return false;
+    this.db.tx(() => {
+      if (r.status === 'running' && r.strategy_id) {
+        this.db.run(
+          'UPDATE strategies SET active_model_id=NULL WHERE id=? AND active_model_id=?',
+          r.strategy_id,
+          id,
+        );
+      }
+      this.db.run('DELETE FROM model_versions WHERE id=?', id);
+    });
+    return true;
   }
 }

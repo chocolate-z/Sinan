@@ -164,4 +164,37 @@ export class IndicatorsController {
     if (!this.repo.customFactorDelete(id)) throw new NotFoundException('自定义因子不存在');
     return { ok: true };
   }
+
+  // ── v2 因子库:内置因子列表(元数据来自 engine + 启用/权重来自本地配置)──────────────────────
+  // 自定义因子走各自的 /custom-factors,前端把两边并到一张因子库表里。
+  @Get('factors')
+  async factors(): Promise<any> {
+    const meta = await this.engine.factorsMeta(); // engine 是因子定义的唯一真源
+    this.repo.seedFactorConfig(meta.factors.map((f: any) => f.name)); // 新内置因子首次列出补缺省
+    const cfg = this.repo.factorConfigAll();
+    return {
+      factors: meta.factors.map((f: any) => ({
+        ...f,
+        kind: 'builtin',
+        enabled: cfg[f.name]?.enabled ?? true,
+        weight: cfg[f.name]?.weight ?? 1.0,
+      })),
+    };
+  }
+
+  // 改内置因子的启用态 / 权重(打分时下发 engine 生效)。
+  @Put('factors/:name')
+  updateFactor(
+    @Param('name') name: string,
+    @Body() body: { enabled?: boolean; weight?: number },
+  ): any {
+    if (body?.weight !== undefined && !validWeight(body.weight)) {
+      throw new BadRequestException('weight 必须为非负有限数(0=不参与合成)');
+    }
+    if (body?.enabled !== undefined && typeof body.enabled !== 'boolean') {
+      throw new BadRequestException('enabled 必须为布尔');
+    }
+    this.repo.factorConfigUpdate(name, { enabled: body?.enabled, weight: body?.weight });
+    return { ok: true };
+  }
 }

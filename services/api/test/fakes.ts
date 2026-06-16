@@ -157,6 +157,31 @@ export class FakeEngineClient implements EngineClient {
     };
   }
 
+  async factorsMeta(): Promise<{ factors: any[] }> {
+    return {
+      factors: [
+        {
+          name: 'mom20',
+          label: '20日动量',
+          category: '动量',
+          group: 'momentum',
+          direction: 1,
+          desc: '过去 20 日累计涨幅',
+          required_cap: 'DAILY_OHLCV',
+        },
+        {
+          name: 'ep',
+          label: '盈利收益率 EP',
+          category: '价值',
+          group: 'value',
+          direction: 1,
+          desc: '1/PE',
+          required_cap: 'DAILY_BASIC',
+        },
+      ],
+    };
+  }
+
   async factorQuality(req: FactorQualityRequest, onEvent?: (ev: any) => void): Promise<any> {
     // 回放几条 SSE 流式进度(供「确定式进度条 + ETA」路径测试):特征面板 → 逐因子。
     onEvent?.({ stage: 'features', done: 1, total: 2, date: req.start });
