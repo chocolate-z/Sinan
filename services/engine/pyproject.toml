@@ -15,7 +15,13 @@ dependencies = [
   "polars>=1.0",
   "pyarrow>=24.0.0",
   "pydantic>=2.5",
-  "scikit-learn>=1.4", # M3 训练:ElasticNet(线性模型,产物为系数 JSON,无二进制/无外联)
+  # ⚠ 科学栈上界锁定(2026-06 实测):最新组合 numpy 2.4.6 / scipy 1.17.1 / scikit-learn 1.9.0 在
+  # Windows + py3.13 上 sklearn 编译扩展 DLL 加载失败(_sorting,ABI 错配,非缺 DLL)→ 一旦被 CI
+  # 冻结进 PyInstaller,装机端训练/质检会直接崩。锁到已验证可用的 2025 稳定档(全引擎 204 测通过):
+  # scikit-learn 1.6.1 / numpy 2.2.6 / scipy 1.15.3。解锁前须在 Windows+py3.13 真验导入。
+  "numpy>=2.0,<2.3",
+  "scipy>=1.13,<1.16",
+  "scikit-learn>=1.4,<1.7", # M3 训练:ElasticNet(线性模型,产物为系数 JSON,无二进制/无外联)
   # sinan-contracts 在同一 venv 内 editable 安装,不从 PyPI 拉取。
 ]
 

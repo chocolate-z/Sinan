@@ -659,3 +659,13 @@ labels.py   build_forward_return_labels(hfq[T+h]/hfq[T]-1,前向,尾 h 日 null)
 - 测试:`test/progress.test.ts`(5 测 `reduceProgress`)+ api `fakes.ts` 让 fake train/quality 回放进度事件 + `models/indicators.test.ts` 各 1 测「按 progress_id 广播到 JobBus」。
 
 **红线**:ETA 是线性外推估计、标注「约剩」,非伪造数据(红线#3 管的是数据/业绩不造假,估计时间标注清楚不算谎报);进度全来自 engine 真实 `done/total`。**验证**:前端 typecheck 0 + vitest **81 passed**(+5);api **69 passed**(+2 广播测)。⚠ 同样**因 dev venv sklearn 坏、本地跑不起真训练**,确定式条的端到端目视需进构建后在装机端验(reducer + api 广播已单测;SSE/EventSource 轨道是 cache_build 已验证的同一套)。**与 §11.20 内存修复一起进下一次构建(v0.1.7-beta)。**
+
+### 11.22 科学栈 ABI 破裂修复 + dev sklearn 解封(解 §11.20/§11.21 的「dev 跑不起训练」+ 防构建回归)
+
+**§11.20/§11.21 都卡在「dev venv sklearn 坏、本地跑不起真训练」。本节根治。** 仍在 `feat/v0.1.6-polish`。
+
+**真根因 = 2026 最新科学栈在 Windows+py3.13 上 ABI 破裂(非本机损坏)。** dev venv 被自动升级 hook 顶到 `numpy 2.4.6 / scipy 1.17.1 / scikit-learn 1.9.0`,`from sklearn.linear_model import ElasticNet` 报 `ImportError: DLL load failed while importing _sorting`(GBK 乱码=「找不到指定的模块」类)。逐项排查:numpy/scipy 单独 import 正常;sklearn 的 `.libs`(vendored `vcomp140/msvcp140`)+ 系统运行库全在、`_sorting.cp313.pyd` 也在;**clean force-reinstall 同版本仍坏 → 排除本机损坏**;scipy 降到 1.16.3 仍坏 → 非 scipy BLAS。**实测换 2025 稳定档 `scikit-learn 1.6.1 / numpy 2.2.6 / scipy 1.15.3` → import OK、全引擎 pytest 204 passed**(含我内存修复的 `并行==串行`/`_per_worker_mb` 黄金测试,首次在本机真 sklearn+多进程下验证)。
+
+**🔴 关键:这不止是 dev 烦恼——会让构建回归。** engine `pyproject.toml` 只写 `scikit-learn>=1.4` 无上界 → CI 全新 `pip install` 会装上**同一坏组合**冻进 PyInstaller → 装机端训练/质检直接崩。**修 = 给科学栈加上界锁**(`services/engine/pyproject.toml`):`numpy>=2.0,<2.3` · `scipy>=1.13,<1.16` · `scikit-learn>=1.4,<1.7`。实测「区间内最高版」解析仍落在 1.6.1/2.2.6/1.15.3 且 import 通过 → **CI 全新构建拿到的就是已验证可用栈**,不再回归。
+
+**收益**:① dev 现已可跑真训练/质检(本机已装 2025 档);② §11.20 内存修复 + §11.21 进度条**现可在 dev 端到端目视验**(不必等构建);③ v0.1.7-beta 构建训练不会崩。**⚠ 自动升级 hook 仍可能把本机 venv 再顶过上界 → dev 再坏;但 pyproject 上界锁保护 CI/构建不受 hook 影响。dev 再坏就 `.venv` 内重装区间内版本。** 解锁科学栈上界前,务必在 Windows+py3.13 真验 `import sklearn.linear_model`。
