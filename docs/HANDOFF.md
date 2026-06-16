@@ -721,7 +721,10 @@ labels.py   build_forward_return_labels(hfq[T+h]/hfq[T]-1,前向,尾 h 日 null)
 
 - **已经和设计稿对齐(matches,不用动)**:`portfolio`(还是超集)、`indicators`(本批刚做)、`signals`。⚠ **更正 §11.24 把「信号页可解释」当待办——它其实早就按 signals.jsx 做完了**(分段 tab + 三通道图例 + 入选表「因子贡献 chips + 入选原因」+ 拦截表「拦截规则 + 说明」两列),`Signals.vue` 已是设计稿超集。别再去重做信号页。
 - **本批做了**:`models` 主页加「因子构成」卡(`3b0b397`)——列启用的内置 + 自定义因子、类别 chip、合成权重占比(`w/Σw` 真实份额)、accent 权重条;数据复用 `indicators` store 的 `/factors` + `/custom-factors`(不重复拉);无激活模型=这就是驱动选股的真实构成,有运行中模型=副标题点明以模型系数为准;全禁用诚实显空。占左 1.3fr,股票池/风控/口径挪右栏堆叠。前端 typecheck/vitest 81/build/eslint/prettier 全绿 + 起栈用 preview 实测(4 因子按权重排序/份额/空状态/布局都对)。
-- **剩下的真实 backlog(都低红线风险,按价值排)**:① 行情页**大盘指数条**(沪深300/中证500/上证/深证/创业板,读缓存里已有的 `index_ohlcv`,价值 4)② 设置页**自动刷新频率可改**(后端 `PUT settings/:key` 已就绪,缺前端 `putSetting` + Segmented,价值 3)③ 一批 S 快赢:回测页「导出 CSV/JSON」+ 固定口径只读说明行、总览空态「查看上次结果」次按钮、行情排序加「成交额」。
+- **剩下的真实 backlog(都低红线风险,按价值排)**:① ✅**行情页大盘指数条**(`b46e64c`,已做)—— engine `market_indices` 读缓存 `index_ohlcv` 算最新收盘+涨跌,附进 `/market/snapshot`+`/market/live`,前端行情页顶部指数条(红涨绿跌),无指数缓存诚实空;② 设置页**自动刷新频率可改**(后端 `PUT settings/:key` 已就绪,缺前端 `putSetting` + Segmented,价值 3)③ 一批 S 快赢:回测页「导出 CSV/JSON」+ 固定口径只读说明行、总览空态「查看上次结果」次按钮、行情排序加「成交额」。
+
+**LightGBM(M3 v2,用户提到的计划):还没做。设计岔口要先定** —— 现有「模型=线性系数 JSON / 无二进制 / 推理纯 polars」对 ElasticNet 成立,但 GBDT 是树模型,存不成线性系数。可选:(a) 把 booster dump 成文本/JSON 存 `model_json`,推理时引擎跑 lightgbm(破「推理纯 polars」,要加 lightgbm 依赖,且打包体积+freeze 要验);(b) 把树导成纯 polars/numpy 可遍历的结构自己推理(纯净但工作量大)。契约 `ModelType` 现仅 `elasticnet`,要加 `lightgbm` 枚举(三绑定 + `test_sql_contract` CHECK)。训练侧 walk-forward/IC/守卫框架可复用,只换 estimator + 序列化/推理两段。建议做成可选 extra(`services/engine[lightgbm]`)保持默认轻装。
+
 - **明确别碰(红线/缺后端)**:总览风控闸 GateRow(ST/流动性/换手率状态后端无数据,硬加要么造假要么死按钮)、模型页 RiskBar 的「已用」值(需真实持仓敞口,model 页拿不到)、引导「本地数据目录」源(要新 provider,effort L)。
 
 **整页 backlog 都是 incremental,没有大窟窿。注释接地气化(~164 文件)仍挂着,等 UI 全稳后再扫。**
