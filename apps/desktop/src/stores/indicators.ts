@@ -3,6 +3,7 @@
 import { defineStore } from 'pinia';
 import { api, ApiError, subscribeJob } from '../api/client';
 import { reduceProgress, type RunProgress } from '../lib/progress';
+import { icirWeightPlan } from '../lib/factorWeights';
 
 export interface QualityForm {
   start: string;
@@ -80,6 +81,27 @@ export const useIndicatorsStore = defineStore('indicators', {
       } finally {
         await this.loadFactors();
       }
+    },
+    // 按 ICIR 自动定权:用刚跑的质检报告里每个因子的 ICIR 定权重(w = max(ICIR,0),归一到均值 1.0)。
+    // 质检面板已 ×direction(反向因子取负),所以正 ICIR = 真有稳定预测力;ICIR≤0 → 权重 0(不硬凑)。
+    // ⚠ 这是据「质检区间」历史 IC 定的权,不是样本外 —— 拿去回测重叠区间会偏乐观,UI 须如实提醒。
+    async autoWeightByICIR(): Promise<{ ok: boolean; applied: number; note?: string }> {
+      const plan = icirWeightPlan(this.builtinList, this.customList, this.report?.factors);
+      if (!plan.ok) return { ok: false, applied: 0, note: plan.note };
+      this.saveError = null;
+      try {
+        for (const t of plan.targets) {
+          if (t.kind === 'builtin') await api.updateFactor(t.name, { weight: t.weight });
+          else await api.updateCustomFactor(t.id!, { weight: t.weight });
+        }
+      } catch (e) {
+        this.saveError = detailStr(e);
+        return { ok: false, applied: 0, note: detailStr(e) };
+      } finally {
+        await this.loadFactors();
+        await this.loadCustom();
+      }
+      return { ok: true, applied: plan.targets.length };
     },
     async validateExpr() {
       if (!this.expr.trim()) return;

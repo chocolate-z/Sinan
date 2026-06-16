@@ -43,6 +43,26 @@ const validateExpr = () => ind.validateExpr();
 const saveFactor = () => ind.saveFactor();
 const run = () => ind.run();
 
+// 按 ICIR 自动定权:用刚跑的质检 ICIR 给启用因子定权(w=max(ICIR,0),归一均值 1)。
+// 结果/提醒回显在表头(成功标明据哪段区间定的、非样本外;无报告/全负如实说明)。
+const weighting = ref(false);
+const weightMsg = ref<{ ok: boolean; text: string } | null>(null);
+async function autoWeight() {
+  weighting.value = true;
+  weightMsg.value = null;
+  try {
+    const r = await ind.autoWeightByICIR();
+    weightMsg.value = r.ok
+      ? {
+          ok: true,
+          text: `已按 ${report.value?.start}~${report.value?.end} 的 ICIR 给 ${r.applied} 个因子定权。注意:据历史 IC 定权非样本外,拿去回测重叠区间会偏乐观。`,
+        }
+      : { ok: false, text: r.note ?? '未改动' };
+  } finally {
+    weighting.value = false;
+  }
+}
+
 onMounted(() => {
   ind.loadFactors();
   ind.loadCustom();
@@ -188,7 +208,22 @@ function focusEditor() {
               >
             </span>
           </div>
+          <button
+            class="btn btn-secondary btn-sm"
+            :disabled="!report || weighting"
+            :title="
+              report
+                ? '用质检算出的 ICIR 给启用因子定权(w=max(ICIR,0));非样本外,仅作研究基线'
+                : '先跑因子质检,自动定权要用 ICIR'
+            "
+            @click="autoWeight"
+          >
+            <Icon name="indicator" :size="13" /> {{ weighting ? '定权中…' : '按 ICIR 自动定权' }}
+          </button>
         </div>
+        <p v-if="weightMsg" class="weight-msg" :class="weightMsg.ok ? 'status-ok' : 'status-warn'">
+          {{ weightMsg.text }}
+        </p>
         <div class="factor-filter">
           <div class="segmented">
             <button v-for="c in cats" :key="c" :class="{ on: cat === c }" @click="cat = c">
@@ -709,6 +744,14 @@ function focusEditor() {
   flex-wrap: wrap;
   margin: 0 0 12px;
   padding: 0 18px;
+}
+.weight-msg {
+  margin: 0 18px 12px;
+  padding: 8px 12px;
+  font-size: 12px;
+  line-height: 1.5;
+  border-radius: var(--r-sm);
+  background: var(--bg-elevated);
 }
 .factor-desc {
   font-size: 12.5px;
