@@ -110,5 +110,20 @@ export const useModelsStore = defineStore('models', {
         this.error = String(e);
       }
     },
+    // 删模型版本(删生产模型时 api 会顺手清掉策略 active 引用)。删的是当前选中则清详情。
+    async del(id: string) {
+      this.error = null;
+      try {
+        await api.deleteModel(id);
+        if (this.selectedId === id) {
+          this.selectedId = null;
+          this.detail = null;
+        }
+        await this.fetchModels();
+      } catch (e: any) {
+        const d = e?.detail;
+        this.error = d && typeof d === 'object' ? JSON.stringify(d) : String(d ?? e);
+      }
+    },
   },
 });

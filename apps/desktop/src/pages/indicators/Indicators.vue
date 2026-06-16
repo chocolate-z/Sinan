@@ -1,6 +1,8 @@
 <script setup lang="ts">
-// 指标 · 因子库(M4 接真实)。对因子库逐因子算真实 IC 均值 / ICIR / 覆盖度 + IC 时序 + 十分位分层收益。
-// 红线#3:IC/ICIR/覆盖度 中性通道;分层收益 PnL 通道;缺数据 coverage=0 如实(不造假)。
+// 指标 · 因子库(v2)。内置因子(GET /factors)+ 自定义因子(/custom-factors)并到一张表:
+// 类别 tab、IC/ICIR/覆盖(跑质检后填,没跑显示 —)、权重条、启用开关、选中详情(IC 时序 + 分层)。
+// 启用/调权经 api 串进 run_eod / run_backtest —— 信号和回测里真生效,不是 UI 摆设。
+// 红线#3:IC/ICIR/覆盖 中性通道;分层收益 PnL 通道;缺数据 coverage=0 / IC 显示 — 如实,绝不造假。
 import { computed, onMounted, ref } from 'vue';
 import { useIndicatorsStore } from '../../stores/indicators';
 import PageHero from '../../ui/PageHero.vue';
@@ -12,7 +14,7 @@ import DecileBars from '../../ui/charts/DecileBars.vue';
 
 const ind = useIndicatorsStore();
 // 表单=store 同一 reactive 引用;DSL 输入(expr/名称/权重)与 selectedName 为可写投影;
-// 其余只读投影,动作转调 store —— 模板与派生 computed 全不动。
+// 其余只读投影,动作转调 store。
 const form = ind.form;
 const expr = computed({ get: () => ind.expr, set: (v: string) => (ind.expr = v) });
 const factorName = computed({
@@ -35,15 +37,16 @@ const saving = computed(() => ind.saving);
 const saveError = computed(() => ind.saveError);
 const validation = computed(() => ind.validation);
 const customList = computed(() => ind.customList);
+const builtinList = computed(() => ind.builtinList);
 
 const validateExpr = () => ind.validateExpr();
 const saveFactor = () => ind.saveFactor();
-const updateFactor = (id: string, patch: { weight?: number; enabled?: boolean }) =>
-  ind.updateFactor(id, patch);
-const delFactor = (id: string) => ind.delFactor(id);
 const run = () => ind.run();
 
-onMounted(() => ind.loadCustom());
+onMounted(() => {
+  ind.loadFactors();
+  ind.loadCustom();
+});
 
 const GROUP_LABEL: Record<string, string> = {
   value: '价值',
@@ -55,66 +58,90 @@ const GROUP_LABEL: Record<string, string> = {
   volatility: '波动',
   moneyflow: '资金流',
   reversal: '反转',
+  custom: '自定义',
 };
 function groupLabel(g: string) {
   return GROUP_LABEL[g] ?? g;
 }
 
-const factors = computed<any[]>(() => report.value?.factors ?? []);
-const selected = computed(
-  () => factors.value.find((f) => f.name === selectedName.value) ?? factors.value[0] ?? null,
-);
-
-// 内置因子的人类名 + 释义(真实知识,非造数;自定义因子退回键名 + DSL 表达式)。
-const FACTOR_META: Record<string, { label: string; desc: string }> = {
-  f_bp: { label: '账面市值比 (BP)', desc: '净资产 / 市值,价值因子——数值越高,估值相对越"便宜"。' },
-  f_ep: { label: '盈利市值比 (EP)', desc: '净利润 / 市值(市盈率倒数),价值因子,反映盈利相对估值。' },
-  f_roe: { label: '净资产收益率 (ROE)', desc: '净利润 / 净资产,质量因子,衡量公司盈利能力。' },
-  f_mom20: { label: '20 日动量', desc: '近 20 个交易日累计涨幅,趋势 / 动量因子。' },
-  f_north: { label: '北向资金', desc: '陆股通近 5 日净流入强度,资金面因子。' },
-};
-function factorLabel(name: string): string {
-  return FACTOR_META[name]?.label ?? name;
-}
-function factorDesc(f: { name: string }): string {
-  return FACTOR_META[f.name]?.desc ?? customByName.value[f.name]?.expr ?? '';
-}
-
-// 因子分类过滤(段控件,从 group 派生类别)。
-const cat = ref('全部');
-const cats = computed(() => ['全部', ...new Set(factors.value.map((f) => groupLabel(f.group)))]);
-const filteredFactors = computed(() =>
-  cat.value === '全部'
-    ? factors.value
-    : factors.value.filter((f) => groupLabel(f.group) === cat.value),
-);
-
-// 「新建因子」滚动并聚焦到 DSL 编辑器。
-function focusEditor() {
-  const el = document.querySelector('.dsl-input') as HTMLElement | null;
-  el?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-  el?.focus();
-}
-
-// 因子表「权重 / 启用」列:仅自定义因子有真实可调权重/启用态;内置因子=等权·内置(诚实,
-// 不伪造可编辑)。按名匹配已保存的自定义因子,拿真实 weight/enabled/id。
-const customByName = computed<Record<string, any>>(() => {
+// 质检报告按因子名索引(报告里因子名是裸名 ep/bp/.../自定义名,与因子库命名一致)。
+const reportByName = computed<Record<string, any>>(() => {
   const m: Record<string, any> = {};
-  for (const c of customList.value) m[c.name] = c;
+  for (const f of report.value?.factors ?? []) m[f.name] = f;
   return m;
 });
-const maxWeight = computed(() => {
-  let mx = 1;
-  for (const f of factors.value) {
-    const c = customByName.value[f.name];
-    if (c) mx = Math.max(mx, Number(c.weight) || 0);
-  }
-  return mx || 1;
+
+// 内置 + 自定义并成一张因子库表;IC/ICIR/覆盖从质检报告按名合并(没跑质检则空 → 显示 —)。
+const libraryRows = computed<any[]>(() => {
+  const rep = reportByName.value;
+  const builtin = builtinList.value.map((f) => ({
+    key: f.name,
+    ref: f.name, // 内置因子用名做 PUT 主键
+    label: f.label || f.name,
+    category: f.category || groupLabel(f.group || ''),
+    desc: f.desc || '',
+    kind: 'builtin' as const,
+    enabled: f.enabled !== false,
+    weight: Number(f.weight ?? 1),
+    rep: rep[f.name] ?? null,
+  }));
+  const custom = customList.value.map((c) => ({
+    key: c.name,
+    ref: c.id, // 自定义因子用 id 做 PUT/DELETE 主键
+    label: c.name,
+    category: groupLabel(c.group || 'custom'),
+    desc: c.expr,
+    kind: 'custom' as const,
+    enabled: !!c.enabled,
+    weight: Number(c.weight ?? 1),
+    rep: rep[c.name] ?? null,
+  }));
+  return [...builtin, ...custom];
 });
-function weightBar(name: string): number {
-  const c = customByName.value[name];
-  const w = c ? Number(c.weight) || 0 : 1;
-  return Math.round((w / maxWeight.value) * 100);
+
+const totalCount = computed(() => libraryRows.value.length);
+const enabledCount = computed(() => libraryRows.value.filter((r) => r.enabled).length);
+
+// 类别过滤(段控件)。
+const cat = ref('全部');
+const cats = computed(() => ['全部', ...new Set(libraryRows.value.map((r) => r.category))]);
+const filteredRows = computed(() =>
+  cat.value === '全部'
+    ? libraryRows.value
+    : libraryRows.value.filter((r) => r.category === cat.value),
+);
+
+const selected = computed(
+  () => libraryRows.value.find((r) => r.key === selectedName.value) ?? libraryRows.value[0] ?? null,
+);
+
+// 权重条:相对全表最大权重归一(诚实展示相对量级,非百分比)。
+const maxWeight = computed(() => Math.max(1, ...libraryRows.value.map((r) => r.weight || 0)));
+function weightBar(w: number): number {
+  return Math.round((Math.max(0, w) / maxWeight.value) * 100);
+}
+
+// 启用/调权:内置走 /factors,自定义走 /custom-factors(同表统一入口);改完信号/回测里真生效。
+function setEnabled(row: any, enabled: boolean) {
+  if (row.kind === 'builtin') ind.updateBuiltin(row.ref, { enabled });
+  else ind.updateFactor(row.ref, { enabled });
+}
+function setWeight(row: any, raw: string) {
+  const weight = Number(raw);
+  if (Number.isNaN(weight) || weight < 0) return;
+  if (row.kind === 'builtin') ind.updateBuiltin(row.ref, { weight });
+  else ind.updateFactor(row.ref, { weight });
+}
+
+// 删自定义因子(内置不可删):点一次进确认态,再点才真删,免误触。
+const pendingDel = ref<string | null>(null);
+function askDel(row: any) {
+  pendingDel.value = pendingDel.value === row.ref ? null : row.ref;
+}
+function confirmDel(row: any) {
+  ind.delFactor(row.ref);
+  pendingDel.value = null;
+  if (selectedName.value === row.key) selectedName.value = null;
 }
 
 function ic(v: number | null | undefined): string {
@@ -123,12 +150,19 @@ function ic(v: number | null | undefined): string {
 function pct(v: number | null | undefined): string {
   return v == null ? '—' : (v * 100).toFixed(0) + '%';
 }
+
+// 「新建因子」滚动并聚焦到 DSL 编辑器。
+function focusEditor() {
+  const el = document.querySelector('.dsl-input') as HTMLElement | null;
+  el?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  el?.focus();
+}
 </script>
 
 <template>
   <PageHero
     title="指标 · 因子库"
-    sub="多因子模型的原子构建块 · 对因子库做真实样本外质检(IC 均值 / ICIR / 覆盖度 / 十分位分层)"
+    :sub="`多因子模型的原子构建块 · 共 ${totalCount} 个因子 · ${enabledCount} 个启用 · 启用与权重直接驱动信号 / 回测`"
   >
     <template #right>
       <button class="btn btn-primary btn-sm" @click="focusEditor">
@@ -138,6 +172,180 @@ function pct(v: number | null | undefined): string {
   </PageHero>
 
   <div class="page-body">
+    <!-- 因子库:内置 + 自定义并表 + 详情(IC 来自质检,没跑显示 —)-->
+    <div class="cols">
+      <div class="card">
+        <div class="card-head">
+          <div>
+            <h3 class="card-title">因子库</h3>
+            <span class="card-sub">
+              <template v-if="report">
+                {{ report.start }} ~ {{ report.end }} · {{ report.n_dates }} 交易日 ·
+                {{ report.n_codes }} 标的
+              </template>
+              <template v-else
+                >内置 + 自定义因子统一管理 · 运行下方「因子质检」填入真实 IC / 分层</template
+              >
+            </span>
+          </div>
+        </div>
+        <div class="factor-filter">
+          <div class="segmented">
+            <button v-for="c in cats" :key="c" :class="{ on: cat === c }" @click="cat = c">
+              {{ c }}
+            </button>
+          </div>
+          <span class="ch-legend">
+            <span class="ch-tag"><i style="background: var(--text-2)" />IC/ICIR=中性</span>
+            <span class="ch-tag"><i style="background: var(--pnl-up)" />分层收益=PnL</span>
+            <span class="ch-tag"><i style="background: var(--accent)" />启用=Accent</span>
+          </span>
+        </div>
+        <table class="dt">
+          <thead>
+            <tr>
+              <th style="width: 150px">因子</th>
+              <th>类别</th>
+              <th class="num">IC 均值</th>
+              <th class="num">ICIR</th>
+              <th class="num">覆盖度</th>
+              <th class="num wt-th">权重</th>
+              <th class="en-th">启用</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr
+              v-for="r in filteredRows"
+              :key="r.key"
+              class="row"
+              :class="{ sel: selected?.key === r.key, 'row-off': !r.enabled }"
+              @click="selectedName = r.key"
+            >
+              <td>
+                <div class="f-cell">
+                  <span class="f-label">{{ r.label }}</span>
+                  <span v-if="r.label !== r.key" class="f-key mono">{{ r.key }}</span>
+                </div>
+              </td>
+              <td>
+                <span class="chip">{{ r.category }}</span>
+                <span v-if="r.kind === 'custom'" class="chip chip-custom">自定义</span>
+              </td>
+              <td class="num">{{ ic(r.rep?.ic_mean) }}</td>
+              <td class="num dim">{{ ic(r.rep?.icir) }}</td>
+              <td class="num dim">{{ pct(r.rep?.coverage) }}</td>
+              <td class="num" @click.stop>
+                <div class="wt-cell">
+                  <input
+                    class="input mono wt-in"
+                    type="number"
+                    min="0"
+                    step="0.5"
+                    :value="r.weight"
+                    title="合成权重:1=等权,0=不参与,>1 放大该因子贡献"
+                    @change="setWeight(r, ($event.target as HTMLInputElement).value)"
+                  />
+                  <div class="wt-bar">
+                    <div
+                      class="wt-fill"
+                      :style="{ width: weightBar(r.weight) + '%', opacity: r.enabled ? 0.85 : 0.3 }"
+                    />
+                  </div>
+                </div>
+              </td>
+              <td class="en-td" @click.stop>
+                <label
+                  class="cf-switch"
+                  :title="r.enabled ? '已启用(点击禁用)' : '已禁用(点击启用)'"
+                >
+                  <input
+                    type="checkbox"
+                    :checked="r.enabled"
+                    @change="setEnabled(r, ($event.target as HTMLInputElement).checked)"
+                  />
+                  <span class="cf-track"><span class="cf-knob" /></span>
+                </label>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+        <p v-if="saveError" class="dsl-err lib-err">
+          <Icon name="alert" :size="13" /> {{ saveError }}
+        </p>
+      </div>
+
+      <!-- 因子详情 -->
+      <div class="card card-pad detail">
+        <template v-if="selected">
+          <div class="detail-head">
+            <h3 class="card-title">{{ selected.label }}</h3>
+            <span class="chip">{{ selected.category }}</span>
+            <span v-if="selected.kind === 'custom'" class="chip chip-custom">自定义</span>
+          </div>
+          <p v-if="selected.desc" class="factor-desc" :class="{ mono: selected.kind === 'custom' }">
+            {{ selected.desc }}
+          </p>
+          <div class="mini-grid">
+            <div class="mini">
+              <div class="mini-k">IC 均值</div>
+              <div class="mini-v mono">{{ ic(selected.rep?.ic_mean) }}</div>
+            </div>
+            <div class="mini">
+              <div class="mini-k">ICIR</div>
+              <div class="mini-v mono">{{ ic(selected.rep?.icir) }}</div>
+            </div>
+            <div class="mini">
+              <div class="mini-k">覆盖度</div>
+              <div class="mini-v mono">{{ pct(selected.rep?.coverage) }}</div>
+            </div>
+            <div class="mini">
+              <div class="mini-k">IC 天数</div>
+              <div class="mini-v mono">{{ selected.rep?.ic_series?.length ?? 0 }}</div>
+            </div>
+          </div>
+
+          <template v-if="selected.rep && selected.rep.coverage > 0">
+            <div class="cap detail-label">IC 时序(逐日 RankIC)</div>
+            <div class="chart-box"><ICChart :values="selected.rep.ic_series" /></div>
+            <div class="cap detail-label">十分位分层 · 平均前向收益</div>
+            <div class="chart-box"><DecileBars :values="selected.rep.deciles" /></div>
+          </template>
+          <div v-else-if="report" class="empty mini-empty">
+            <div class="empty-title">该因子无数据</div>
+            <div class="empty-desc">
+              当前数据源缺该因子所需字段(如免费源无北向),覆盖度 0,如实不补强。
+            </div>
+          </div>
+          <div v-else class="empty mini-empty">
+            <div class="empty-title">尚无 IC / 分层</div>
+            <div class="empty-desc">
+              运行下方「因子质检」即可在本地缓存上算该因子的真实样本外 IC 与分层。
+            </div>
+          </div>
+
+          <!-- 自定义因子可删(内置不可删)-->
+          <div v-if="selected.kind === 'custom'" class="detail-foot">
+            <button
+              v-if="pendingDel !== selected.ref"
+              class="btn btn-ghost btn-sm"
+              @click="askDel(selected)"
+            >
+              <Icon name="x" :size="13" /> 删除因子
+            </button>
+            <template v-else>
+              <span class="del-confirm">确认删除「{{ selected.label }}」?</span>
+              <button class="btn btn-ghost btn-sm" @click="pendingDel = null">取消</button>
+              <button class="btn btn-danger btn-sm" @click="confirmDel(selected)">确认删除</button>
+            </template>
+          </div>
+        </template>
+        <div v-else class="empty mini-empty">
+          <div class="empty-title">因子库为空</div>
+          <div class="empty-desc">内置因子加载中,或新建一个自定义因子。</div>
+        </div>
+      </div>
+    </div>
+
     <!-- 质检参数 -->
     <div class="card">
       <div class="card-head">
@@ -240,7 +448,7 @@ function pct(v: number | null | undefined): string {
             </span>
           </div>
         </div>
-        <!-- 保存为因子(校验通过后)-->
+        <!-- 保存为因子(校验通过后)→ 进上方因子库表,可调权/启用/删除 -->
         <div v-if="validation && validation.ok" class="dsl-save">
           <input
             v-model="factorName"
@@ -266,197 +474,15 @@ function pct(v: number | null | undefined): string {
           </button>
         </div>
         <p v-if="saveError" class="dsl-err"><Icon name="alert" :size="13" /> {{ saveError }}</p>
-
-        <!-- 已保存的自定义因子(启用者运行质检/选股时与内置并列;权重驱动合成,口径贯穿实盘+回测)-->
-        <div v-if="customList.length" class="dsl-saved">
-          <div class="cap dsl-saved-k">
-            已保存因子 · 启用项进等权×权重合成(驱动每日选股 + 回测,口径一致)
-          </div>
-          <div
-            v-for="c in customList"
-            :key="c.id"
-            class="dsl-saved-row"
-            :class="{ 'row-off': !c.enabled }"
-          >
-            <label class="cf-switch" :title="c.enabled ? '已启用(点击禁用)' : '已禁用(点击启用)'">
-              <input
-                type="checkbox"
-                :checked="c.enabled"
-                @change="
-                  updateFactor(c.id, { enabled: ($event.target as HTMLInputElement).checked })
-                "
-              />
-              <span class="cf-track"><span class="cf-knob" /></span>
-            </label>
-            <span class="dsl-saved-name mono">{{ c.name }}</span>
-            <span class="dsl-saved-expr mono">{{ c.expr }}</span>
-            <label class="cf-weight" title="合成权重:1=等权,0=不参与,>1 放大该因子贡献">
-              权重
-              <input
-                class="input mono cf-weight-in"
-                type="number"
-                min="0"
-                step="0.5"
-                :value="c.weight"
-                @change="
-                  updateFactor(c.id, { weight: Number(($event.target as HTMLInputElement).value) })
-                "
-              />
-            </label>
-            <button class="btn btn-ghost btn-sm" @click="delFactor(c.id)">删除</button>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- 因子表 + 详情 -->
-    <div v-if="report" class="cols">
-      <div class="card">
-        <div class="card-head">
-          <div>
-            <h3 class="card-title">因子库</h3>
-            <span class="card-sub"
-              >{{ report.start }} ~ {{ report.end }} · {{ report.n_dates }} 交易日 ·
-              {{ report.n_codes }} 标的</span
-            >
-          </div>
-        </div>
-        <div class="factor-filter">
-          <div class="segmented">
-            <button v-for="c in cats" :key="c" :class="{ on: cat === c }" @click="cat = c">
-              {{ c }}
-            </button>
-          </div>
-          <span class="ch-legend">
-            <span class="ch-tag"><i style="background: var(--text-2)" />IC/ICIR=中性</span>
-            <span class="ch-tag"><i style="background: var(--pnl-up)" />分层收益=PnL</span>
-            <span class="ch-tag"><i style="background: var(--accent)" />启用=Accent</span>
-          </span>
-        </div>
-        <table class="dt">
-          <thead>
-            <tr>
-              <th style="width: 150px">因子</th>
-              <th>类别</th>
-              <th class="num">IC 均值</th>
-              <th class="num">ICIR</th>
-              <th class="num">覆盖度</th>
-              <th class="num">权重</th>
-              <th class="en-th">启用</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr
-              v-for="f in filteredFactors"
-              :key="f.name"
-              class="row"
-              :class="{ sel: selected?.name === f.name }"
-              @click="selectedName = f.name"
-            >
-              <td>
-                <div class="f-cell">
-                  <span class="f-label">{{ factorLabel(f.name) }}</span>
-                  <span v-if="factorLabel(f.name) !== f.name" class="f-key mono">{{ f.name }}</span>
-                </div>
-              </td>
-              <td>
-                <span class="chip">{{ groupLabel(f.group) }}</span>
-              </td>
-              <td class="num">{{ ic(f.ic_mean) }}</td>
-              <td class="num dim">{{ ic(f.icir) }}</td>
-              <td class="num dim">{{ pct(f.coverage) }}</td>
-              <td class="num">
-                <div v-if="customByName[f.name]" class="wt-cell">
-                  <span class="wt-v mono">{{ customByName[f.name].weight }}</span>
-                  <div class="wt-bar">
-                    <div class="wt-fill" :style="{ width: weightBar(f.name) + '%' }" />
-                  </div>
-                </div>
-                <span v-else class="dim wt-eq">等权</span>
-              </td>
-              <td class="en-td" @click.stop>
-                <label
-                  v-if="customByName[f.name]"
-                  class="cf-switch"
-                  :title="customByName[f.name].enabled ? '已启用(点击禁用)' : '已禁用(点击启用)'"
-                >
-                  <input
-                    type="checkbox"
-                    :checked="customByName[f.name].enabled"
-                    @change="
-                      updateFactor(customByName[f.name].id, {
-                        enabled: ($event.target as HTMLInputElement).checked,
-                      })
-                    "
-                  />
-                  <span class="cf-track"><span class="cf-knob" /></span>
-                </label>
-                <span v-else class="chip built-in">内置</span>
-              </td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-
-      <div class="card card-pad detail">
-        <div class="detail-head">
-          <h3 class="card-title">{{ selected ? factorLabel(selected.name) : '—' }}</h3>
-          <span v-if="selected" class="chip">{{ groupLabel(selected.group) }}</span>
-        </div>
-        <template v-if="selected">
-          <p v-if="factorDesc(selected)" class="factor-desc">{{ factorDesc(selected) }}</p>
-          <div class="mini-grid">
-            <div class="mini">
-              <div class="mini-k">IC 均值</div>
-              <div class="mini-v mono">{{ ic(selected.ic_mean) }}</div>
-            </div>
-            <div class="mini">
-              <div class="mini-k">ICIR</div>
-              <div class="mini-v mono">{{ ic(selected.icir) }}</div>
-            </div>
-            <div class="mini">
-              <div class="mini-k">覆盖度</div>
-              <div class="mini-v mono">{{ pct(selected.coverage) }}</div>
-            </div>
-            <div class="mini">
-              <div class="mini-k">IC 天数</div>
-              <div class="mini-v mono">{{ selected.ic_series?.length ?? 0 }}</div>
-            </div>
-          </div>
-
-          <template v-if="selected.coverage > 0">
-            <div class="cap detail-label">IC 时序(逐日 RankIC)</div>
-            <div class="chart-box"><ICChart :values="selected.ic_series" /></div>
-            <div class="cap detail-label">十分位分层 · 平均前向收益</div>
-            <div class="chart-box"><DecileBars :values="selected.deciles" /></div>
-          </template>
-          <div v-else class="empty mini-empty">
-            <div class="empty-title">该因子无数据</div>
-            <div class="empty-desc">
-              当前数据源缺该因子所需字段(如免费源无北向),覆盖度 0,如实不补强。
-            </div>
-          </div>
-        </template>
-      </div>
-    </div>
-
-    <!-- 未质检:诚实空状态 -->
-    <div v-else class="card">
-      <div class="card-pad">
-        <div class="empty">
-          <div class="empty-icon"><Icon name="indicator" :size="20" /></div>
-          <div class="empty-title">运行因子质检以查看真实 IC / 分层</div>
-          <div class="empty-desc">
-            选定区间后「运行质检」,在本地缓存上算每个因子的真实样本外
-            RankIC、ICIR、覆盖度与十分位分层收益 —— 低 IC / 缺数据如实(红线#3)。需先建缓存。
-          </div>
-        </div>
+        <p class="dsl-note cap">
+          保存后的因子出现在上方因子库表;启用项(及权重)随每日选股与回测一同生效,口径一致。
+        </p>
       </div>
     </div>
 
     <p class="disclaimer">
       IC / ICIR / 覆盖度属中性通道(因子研究指标,非盈亏色);十分位分层收益属 PnL
-      通道。所有结果为真实样本外计算,不夸大、不补强。
+      通道。所有结果为真实样本外计算,不夸大、不补强。启用与权重经 api 串入信号 / 回测,真实生效。
     </p>
   </div>
 </template>
@@ -557,6 +583,9 @@ function pct(v: number | null | undefined): string {
   font-size: var(--fs-sub);
   color: var(--status-err);
 }
+.lib-err {
+  margin: 12px 18px 4px;
+}
 .dsl-ref {
   margin-top: 14px;
   display: flex;
@@ -592,41 +621,6 @@ function pct(v: number | null | undefined): string {
 }
 .dsl-name {
   max-width: 240px;
-}
-.dsl-saved {
-  margin-top: 16px;
-  padding-top: 14px;
-  border-top: 0.5px solid var(--border-faint);
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-.dsl-saved-k {
-  letter-spacing: 0;
-  text-transform: none;
-  margin-bottom: 2px;
-}
-.dsl-saved-row {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-.dsl-saved-name {
-  font-size: var(--fs-sub);
-  color: var(--text-1);
-  width: 110px;
-  flex: none;
-}
-.dsl-saved-expr {
-  flex: 1;
-  font-size: 11.5px;
-  color: var(--text-2);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.dsl-saved-row.row-off {
-  opacity: 0.5;
 }
 
 /* 合成权重输入(中性,非盈亏色)*/
@@ -690,10 +684,6 @@ function pct(v: number | null | undefined): string {
   gap: 20px;
   align-items: start;
 }
-.f-name {
-  font-weight: 500;
-  color: var(--text-1);
-}
 .f-cell {
   display: flex;
   flex-direction: column;
@@ -707,12 +697,18 @@ function pct(v: number | null | undefined): string {
   font-size: 10px;
   color: var(--text-3);
 }
+.chip-custom {
+  margin-left: 5px;
+  color: var(--accent);
+  border-color: color-mix(in srgb, var(--accent) 35%, transparent);
+}
 .factor-filter {
   display: flex;
   align-items: center;
   gap: 10px;
   flex-wrap: wrap;
-  margin-bottom: 12px;
+  margin: 0 0 12px;
+  padding: 0 18px;
 }
 .factor-desc {
   font-size: 12.5px;
@@ -720,11 +716,20 @@ function pct(v: number | null | undefined): string {
   line-height: 1.6;
   margin: 0 0 16px;
 }
+.factor-desc.mono {
+  font-size: 11.5px;
+}
 .dim {
   color: var(--text-2);
 }
+.row.row-off {
+  opacity: 0.55;
+}
 
 /* 因子表「权重 / 启用」列 */
+.wt-th {
+  width: 116px;
+}
 .en-th {
   width: 56px;
   text-align: center;
@@ -735,8 +740,11 @@ function pct(v: number | null | undefined): string {
   gap: 7px;
   justify-content: flex-end;
 }
-.wt-v {
-  color: var(--text-1);
+.wt-in {
+  width: 56px;
+  text-align: right;
+  padding: 4px 6px;
+  height: 26px;
 }
 .wt-bar {
   width: 34px;
@@ -749,11 +757,6 @@ function pct(v: number | null | undefined): string {
 .wt-fill {
   height: 100%;
   background: var(--accent);
-  opacity: 0.85;
-}
-.wt-eq {
-  font-size: 11px;
-  color: var(--text-3);
 }
 .en-td {
   text-align: center;
@@ -761,14 +764,11 @@ function pct(v: number | null | undefined): string {
 .en-td .cf-switch {
   vertical-align: middle;
 }
-.built-in {
-  font-size: 10.5px;
-}
 
 .detail-head {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   margin-bottom: 16px;
 }
 .mini-grid {
@@ -803,6 +803,27 @@ function pct(v: number | null | undefined): string {
 }
 .mini-empty {
   padding: 24px 16px;
+}
+.detail-foot {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 18px;
+  padding-top: 14px;
+  border-top: 0.5px solid var(--border-faint);
+}
+.del-confirm {
+  font-size: var(--fs-sub);
+  color: var(--text-2);
+  margin-right: auto;
+}
+.btn-danger {
+  background: var(--status-err-bg);
+  color: var(--status-err);
+  border: 0.5px solid color-mix(in srgb, var(--status-err) 35%, transparent);
+}
+.btn-danger:hover {
+  background: color-mix(in srgb, var(--status-err) 18%, transparent);
 }
 
 .disclaimer {

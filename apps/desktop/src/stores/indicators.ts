@@ -27,6 +27,7 @@ interface IndicatorsState {
   saveError: string | null;
   validation: any | null;
   customList: any[];
+  builtinList: any[]; // 内置因子(GET /factors:元数据 + 启用/权重),与自定义并到因子库表
 }
 
 function detailStr(e: unknown): string {
@@ -51,6 +52,7 @@ export const useIndicatorsStore = defineStore('indicators', {
     saveError: null,
     validation: null,
     customList: [],
+    builtinList: [],
   }),
   actions: {
     async loadCustom() {
@@ -58,6 +60,25 @@ export const useIndicatorsStore = defineStore('indicators', {
         this.customList = await api.customFactors();
       } catch {
         this.customList = [];
+      }
+    },
+    async loadFactors() {
+      try {
+        const r = await api.factors();
+        this.builtinList = r?.factors ?? [];
+      } catch {
+        this.builtinList = [];
+      }
+    },
+    // 内置因子的启用/调权(PUT /factors/:name),失败回滚到服务端真值。
+    async updateBuiltin(name: string, patch: { weight?: number; enabled?: boolean }) {
+      this.saveError = null;
+      try {
+        await api.updateFactor(name, patch);
+      } catch (e) {
+        this.saveError = detailStr(e);
+      } finally {
+        await this.loadFactors();
       }
     },
     async validateExpr() {

@@ -29,6 +29,22 @@ const selectModel = (id: string) => ms.selectModel(id);
 const train = () => ms.train();
 const activate = (id: string, ev: Event) => ms.activate(id, ev);
 
+// 删除模型:点删进确认态(运行中模型给红字提示),再点才真删,免误触删生产模型。
+const delId = ref<string | null>(null);
+function askDel(id: string, ev: Event) {
+  ev.stopPropagation();
+  delId.value = delId.value === id ? null : id;
+}
+function cancelDel(ev: Event) {
+  ev.stopPropagation();
+  delId.value = null;
+}
+function confirmDel(id: string, ev: Event) {
+  ev.stopPropagation();
+  ms.del(id);
+  delId.value = null;
+}
+
 // 股票池篮子:StockSearch 选中即加入(默认空=全 A);缩小股票池可大幅加速训练。
 const stockSearch = ref<{ reset: () => void } | null>(null);
 function addCode(s: { code: string; name: string }) {
@@ -281,13 +297,28 @@ const BT_RULES = [
               ><span class="dot" />诚实样本外</span
             >
           </div>
-          <div class="mc-actions">
+          <div v-if="delId === m.id" class="mc-confirm" @click.stop>
+            <span class="mc-confirm-msg">
+              <template v-if="m.status === 'running'"
+                >⚠ 该模型正用于出信号,删除后将退回等权选股。</template
+              >
+              <template v-else>删除此模型版本?不可恢复。</template>
+            </span>
+            <div class="mc-confirm-act">
+              <span class="btn btn-ghost btn-sm" @click="cancelDel($event)">取消</span>
+              <span class="btn btn-danger btn-sm" @click="confirmDel(m.id, $event)">确认删除</span>
+            </div>
+          </div>
+          <div v-else class="mc-actions">
             <span v-if="m.status === 'running'" class="mc-active mono">
               <Icon name="check" :size="12" /> 当前运行
             </span>
             <span v-else class="btn btn-secondary btn-sm" @click="activate(m.id, $event)"
               >激活</span
             >
+            <span class="mc-del" title="删除此模型版本" @click="askDel(m.id, $event)">
+              <Icon name="x" :size="13" />
+            </span>
           </div>
         </button>
       </div>
@@ -689,7 +720,9 @@ const BT_RULES = [
 }
 .mc-actions {
   display: flex;
+  align-items: center;
   justify-content: flex-end;
+  gap: 8px;
 }
 .mc-active {
   display: inline-flex;
@@ -697,6 +730,56 @@ const BT_RULES = [
   gap: 4px;
   font-size: var(--fs-cap);
   color: var(--status-ok);
+  margin-right: auto;
+}
+.mc-del {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  flex: none;
+  border: 0.5px solid var(--border);
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--text-3);
+  cursor: pointer;
+  transition:
+    background var(--t-fast),
+    color var(--t-fast),
+    border-color var(--t-fast);
+}
+.mc-del:hover {
+  background: var(--status-err-bg);
+  color: var(--status-err);
+  border-color: color-mix(in srgb, var(--status-err) 35%, transparent);
+}
+/* 删除确认条:占满卡片底部一行,红字提示生产模型风险 */
+.mc-confirm {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: var(--r-md);
+  background: var(--status-err-bg);
+  border: 0.5px solid color-mix(in srgb, var(--status-err) 28%, transparent);
+}
+.mc-confirm-msg {
+  font-size: var(--fs-cap);
+  color: var(--text-2);
+  line-height: 1.5;
+}
+.mc-confirm-act {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+.btn-danger {
+  background: color-mix(in srgb, var(--status-err) 14%, transparent);
+  color: var(--status-err);
+  border: 0.5px solid color-mix(in srgb, var(--status-err) 40%, transparent);
+}
+.btn-danger:hover {
+  background: color-mix(in srgb, var(--status-err) 24%, transparent);
 }
 
 /* 详情 */

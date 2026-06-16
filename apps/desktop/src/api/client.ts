@@ -179,6 +179,13 @@ export const api = {
   model: (id: string) => request<ModelVersion>(API_ENDPOINTS.models_get, { params: { id } }),
   activateModel: (id: string) =>
     request<{ ok?: boolean }>(API_ENDPOINTS.models_activate, { params: { id } }),
+  deleteModel: (id: string) =>
+    request<{ ok?: boolean }>(API_ENDPOINTS.models_delete, { params: { id } }),
+
+  // ── v2 因子库:内置因子(元数据来自 engine + 本地启用/权重配置)──────────────
+  factors: () => request<{ factors: any[] }>(API_ENDPOINTS.factors_list),
+  updateFactor: (name: string, body: { enabled?: boolean; weight?: number }) =>
+    request<{ ok?: boolean }>(API_ENDPOINTS.factors_update, { params: { name }, body }),
 
   // ── 指标 / 因子质检域(M4)──────────────────────────────────────────────────
   indicatorsQuality: (q: {
