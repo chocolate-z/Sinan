@@ -1,6 +1,6 @@
 # 司南 Sinan 蓝图·总纲与执行计划
 
-> 本总纲为五个专章(系统架构 / 量化核心 / 模型训练 / 后端与数据模型 / 前端与设计)之上的贯通层。它不复述各章细节,只做三件事:**统一裁决**(消解专家间的冲突与重叠)、**贯通映射**(把五条线缝成一条端到端主干)、**执行排序**(给出 Claude Code 可落地的里程碑与红线)。凡本总纲与专章冲突,以本总纲为准。
+> 本总纲为五个专章(系统架构 / 量化核心 / 模型训练 / 后端与数据模型 / 前端与设计)之上的贯通层。它不复述各章细节,只做三件事:**统一裁决**(消解专家间的冲突与重叠)、**贯通映射**(把五条线缝成一条端到端主干)、**执行排序**(给出可落地的里程碑与红线)。凡本总纲与专章冲突,以本总纲为准。
 
 ---
 
@@ -355,7 +355,7 @@ flowchart LR
 
 ---
 
-## ⑦ 给 Claude Code 的执行指引
+## ⑦ 执行指引
 
 ### 代码库结构与单一真相源
 
@@ -439,7 +439,7 @@ flowchart LR
 
 ---
 
-*本总纲为执行权威。五个专章提供实现细节,凡有冲突以本总纲 ④ 的裁决为准。下一步:Claude Code 从 M0 第 1 步(shared-contracts)开始,严格按构建顺序与红线推进。*
+*本总纲为执行权威。五个专章提供实现细节,凡有冲突以本总纲 ④ 的裁决为准。下一步:从 M0 第 1 步(shared-contracts)开始,严格按构建顺序与红线推进。*
 
 
 ---
@@ -447,8 +447,6 @@ flowchart LR
 # 附录 · 各专家详细设计
 
 # 系统架构师
-
-I now have enough grounding in the prototype's reality (multi-source fallback with priority + degradation, CSV cache + JSON sidecars, point-in-time liquidity pool, schedule-based 15:30 scheduler, Flask dashboard on 127.0.0.1). This directly informs the Provider abstraction, storage migration, sidecar, and observability sections. Writing the chapter now.
 
 # 系统架构
 
@@ -1834,8 +1832,6 @@ engine/sinan/training/
 ---
 
 # 后端与数据工程师
-
-I now have everything I need: the prototype's exact risk parameters, signal pipeline, account model, data source fallback logic, and feature dims. Writing the chapter now.
 
 # 后端与数据模型
 
