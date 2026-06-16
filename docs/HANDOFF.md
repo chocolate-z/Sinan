@@ -693,3 +693,22 @@ labels.py   build_forward_return_labels(hfq[T+h]/hfq[T]-1,前向,尾 h 日 null)
 **v2 整体(用户 v2.4 愿景,逐页差距大):** 因子库(11 因子/类别/可配)、模型管理(卡片/流水线图/克隆/删除)、信号可解释(逐因子贡献+入选原因+风控拦截)、回测参数更全、设置扩展。**代码注释「全面改写成接地气」也是 v2 待办**(~164 源文件;前端注释清理推迟到 v2 UI 重做后免白清,后端可先清)。
 
 **dev 环境坑(接手必看):** ① `pnpm dev` Ctrl+C 只杀壳、不杀 sidecar 子树 → 每次重启堆孤儿、占默认端口 59914/59915 → 新会话连到旧死代码 api。重启前先 `Get-Process node,python,sinan-desktop | Stop-Process -Force` 清掉(根治没做:可让 `dev.mjs` 退出时 `taskkill /T` 整树)。② 改 engine/api 后必须重启 `pnpm dev`(api 跑编译后 dist)。③ dev `.venv` 的 sklearn 可能被自动升级 hook 再顶坏 → 训练/质检 500;重装 `scikit-learn==1.6.1 numpy==2.2.6 scipy==1.15.3`。④ 本机无 `gh`;PowerShell 跑 venv python 用绝对路径 `& "D:\Personal\Sinan\.venv\Scripts\python.exe"`。⑤ token 用户在引导页输,绝不贴对话;六红线不可破。
+
+### 11.24 v2 因子库前端 + 把 builtin 串进打分(未发版,未提交)
+
+把 §11.23 留的「🔴 下一步」三件全做完了,都跑过测、还真起 engine+api+vite 用浏览器预览实测过。**仍在 `feat/v0.1.6-polish`,已落 3 个本地提交(backend / ui / 本 doc),还没推**(连同 §11.23 那批本地提交一起,等用户拍板再 push;两条铁律照旧:提交不加任何署名、注释接地气)。
+
+**做了什么:**
+
+- **指标页 `Indicators.vue` 重写成统一因子库表(v2.4 愿景落地)**:内置因子(`GET /factors`)+ 自定义因子(`/custom-factors`)并进**一张**表 —— 类别 tab(从因子 category 派生)、IC/ICIR/覆盖(跑质检后按因子名合并填进去,没跑就诚实显 `—`,红线#3)、权重条(相对全表 max 归一)+ 内联可改权重、启用开关(内置走 `PUT /factors/:name`、自定义走 `PUT /custom-factors/:id`,同一张表两个入口)、选中详情面板(说明 + IC/ICIR/覆盖/天数四格 + IC 时序图 + 十分位分层,没数据走空状态)。自定义因子在详情面板里两步确认删除(内置不可删)。表常驻显示(不再 `v-if=report` 才出),IC 那几列没跑质检就是 `—`。
+- **模型页 `Models.vue` 加删除**:每张模型卡右下 `×` 按钮 → 两步确认条;**运行中(生产)模型给红字警示**「正用于出信号,删后退回等权选股」。store 加 `del` action(删的是当前选中则清详情;api 删生产模型会顺手清策略 `active_model_id`,见 repo `modelVersionDelete`)。
+- **把启用的内置因子串进打分(关键:否则开关/调权只是 UI 摆设)**:engine `run_eod(builtin=)` → `score_universe(builtin=)`;`run_backtest(builtin=)` → 透传 run_eod;`app.py` `PaperRunReq`/`BacktestReq` 加 `builtin` 字段并透传。api `engine.client.ts` 两个 Request 接口加 `builtin?`;`trading.ts`(实盘 run)和 `backtest.ts`(回测)在**无模型时**下发 `repo.builtinFactorsForScoring()`(空配置=从没动过 → `null` → engine 用全部内置等权=老行为;有模型走模型路径、不下发 builtin)。口径与实盘一致(回测同样吃这套配置)。
+- **前端 client/store**:`client.ts` 加 `factors` / `updateFactor` / `deleteModel`;indicators store 加 `builtinList` / `loadFactors` / `updateBuiltin`。
+
+**测试(全绿):** engine **207**(+2:`test_score_universe_builtin_subset_and_weight`、`test_eod_builtin_restricts_factors`)、api **74**(+5:trading×2 builtin 下发/null、backtest×2 builtin 下发/模型路径不下发、models delete)、前端 typecheck 0 + vitest **81** + `vite build` 过 + eslint/prettier 净。
+
+**还真机预览验过(起了 engine+uvicorn / api node dist / vite 9530,preview 工具点的):** 因子库表 5 个内置因子渲染、类别 tab、权重条、启用开关都对;把 `ep` 权重调成 2、禁用 `north_chg5`,UI 立刻反映且 `UI→store→api→DB` 往返落库(curl 复核 `enabled/weight` 一致);负权重被拒 400;模型页插了两条假模型(一 running 一 draft)验删除:`×` → 运行中模型出红字确认条 → 确认真删,卡片消失、`GET /models` 与 DB 同步。
+
+**⚠ 两个坑(给接手):** ① 用户**真实 dev 库 `%APPDATA%\Sinan\sinan.db` 已损坏**(`database disk image is malformed`,api 启动即崩 —— 不是这次改的)。我没动它(预览是用 `SINAN_SQLITE_PATH` 指了个 throwaway 库验完即删)。**用户下次 `pnpm dev` 还会崩,得先删那个 db 让 api 重建**(丢的是 dev 的模型/持仓/日志行;parquet 缓存另存不受影响)。② `builtin` 配置的语义:只有当 `factor_config` 表非空(用户在因子库页动过)才会限制内置因子集;新加的引擎因子在用户没再开过因子库页前不在配置里=暂不参与打分,开一次页(`GET /factors` 会 seed 成启用)就自愈。这是「用户配了就完全照用户配」的有意设计,不是 bug。
+
+**剩余 v2**:信号页可解释(逐因子贡献 + 入选原因 + 风控拦截)、模型管理(流水线图/克隆)、回测参数更全、设置扩展、全项目注释接地气化。
