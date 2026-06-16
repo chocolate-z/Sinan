@@ -195,7 +195,8 @@ const BT_RULES = [
         <div>
           <h3 class="card-title">训练新模型</h3>
           <span class="card-sub"
-            >walk-forward 滚动训练 ElasticNet · 硬守卫 purge ≥ label_horizon(防未来函数)</span
+            >walk-forward 滚动训练 ElasticNet / LightGBM · 硬守卫 purge ≥
+            label_horizon(防未来函数)</span
           >
         </div>
       </div>
@@ -214,6 +215,16 @@ const BT_RULES = [
                 }
               "
             />
+          </div>
+          <div class="field">
+            <label class="field-label">
+              模型类型
+              <span class="lyr">{{ form.model_type === 'lightgbm' ? '梯度提升树' : '线性' }}</span>
+            </label>
+            <select v-model="form.model_type" class="input mono">
+              <option value="elasticnet">ElasticNet · 线性</option>
+              <option value="lightgbm">LightGBM · 树</option>
+            </select>
           </div>
           <div class="field">
             <label class="field-label">标签前向(交易日)</label>
@@ -242,6 +253,27 @@ const BT_RULES = [
               </option>
             </select>
           </div>
+          <!-- LightGBM 超参:仅选了树模型时出现(elasticnet 不显,免干扰) -->
+          <template v-if="form.model_type === 'lightgbm'">
+            <div class="field">
+              <label class="field-label">树的棵数 <span class="lyr">n_estimators</span></label>
+              <input v-model.number="form.n_estimators" class="input mono" type="number" min="10" />
+            </div>
+            <div class="field">
+              <label class="field-label">叶子数 <span class="lyr">num_leaves</span></label>
+              <input v-model.number="form.num_leaves" class="input mono" type="number" min="2" />
+            </div>
+            <div class="field">
+              <label class="field-label">学习率 <span class="lyr">learning_rate</span></label>
+              <input
+                v-model.number="form.learning_rate"
+                class="input mono"
+                type="number"
+                min="0.001"
+                step="0.01"
+              />
+            </div>
+          </template>
           <!-- 股票池:默认全 A;指定篮子可大幅加速(训练量随股票数线性下降) -->
           <div class="field" style="grid-column: span 3">
             <label class="field-label">

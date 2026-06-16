@@ -11,6 +11,12 @@ export interface TrainForm {
   purge: number;
   train_span: number;
   test_span: number;
+  model_type: string; // elasticnet | lightgbm
+  // LightGBM 超参(model_type=lightgbm 时生效;elasticnet 忽略)
+  n_estimators: number;
+  num_leaves: number;
+  learning_rate: number;
+  min_child_samples: number;
   codes: string[]; // 股票池(空=全 A);缩小可大幅加速训练
   codeNames: Record<string, string>; // code→name(仅前端 chip 展示,不下发)
   feature_workers: number | null; // 特征面板并行核数;null=自动(engine min(核-1,4))
@@ -37,6 +43,11 @@ export const useModelsStore = defineStore('models', {
       purge: 5,
       train_span: 252,
       test_span: 63,
+      model_type: 'elasticnet',
+      n_estimators: 200,
+      num_leaves: 31,
+      learning_rate: 0.05,
+      min_child_samples: 20,
       codes: [],
       codeNames: {},
       feature_workers: null,
