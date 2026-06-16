@@ -28,6 +28,10 @@ interface TrainInput {
   model_type?: string;
   alpha?: number;
   l1_ratio?: number;
+  n_estimators?: number;
+  num_leaves?: number;
+  learning_rate?: number;
+  min_child_samples?: number;
   top_quantile?: number;
   train_threads?: string;
   device?: string;
@@ -95,6 +99,10 @@ export class ModelsController {
           model_type: body.model_type,
           alpha: body.alpha,
           l1_ratio: body.l1_ratio,
+          n_estimators: body.n_estimators,
+          num_leaves: body.num_leaves,
+          learning_rate: body.learning_rate,
+          min_child_samples: body.min_child_samples,
           top_quantile: body.top_quantile,
           train_threads: body.train_threads,
           device: body.device,

@@ -26,10 +26,13 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-test = ["pytest>=8.0"]
+test = ["pytest>=8.0", "lightgbm>=4,<5"] # 测试需 lightgbm 训树模型 + 验纯 numpy 遍历推理
 # 用户自带数据源(BYO)— 可选,运行期由用户环境提供;Provider 以 httpx 直连官方 HTTP API,
 # 不强依赖以下 SDK,故列为 extras 仅供需要时安装。
 byo = ["tushare", "akshare"]
+# LightGBM(M3 v2 树模型)只在「训练」时需要;推理走 factors/tree.py 纯 numpy 遍历,不依赖它。
+# 列为可选 extra 保持默认轻装(打包默认含训练能力则需在构建时一并装入)。
+lightgbm = ["lightgbm>=4,<5"]
 
 [tool.hatch.build.targets.wheel]
 packages = ["sinan"]

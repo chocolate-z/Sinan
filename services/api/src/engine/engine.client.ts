@@ -97,6 +97,11 @@ export interface TrainRequest {
   model_type?: string;
   alpha?: number;
   l1_ratio?: number;
+  // LightGBM 超参(model_type=lightgbm 时生效;elasticnet 忽略)
+  n_estimators?: number;
+  num_leaves?: number;
+  learning_rate?: number;
+  min_child_samples?: number;
   top_quantile?: number;
   train_threads?: string;
   device?: string;

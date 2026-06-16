@@ -582,6 +582,11 @@ class TrainReq(BaseModel):
     model_type: str = "elasticnet"
     alpha: float = 0.001
     l1_ratio: float = 0.5
+    # LightGBM 超参(model_type=lightgbm 时生效;elasticnet 忽略)
+    n_estimators: int = 200
+    num_leaves: int = 31
+    learning_rate: float = 0.05
+    min_child_samples: int = 20
     top_quantile: float = 0.2
     train_threads: str = "auto"
     device: str = "auto"
@@ -663,6 +668,10 @@ def train(req: TrainReq) -> StreamingResponse:
                 model_type=req.model_type,
                 alpha=req.alpha,
                 l1_ratio=req.l1_ratio,
+                n_estimators=req.n_estimators,
+                num_leaves=req.num_leaves,
+                learning_rate=req.learning_rate,
+                min_child_samples=req.min_child_samples,
                 top_quantile=req.top_quantile,
                 train_threads=req.train_threads,
                 device=req.device,

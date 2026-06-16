@@ -146,22 +146,39 @@ def score_universe(
 def model_score_universe(
     ctx: FactorContext, model: dict, factors: list[Factor] = DEFAULT_FACTORS
 ) -> ScoreResult:
-    """用已训练线性模型(系数 JSON,M3)给全市场打分:score = intercept + Σ coef·f。
+    """用已训练模型给全市场打分。ElasticNet:score = intercept + Σ coef·f(纯 polars 线性);
+    LightGBM(M3 v2):走 factors/tree.py 纯 numpy 遍历累加叶子值(无运行时 lightgbm 依赖)。
 
-    红线#1:特征走同一 compute_factor_matrix(asof PIT,只见 <=T);模型仅线性加权,绝不引入未来。
-    缺失特征列(当日降级)按 0(z-score 截面中性值)计,诚实不补强;percentile 由模型分横截面排名。
-    模型无可匹配特征列时退化为常数分(无区分度),不静默造假。
+    红线#1:特征走同一 compute_factor_matrix(asof PIT,只见 <=T);模型只对这批特征做加权/树判定,
+    绝不引入未来。缺失特征列(当日降级)按 0(z-score 截面中性值)计,诚实不补强;percentile 由模型分
+    横截面排名。模型无可匹配特征列时退化为常数分(无区分度),不静默造假。
     """
     matrix, effective, degraded = compute_factor_matrix(ctx, factors)
     feature_cols = list(model.get("feature_cols", []))
-    coef = list(model.get("coef", []))
-    intercept = float(model.get("intercept", 0.0))
 
-    expr = pl.lit(intercept, dtype=pl.Float64)
-    for col, w in zip(feature_cols, coef):
-        if col in matrix.columns:
-            expr = expr + pl.col(col).fill_null(0.0) * float(w)
-    scored = matrix.with_columns(expr.alias("score"))
+    if model.get("type") == "lightgbm" or model.get("trees"):
+        # 树模型:按模型特征列顺序取出特征矩阵(缺失列=降级→0,与线性路同样诚实中性),纯 numpy 遍历。
+        import numpy as np
+
+        from .tree import predict_trees
+
+        h = matrix.height
+        cols = [
+            (matrix[c].fill_null(0.0).to_numpy() if c in matrix.columns else np.zeros(h))
+            for c in feature_cols
+        ]
+        X = np.column_stack(cols) if cols else np.zeros((h, 0))
+        raw = predict_trees(list(model.get("trees", [])), X)
+        scored = matrix.with_columns(pl.Series("score", raw))
+    else:
+        coef = list(model.get("coef", []))
+        intercept = float(model.get("intercept", 0.0))
+        expr = pl.lit(intercept, dtype=pl.Float64)
+        for col, w in zip(feature_cols, coef):
+            if col in matrix.columns:
+                expr = expr + pl.col(col).fill_null(0.0) * float(w)
+        scored = matrix.with_columns(expr.alias("score"))
+
     n = max(scored["score"].drop_nulls().len(), 1)
     scored = scored.with_columns((pl.col("score").rank(method="average") / n).alias("percentile"))
     scored = scored.sort("score", descending=True, nulls_last=True)
