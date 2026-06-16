@@ -723,8 +723,21 @@ labels.py   build_forward_return_labels(hfq[T+h]/hfq[T]-1,前向,尾 h 日 null)
 - **本批做了**:`models` 主页加「因子构成」卡(`3b0b397`)——列启用的内置 + 自定义因子、类别 chip、合成权重占比(`w/Σw` 真实份额)、accent 权重条;数据复用 `indicators` store 的 `/factors` + `/custom-factors`(不重复拉);无激活模型=这就是驱动选股的真实构成,有运行中模型=副标题点明以模型系数为准;全禁用诚实显空。占左 1.3fr,股票池/风控/口径挪右栏堆叠。前端 typecheck/vitest 81/build/eslint/prettier 全绿 + 起栈用 preview 实测(4 因子按权重排序/份额/空状态/布局都对)。
 - **剩下的真实 backlog(都低红线风险,按价值排)**:① ✅**行情页大盘指数条**(`b46e64c`,已做)—— engine `market_indices` 读缓存 `index_ohlcv` 算最新收盘+涨跌,附进 `/market/snapshot`+`/market/live`,前端行情页顶部指数条(红涨绿跌),无指数缓存诚实空;② 设置页**自动刷新频率可改**(后端 `PUT settings/:key` 已就绪,缺前端 `putSetting` + Segmented,价值 3)③ 一批 S 快赢:回测页「导出 CSV/JSON」+ 固定口径只读说明行、总览空态「查看上次结果」次按钮、行情排序加「成交额」。
 
-**LightGBM(M3 v2,用户提到的计划):还没做。设计岔口要先定** —— 现有「模型=线性系数 JSON / 无二进制 / 推理纯 polars」对 ElasticNet 成立,但 GBDT 是树模型,存不成线性系数。可选:(a) 把 booster dump 成文本/JSON 存 `model_json`,推理时引擎跑 lightgbm(破「推理纯 polars」,要加 lightgbm 依赖,且打包体积+freeze 要验);(b) 把树导成纯 polars/numpy 可遍历的结构自己推理(纯净但工作量大)。契约 `ModelType` 现仅 `elasticnet`,要加 `lightgbm` 枚举(三绑定 + `test_sql_contract` CHECK)。训练侧 walk-forward/IC/守卫框架可复用,只换 estimator + 序列化/推理两段。建议做成可选 extra(`services/engine[lightgbm]`)保持默认轻装。
+**LightGBM(M3 v2)= DONE(用户拍板走方案 b「纯 polars/numpy 树遍历」,`22c920d`+`112688f`)。** 见 §11.26。
 
 - **明确别碰(红线/缺后端)**:总览风控闸 GateRow(ST/流动性/换手率状态后端无数据,硬加要么造假要么死按钮)、模型页 RiskBar 的「已用」值(需真实持仓敞口,model 页拿不到)、引导「本地数据目录」源(要新 provider,effort L)。
 
 **整页 backlog 都是 incremental,没有大窟窿。注释接地气化(~164 文件)仍挂着,等 UI 全稳后再扫。**
+
+### 11.26 LightGBM 模型(M3 v2)——纯 numpy 树推理(未发版,已提交未推)
+
+用户点名的 M3 v2 树模型,走**方案 b(纯 polars/numpy 遍历)**,完整保住「模型=纯 JSON / 无二进制 / 推理纯 polars(不依赖运行时 lightgbm)」的设计 —— lightgbm 只当**训练专用**依赖(跟 sklearn 一个待遇)。已提交 `22c920d`(后端)+`112688f`(前端),没推。
+
+**怎么做的:**
+
+- **契约**:`ModelType` 加 `lightgbm`(`spec/enums.json` + `src/enums.ts` + `python/.../enums.py` 三绑定)。**迁移 `0011`**:SQLite 改不了 CHECK,重建 `model_versions`(建新表→`INSERT SELECT *`→改名→重建两个索引),CHECK 放宽到 `IN ('elasticnet','lightgbm')`。`test_sql_contract` 扫所有迁移的 CHECK,只要 `0011` 那条含新枚举就过(`0005` 旧的 `{'elasticnet'}` 留着无害)。
+- **引擎**:新 `factors/tree.py` —— `flatten_trees(booster.dump_model())` 把每棵树拍平成 `{feature,threshold,left,right,value,default_left}` 数组(纯 JSON,可入库);`predict_trees(trees, X)` 纯 numpy 向量化遍历(整批样本同时从根下行到叶子,累加叶子值)。`training/train.py`:`_fit` 按 `model_type` 分支(`LGBMRegressor` 延迟 import),fold 评估复用 `.predict`(sklearn/lgbm 都鸭子类型有),最终模型 elasticnet→系数 / lightgbm→拍平树 + `feature_importance` 用分裂增益(gain)归一。`factors/score.py model_score_universe` 按 `model['type']` 分支:树模型取特征矩阵→`predict_trees`(缺特征列降级→0,与线性同口径)。`app.py /engine/train` + api 透传 lgbm 超参(n_estimators/num_leaves/learning_rate/min_child_samples)。`pyproject` 加 `[lightgbm]` extra + `test` extra 也含 lightgbm(CI 跑得了树测试)。
+- **前端**:模型页训练表单加「模型类型」下拉(ElasticNet/LightGBM),选 LightGBM 才显树超参(树棵数/叶子数/学习率);`store TrainForm` 加 `model_type`+四超参,随 `train` 请求体透传。
+- **关键测试(`test_lightgbm.py`)**:① **金标准**——`predict_trees` 纯遍历 == `lightgbm.predict(raw_score=True)`,只差一个 init 常数(`std(diff)<1e-6`)+ 排名完全一致 → 证明无 lightgbm 的推理逐叶精确;② 端到端训出纯 JSON 树模型(`trees` 在、无 `coef`);③ **无未来函数**——固定树模型,`asof(T)` 打分在「全量(含 >T 未来行)」与「截断到 T」两份缓存上**逐值相等**。engine 212→**215**(+3)、api 74、契约 TS10/Py6/SQL2、前端 typecheck/vitest 81/build/lint 全绿;起栈 preview 实测训练表单选 LightGBM 真出树超参字段。
+
+**⚠ 接手注意:** ① dev `.venv` 现已装 `lightgbm==4.5.0`(`--no-deps`,没动 numpy/scipy/sklearn 的锁);若重建 venv 记得 `pip install -e "services/engine[test]"` 会带上 lightgbm。② 打包(M6):若要装机端也能训 LightGBM,构建时得把 lightgbm 一并冻进 engine sidecar(它有原生 .so/.dll;**只影响训练**,推理不需要);不冻则装机端只能训 ElasticNet,选 LightGBM 会在 engine 报 import 失败(可加个更友好的「未装 lightgbm」提示,目前是 raw ImportError)。③ lightgbm 训练默认 `random_state=42 + deterministic=True + force_col_wise` 求可复现。
