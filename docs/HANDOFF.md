@@ -712,3 +712,16 @@ labels.py   build_forward_return_labels(hfq[T+h]/hfq[T]-1,前向,尾 h 日 null)
 **⚠ 两个坑(给接手):** ① 用户**真实 dev 库 `%APPDATA%\Sinan\sinan.db` 已损坏**(`database disk image is malformed`,api 启动即崩 —— 不是这次改的)。我没动它(预览是用 `SINAN_SQLITE_PATH` 指了个 throwaway 库验完即删)。**用户下次 `pnpm dev` 还会崩,得先删那个 db 让 api 重建**(丢的是 dev 的模型/持仓/日志行;parquet 缓存另存不受影响)。② `builtin` 配置的语义:只有当 `factor_config` 表非空(用户在因子库页动过)才会限制内置因子集;新加的引擎因子在用户没再开过因子库页前不在配置里=暂不参与打分,开一次页(`GET /factors` 会 seed 成启用)就自愈。这是「用户配了就完全照用户配」的有意设计,不是 bug。
 
 **剩余 v2**:信号页可解释(逐因子贡献 + 入选原因 + 风控拦截)、模型管理(流水线图/克隆)、回测参数更全、设置扩展、全项目注释接地气化。
+
+### 11.25 模型页「因子构成」卡 + v2.4 全页差距分析(未发版,已提交未推)
+
+接 §11.24 之后,先跑了一轮**逐页差距分析**(9 个 agent 并行,每页对照当前 Vue 实现 vs `docs/design_handoff_sinan/design_source/src/pages/*.jsx` 设计稿,只报具体可落地缺口、打 价值/工作量/红线风险),再据结果做了最高价值的一项。**改动已提交(`3b0b397` 等本地提交),没推。**
+
+**差距分析结论(给接手,省得再瞎猜):整体没有 major-drift / missing 页面,早期几轮还原得很扎实。**
+
+- **已经和设计稿对齐(matches,不用动)**:`portfolio`(还是超集)、`indicators`(本批刚做)、`signals`。⚠ **更正 §11.24 把「信号页可解释」当待办——它其实早就按 signals.jsx 做完了**(分段 tab + 三通道图例 + 入选表「因子贡献 chips + 入选原因」+ 拦截表「拦截规则 + 说明」两列),`Signals.vue` 已是设计稿超集。别再去重做信号页。
+- **本批做了**:`models` 主页加「因子构成」卡(`3b0b397`)——列启用的内置 + 自定义因子、类别 chip、合成权重占比(`w/Σw` 真实份额)、accent 权重条;数据复用 `indicators` store 的 `/factors` + `/custom-factors`(不重复拉);无激活模型=这就是驱动选股的真实构成,有运行中模型=副标题点明以模型系数为准;全禁用诚实显空。占左 1.3fr,股票池/风控/口径挪右栏堆叠。前端 typecheck/vitest 81/build/eslint/prettier 全绿 + 起栈用 preview 实测(4 因子按权重排序/份额/空状态/布局都对)。
+- **剩下的真实 backlog(都低红线风险,按价值排)**:① 行情页**大盘指数条**(沪深300/中证500/上证/深证/创业板,读缓存里已有的 `index_ohlcv`,价值 4)② 设置页**自动刷新频率可改**(后端 `PUT settings/:key` 已就绪,缺前端 `putSetting` + Segmented,价值 3)③ 一批 S 快赢:回测页「导出 CSV/JSON」+ 固定口径只读说明行、总览空态「查看上次结果」次按钮、行情排序加「成交额」。
+- **明确别碰(红线/缺后端)**:总览风控闸 GateRow(ST/流动性/换手率状态后端无数据,硬加要么造假要么死按钮)、模型页 RiskBar 的「已用」值(需真实持仓敞口,model 页拿不到)、引导「本地数据目录」源(要新 provider,effort L)。
+
+**整页 backlog 都是 incremental,没有大窟窿。注释接地气化(~164 文件)仍挂着,等 UI 全稳后再扫。**
