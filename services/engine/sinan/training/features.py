@@ -227,6 +227,15 @@ def build_feature_panel(
     且日数足够时生效,否则自动退回串行。并行与串行结果逐值相等(每日独立、PIT 不变)。
     """
     uniq_dates = sorted(set(dates))
+    # 立即发一条 0/total:让前端确定式进度条第一时间出现在 0%(尤其多核——首块完成前也不空窗,
+    # 否则用户会以为"没有进度条"。后续逐日/逐块 done 递增覆盖之)。回调异常被吞,绝不影响计算。
+    if on_progress and uniq_dates:
+        try:
+            on_progress(
+                {"stage": "features", "done": 0, "total": len(uniq_dates), "date": uniq_dates[0]}
+            )
+        except Exception:  # noqa: BLE001
+            pass
     n_workers = _resolve_workers(workers)
     # 并行条件:多 worker + 日数足够(摊掉进程启动/物化固定开销)+ 因子可 pickle(无自定义闭包,
     # 以 lookback 已知为代理 —— 自定义因子 lookback=None 且其 fn 是不可 pickle 的闭包)。
