@@ -12,6 +12,7 @@
 from __future__ import annotations
 
 import itertools
+import os
 from pathlib import Path
 from typing import Sequence
 
@@ -23,6 +24,26 @@ from . import layout
 # 全局唯一临时表名计数(避免共享 con 时表名撞车)。
 _TBL_SEQ = itertools.count()
 
+# DuckDB 物化内存预算(MB)默认值。这是「软上限 / 溢写阈值」——超过即落盘而非 OOM,
+# 故调低只换来更慢(更多溢写),不丢正确性。可经环境变量 SINAN_DUCKDB_MEMORY_MB 覆盖;
+# 多核特征面板按 worker 数均分此预算,使总占用恒定一份预算、绝不随并行度倍增致卡死。
+_DEFAULT_MEMORY_MB = 4096
+
+
+def _resolve_mem_mb(explicit: int | None) -> int:
+    """物化内存预算(MB):显式入参 > 环境 SINAN_DUCKDB_MEMORY_MB > 默认。下限 512(给 duckdb 基本周转)。"""
+    val = explicit
+    if val is None:
+        raw = os.environ.get("SINAN_DUCKDB_MEMORY_MB")
+        if raw:
+            try:
+                val = int(raw)
+            except ValueError:
+                val = None
+    if val is None:
+        val = _DEFAULT_MEMORY_MB
+    return max(512, int(val))
+
 
 class DataLayer:
     def __init__(
@@ -32,10 +53,14 @@ class DataLayer:
         *,
         mat_since: str | None = None,
         years: "Sequence[str] | None" = None,
+        memory_limit_mb: int | None = None,
     ) -> None:
         self.cache_root = Path(cache_root)
         owns_con = con is None
         self._con = con or duckdb.connect(":memory:")
+        # 物化内存预算(软上限/溢写阈值)。质检/训练多核时由调用方按 worker 均分传入,使
+        # 总占用 = 一份预算(而非每 worker 各 4GB → N 倍 → 卡死)。见 _resolve_mem_mb。
+        self.memory_limit_mb = _resolve_mem_mb(memory_limit_mb)
         # 年分区裁剪(可选):只 glob 这些 year 分区的 parquet,而非全库 **。全市场多年缓存里
         # 打开上万个分股文件是主耗时;只需最近窗口的查询(行情快照)按年裁剪可成倍提速。
         # ⚠ 设了它,本实例对任意 asof 只看得见这些年的数据 —— 仅供「当下视角/近窗口」查询
@@ -56,7 +81,7 @@ class DataLayer:
                 spill.mkdir(parents=True, exist_ok=True)
                 p = str(spill).replace("\\", "/").replace("'", "''")
                 self._con.execute(f"SET temp_directory='{p}'")
-                self._con.execute("SET memory_limit='4GB'")
+                self._con.execute(f"SET memory_limit='{self.memory_limit_mb}MB'")
             except Exception:  # noqa: BLE001 — 配置失败退回默认,不引入新错误
                 pass
         # 每实例物化缓存:(dataset, codes) → duckdb 临时表名。首次 asof 把该数据集(可选按 codes

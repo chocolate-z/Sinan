@@ -576,7 +576,8 @@ class TrainReq(BaseModel):
     top_quantile: float = 0.2
     train_threads: str = "auto"
     device: str = "auto"
-    # 特征面板多核:None→'auto'(min(核-1,4))利用多核;1=串行。每 worker 复制一份缓存到内存。
+    # 特征面板并行度:None→1 串行(默认,最省内存防卡死);N>1 显式开多核提速(按 N 均分 duckdb
+    # 内存预算,总占用恒定一份、不随并行度倍增)。环境变量 SINAN_DUCKDB_MEMORY_MB 可调总预算。
     feature_workers: Optional[int] = None
 
 
@@ -645,7 +646,8 @@ def train(req: TrainReq) -> StreamingResponse:
                 train_threads=req.train_threads,
                 device=req.device,
                 on_progress=emit,
-                feature_workers="auto" if req.feature_workers is None else req.feature_workers,
+                # 默认串行(最省内存,防大宇宙训练把内存灌爆致系统卡死);用户显式传 N>1 才开多核。
+                feature_workers=req.feature_workers if req.feature_workers is not None else 1,
             )
         except TrainGuardError as e:
             # 422:违反 purge>=label_horizon 硬守卫(红线#1)。
@@ -665,7 +667,7 @@ class FactorQualityReq(BaseModel):
     n_deciles: int = 10
     codes: Optional[list[str]] = None
     custom: Optional[list[dict]] = None  # 自定义 DSL 因子 [{name, expr, group?}]
-    feature_workers: Optional[int] = None  # None→'auto' 多核;1=串行(自定义因子在场自动退串行)
+    feature_workers: Optional[int] = None  # None→1 串行(默认,省内存防卡死);N>1 显式开多核(按 N 均分内存预算);自定义因子在场自动退串行
 
 
 @app.post("/engine/factors/quality", dependencies=[Depends(require_internal)])
@@ -694,7 +696,8 @@ def factors_quality(req: FactorQualityReq) -> StreamingResponse:
             label_horizon=req.label_horizon,
             n_deciles=req.n_deciles,
             on_progress=emit,
-            feature_workers="auto" if req.feature_workers is None else req.feature_workers,
+            # 默认串行(最省内存,防大宇宙质检把内存灌爆致系统卡死);用户显式传 N>1 才开多核。
+            feature_workers=req.feature_workers if req.feature_workers is not None else 1,
         )
         return {
             "start": req.start,

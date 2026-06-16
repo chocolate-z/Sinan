@@ -98,3 +98,36 @@ def test_coverage_for(tmp_path):
     store.write_dataset(cache, "price", df)
     first, last, rows = store.coverage_for(cache, "price", "600519.SH")
     assert first == "2024-01-02" and last == "2024-01-05" and rows == 4
+
+
+def test_resolve_mem_mb_precedence(monkeypatch):
+    """物化内存预算解析:显式 > 环境 SINAN_DUCKDB_MEMORY_MB > 默认;下限 512;非法值退默认。"""
+    from sinan.data.datalayer import _DEFAULT_MEMORY_MB, _resolve_mem_mb
+
+    monkeypatch.delenv("SINAN_DUCKDB_MEMORY_MB", raising=False)
+    assert _resolve_mem_mb(2048) == 2048  # 显式
+    assert _resolve_mem_mb(None) == _DEFAULT_MEMORY_MB  # 默认
+    assert _resolve_mem_mb(10) == 512  # 下限钳制(防 duckdb 无法周转)
+
+    monkeypatch.setenv("SINAN_DUCKDB_MEMORY_MB", "1536")
+    assert _resolve_mem_mb(None) == 1536  # 环境覆盖默认
+    assert _resolve_mem_mb(3072) == 3072  # 显式仍优先于环境
+
+    monkeypatch.setenv("SINAN_DUCKDB_MEMORY_MB", "garbage")
+    assert _resolve_mem_mb(None) == _DEFAULT_MEMORY_MB  # 非法环境值退默认
+
+
+def test_datalayer_memory_limit_applies(tmp_path):
+    """内存预算真的写进各自 con(SET 生效、非被 try/except 吞掉):不同预算 → 不同 current_setting。"""
+    cache = tmp_path / "cache"
+    store.write_dataset(cache, "price", _price([("600519.SH", "2024-01-02", 1.0)]))
+
+    small = DataLayer(cache, memory_limit_mb=512)
+    big = DataLayer(cache, memory_limit_mb=4096)
+    assert small.memory_limit_mb == 512 and big.memory_limit_mb == 4096
+    s = small._con.execute("SELECT current_setting('memory_limit')").fetchone()[0]
+    b = big._con.execute("SELECT current_setting('memory_limit')").fetchone()[0]
+    assert s != b, "memory_limit 未按预算生效(SET 被吞或格式错 → 防卡死失效)"
+    # 低预算不改变取数正确性(只是更早溢写,慢但不丢值)。
+    out = small.asof("price", "2024-12-31", fields=["stock_code", "close"])
+    assert out.height == 1 and out["close"].to_list() == [1.0]

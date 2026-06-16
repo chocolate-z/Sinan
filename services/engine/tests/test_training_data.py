@@ -128,6 +128,17 @@ def test_mat_since_bounded_score_equals_unbounded(tmp_path):
     assert full.equals(bounded), "物化下界改变了打分 —— 防 OOM 的窗口裁剪破坏了正确性!"
 
 
+def test_per_worker_mb_divides_budget():
+    """内存安全核心:多核时每 worker 的物化预算 = 总预算 / worker 数(下限 512),
+    使 N worker 总占用恒定一份(防「每 worker 各占满 → N×内存 → 系统卡死」)。"""
+    from sinan.training.features import _MIN_WORKER_MB, _per_worker_mb
+
+    assert _per_worker_mb(4096, 4) == 1024  # 4 核均分 4GB
+    assert _per_worker_mb(4096, 1) == 4096  # 串行 = 整份
+    assert _per_worker_mb(1000, 8) == _MIN_WORKER_MB  # 均分过小 → 钳到下限
+    assert _per_worker_mb(2048, 0) == 2048  # workers=0 防除零(视作 1)
+
+
 def test_feature_panel_parallel_equals_sequential(tmp_path):
     """提速正确性②:多核并行(进程池按日期分块)与串行特征面板逐值相等。
 

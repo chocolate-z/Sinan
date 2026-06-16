@@ -626,3 +626,19 @@ labels.py   build_forward_return_labels(hfq[T+h]/hfq[T]-1,前向,尾 h 日 null)
 **v1 必修进度(同会话续做)**:**B3 日期框** ✅ 三重锁高(`7952cf0`,待用户目视确认)· **B4 api 类型** ✅ client 直接消费端点去 any + 抓出真实空 id bug(`b2acc41`)· **B2 设置页** ✅ 复核+对抗式审查确认【早已迁新设计系统、98% 贴合 spec,无需重写】,只补诚实增强(积分/延迟提示 `e935f24`);评审「B2 仍用旧 .m-\*」系过时误判。**→ v1 必修仅剩 B1(真 token 端到端 smoke,用户进行中);B1 通过即可 bump→merge→`git tag v0.1.6-beta`。** 本会话累计 ~30 commits 全在 `feat/v0.1.6-polish`,前端/引擎/契约口径全绿。
 
 **B1 通过 + v0.1.6-beta 发版(2026-06-15,见 §11.19)。** 用户用真实 Tushare token 在桌面端跑完整端到端(走 sidecar 链路),回测页截图实证:缓存 30.98M 行、回测含成本/守卫/PIT 跑通、`roe(quality)` 因 token 无财务权限**诚实降级**、基准类指标(超额/IR/跟踪误差)因无指数日线权限**诚实留空 `—`**(均与已知 token 能力位一致,非 bug)。**B1 ✅。** 顺手修一处真机暴露的视觉 bug:回测结果态左栏参数面板被压到 300px 显挤压(`打分口径` 4 段「自动(镜像实盘)」在窄栏几近溢出)→ 左栏 `300→380px` + `打分口径`「自动(镜像实盘)」缩为「自动」(hint 已写明「口径与实盘一致」、结果徽标本就显示"自动",语义不丢)+ `RangePicker` 补 `DatePicker` 同款三重锁高(两者一直不一致)。仅动 `<style>`/标签文案、零数据接线,typecheck + vitest 76/76 + prettier 全绿。**bump 0.1.5→0.1.6(desktop package.json/tauri.conf/Cargo.toml/Cargo.lock 4 处)→ merge main(快进)→ `git tag v0.1.6-beta` → 云端构建首个验机版。** ⚠ release.yml 仍 `prerelease:false`(沿用 v0.1.5 流程)→ 该版自动公开 + updater 推给已装机器;releaseName 取 conf 渲染为「v0.1.6」(tag 为 v0.1.6-beta,纯展示差异)。
+
+### 11.20 训练/质检内存爆炸致系统卡死 — 根治(未发版)
+
+**用户报:质检/训练时内存占用超大、电脑卡死,宁可慢也别炸内存。** 仍在 `feat/v0.1.6-polish`。
+
+**真根因 = 多核特征面板的「每 worker 各物化一份缓存」内存倍增,而非单次物化过大。** `build_feature_panel(workers='auto')` 起 `min(核-1,4)` 个进程,每个 `_worker_panel` 各建自有 `DataLayer` → 各自把全 A 缓存物化进自有 `:memory:` duckdb。duckdb `memory_limit='4GB'` 溢写护栏是**每连接**的 → 4 worker 目标 ~16GB,**系统在任一连接触发溢写/Python 捕获 OOM 之前就已 swap 卡死**(那条「OOM→退串行」兜底根本来不及)。而两个端点(`/engine/train`、`/engine/factors/quality`)默认就传 `feature_workers='auto'` → 默认即 4×内存。
+
+**修(3 文件,纯内存/默认调整,绝不改 PIT 取数语义 = 红线#1 不动):**
+
+1. **端点默认串行**(`app.py`):`/engine/train` + `/engine/factors/quality` 的 `feature_workers` 由 `None→'auto'` 改为 `None→1`。串行 = 单连接 ~4GB 封顶(超额溢写),从 16GB→4GB,根除卡死;用户显式传 `N>1` 才开多核。
+2. **多核按 worker 均分内存预算**(`features.py`):新增 `_per_worker_mb(total, workers)=max(512, total//workers)`;`_build_panel_parallel` 给每 worker 的 `DataLayer(memory_limit_mb=总/worker)`。**总占用恒定一份预算、不随并行度倍增** → 即便用户显式开多核也不再卡死(只是各 worker 更早溢写=更慢)。
+3. **内存预算可配 + 可注入**(`datalayer.py`):`DataLayer(memory_limit_mb=...)`,经 `_resolve_mem_mb`(显式 > 环境 `SINAN_DUCKDB_MEMORY_MB` > 默认 4096,下限 512)解析存 `self.memory_limit_mb`;`SET memory_limit` 用之。低 RAM 机器可经环境变量调低(慢但更稳)。
+
+**正确性**:并行度/内存预算只改「怎么物化/溢写/分核」,不改「取哪些数据」——黄金测试 `并行==串行`、`截断不变式`、`物化下界不改打分` 守护;每日 asof 独立、PIT 不变。**验证**:`test_datalayer.py` 8 passed(含新增 `_resolve_mem_mb` 优先级 + `memory_limit` 真生效 2 测);全引擎 `--continue-on-collection-errors` **179 passed**(所有 DataLayer 消费方:回测/行情/因子/runner/store/kline/tdx/cache 无回归);`features.py` 经 sklearn 桩载入 + `_per_worker_mb` 断言通过。新增 `_per_worker_mb` 测 + 既有 `并行==串行` 黄金测试在 CI(可用 sklearn)兜底。
+
+**⚠ 本机 dev `.venv` 的 sklearn 1.9.0 坏了**(`KeyError: '__reduce_cython__'` / DLL load failed = numpy/scipy/Cython ABI 错配,疑似被 hook 自动升级所致)→ `pnpm dev` 跑训练/质检会 500(凡 import `sinan.training` 的测试本地也收集失败);**装机的 beta(PyInstaller 冻结 engine,自带可用 sklearn)不受影响**,故用户能训练。要在 dev 验本次内存修复需先修 venv:`.venv` 内重装兼容的 `scikit-learn`/`scipy`/`numpy`(或重建 venv)。**本修复要送到用户手上需进下一次构建(冻结 engine)**——发 `v0.1.7-beta` 或随后续修复批量重 tag。
