@@ -4,6 +4,7 @@
 // 流水线为真实系统架构;股票池/风控/成本为打包默认基线(config.defaults.json 真值)。
 import { computed, onMounted, ref } from 'vue';
 import { useModelsStore } from '../../stores/models';
+import { useIndicatorsStore } from '../../stores/indicators';
 import { useAppStore } from '../../stores/app';
 import { fmt, fmtPct } from '../../lib/format';
 import PageHero from '../../ui/PageHero.vue';
@@ -15,6 +16,7 @@ import { useRouter } from 'vue-router';
 
 const app = useAppStore();
 const ms = useModelsStore();
+const ind = useIndicatorsStore(); // 复用因子库 store(GET /factors + /custom-factors)给「因子构成」卡用
 const router = useRouter();
 // 表单=store 同一 reactive 引用(v-model 直接写 store);showForm 可写投影;其余只读投影。
 const form = ms.form;
@@ -44,6 +46,55 @@ function confirmDel(id: string, ev: Event) {
   ms.del(id);
   delId.value = null;
 }
+
+// 因子构成:启用的内置 + 自定义因子(及合成权重),来自因子库(/factors + /custom-factors)。
+// 这是「无激活模型时」等权/加权合成驱动选股的真实构成;有激活模型时以模型系数为准(见下方模型详情)。
+const FGROUP: Record<string, string> = {
+  value: '价值',
+  quality: '质量',
+  momentum: '动量',
+  northbound: '北向',
+  growth: '成长',
+  sentiment: '情绪',
+  volatility: '波动',
+  moneyflow: '资金流',
+  reversal: '反转',
+  custom: '自定义',
+};
+function fgroup(g: string) {
+  return FGROUP[g] ?? g;
+}
+const composition = computed(() => {
+  const b = ind.builtinList
+    .filter((f: any) => f.enabled !== false)
+    .map((f: any) => ({
+      key: f.name,
+      label: f.label || f.name,
+      cat: f.category || fgroup(f.group || ''),
+      weight: Number(f.weight ?? 1),
+      kind: 'builtin' as const,
+    }));
+  const c = ind.customList
+    .filter((x: any) => x.enabled)
+    .map((x: any) => ({
+      key: x.name,
+      label: x.name,
+      cat: fgroup(x.group || 'custom'),
+      weight: Number(x.weight ?? 1),
+      kind: 'custom' as const,
+    }));
+  return [...b, ...c].sort((a, z) => z.weight - a.weight);
+});
+// 合成权重占比 = w_i / Σw(就是该因子在加权均值里的真实权重),非伪百分比;条按相对最大权重铺满。
+const compSum = computed(() => composition.value.reduce((s, f) => s + f.weight, 0) || 1);
+const compMax = computed(() => Math.max(...composition.value.map((f) => f.weight), 0.0001));
+function sharePct(w: number) {
+  return (w / compSum.value) * 100;
+}
+function compBar(w: number) {
+  return Math.round((w / compMax.value) * 100);
+}
+const hasRunningModel = computed(() => models.value.some((m: any) => m.status === 'running'));
 
 // 股票池篮子:StockSearch 选中即加入(默认空=全 A);缩小股票池可大幅加速训练。
 const stockSearch = ref<{ reset: () => void } | null>(null);
@@ -83,7 +134,11 @@ function since(v: number | string | null | undefined): string {
   return Number.isNaN(d.getTime()) ? '' : d.toISOString().slice(0, 10);
 }
 
-onMounted(() => ms.fetchModels());
+onMounted(() => {
+  ms.fetchModels();
+  ind.loadFactors(); // 因子构成卡用(内置因子 + 启用/权重)
+  ind.loadCustom(); // 启用的自定义因子也进合成构成
+});
 
 // —— 真实系统架构 / 打包默认基线(config.defaults.json)——
 const PIPELINE: { icon: string; k: string; d: string }[] = [
@@ -457,23 +512,61 @@ const BT_RULES = [
       </div>
     </div>
 
-    <!-- 规则 / 风控 / 口径(真实默认基线) -->
+    <!-- 因子构成(来自因子库)+ 股票池/风控/口径(真实默认基线) -->
     <div class="cols">
+      <!-- 因子构成:启用因子 + 类别 + 合成权重(来自因子库,直接驱动选股)-->
       <div class="card">
         <div class="card-head">
           <div>
-            <h3 class="card-title">股票池与规则</h3>
-            <span class="card-sub">纪律化选股约束</span>
+            <h3 class="card-title">因子构成</h3>
+            <span class="card-sub">
+              {{ composition.length }} 个启用因子 · 合成权重在「指标 ·
+              因子库」调,直接驱动选股<template v-if="hasRunningModel">
+                · 有运行中模型时以模型系数为准(见下方模型详情)</template
+              >
+            </span>
           </div>
+          <span class="ch-tag"><i style="background: var(--accent)" />权重=Accent</span>
         </div>
-        <div class="rules">
-          <div v-for="r in POOL_RULES" :key="r.k" class="rule">
-            <span class="rule-k">{{ r.k }}</span>
-            <span class="rule-v mono">{{ r.v }}</span>
+        <div class="card-pad">
+          <div v-if="composition.length" class="comp-list">
+            <div v-for="f in composition" :key="f.key" class="comp-row">
+              <div class="comp-top">
+                <span class="comp-name">
+                  {{ f.label }}
+                  <span class="chip">{{ f.cat }}</span>
+                  <span v-if="f.kind === 'custom'" class="chip chip-custom">自定义</span>
+                </span>
+                <span class="comp-w mono">{{ sharePct(f.weight).toFixed(0) }}%</span>
+              </div>
+              <div class="comp-bar">
+                <div class="comp-fill" :style="{ width: compBar(f.weight) + '%' }" />
+              </div>
+            </div>
+          </div>
+          <div v-else class="empty comp-empty">
+            <div class="empty-title">未启用任何因子</div>
+            <div class="empty-desc">
+              去「指标 · 因子库」启用内置或自定义因子,启用项(及权重)即驱动每日选股与回测。
+            </div>
           </div>
         </div>
       </div>
       <div class="right-col">
+        <div class="card">
+          <div class="card-head">
+            <div>
+              <h3 class="card-title">股票池与规则</h3>
+              <span class="card-sub">纪律化选股约束</span>
+            </div>
+          </div>
+          <div class="rules">
+            <div v-for="r in POOL_RULES" :key="r.k" class="rule">
+              <span class="rule-k">{{ r.k }}</span>
+              <span class="rule-v mono">{{ r.v }}</span>
+            </div>
+          </div>
+        </div>
         <div class="card">
           <div class="card-head">
             <div>
@@ -961,6 +1054,52 @@ const BT_RULES = [
   font-size: 12.5px;
   color: var(--text-1);
   text-align: right;
+}
+
+/* 因子构成(权重=Accent 通道,非盈亏色)*/
+.comp-list {
+  display: flex;
+  flex-direction: column;
+  gap: 13px;
+}
+.comp-top {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 6px;
+}
+.comp-name {
+  font-size: 12.5px;
+  color: var(--text-1);
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.comp-w {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text-1);
+  flex: none;
+}
+.comp-bar {
+  height: 7px;
+  border-radius: 4px;
+  background: var(--bg-input);
+  overflow: hidden;
+}
+.comp-fill {
+  height: 100%;
+  border-radius: 4px;
+  background: var(--accent-grad);
+}
+.chip-custom {
+  color: var(--accent);
+  border-color: color-mix(in srgb, var(--accent) 35%, transparent);
+}
+.comp-empty {
+  padding: 20px 16px;
 }
 
 .disclaimer {
