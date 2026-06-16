@@ -754,6 +754,48 @@ def factors_quality(req: FactorQualityReq) -> StreamingResponse:
     return _sse_compute(compute)
 
 
+# ── 自动挖因子(公式搜索:训练集选 top-K → 样本外如实报 IC,红线#3 数据窥探守卫)──────────
+class MineReq(BaseModel):
+    train_start: str
+    train_end: str
+    oos_start: str
+    oos_end: str
+    label_horizon: int = 5
+    purge: Optional[int] = None  # 默认=label_horizon;train/oos 至少隔开 purge 个交易日
+    top_k: int = 10
+    codes: Optional[list[str]] = None
+
+
+@app.post("/engine/factors/mine", dependencies=[Depends(require_internal)])
+def factors_mine(req: MineReq) -> StreamingResponse:
+    """自动挖因子(SSE 流式:候选评估进度 + done/error)。候选公式在训练窗选 top-K、样本外窗如实报。"""
+    from .factors.mining import MiningGuardError, mine_factors
+
+    # 候选是 DSL(回看未知)→ 不设物化界,载全历史(同质检带自定义因子)。挖因子本就慢,建议缩股票池。
+    dl = DataLayer(config.cache_dir())
+    pdf = dl.asof("price", "99999999", fields=["stock_code", "trade_date"])
+    if pdf.is_empty():
+        raise HTTPException(status_code=400, detail="本地无行情缓存,先建缓存再挖因子")
+    trading_dates = sorted(set(pdf["trade_date"].to_list()))
+    codes = req.codes or sorted(set(pdf["stock_code"].to_list()))
+
+    def compute(emit):
+        try:
+            return mine_factors(
+                dl, codes=codes, trading_dates=trading_dates,
+                train_start=req.train_start, train_end=req.train_end,
+                oos_start=req.oos_start, oos_end=req.oos_end,
+                label_horizon=req.label_horizon, purge=req.purge, top_k=req.top_k,
+                on_progress=emit, feature_workers=1,  # 候选是不可 pickle 的 DSL 闭包 → 串行
+            )
+        except MiningGuardError as e:
+            raise HTTPException(status_code=422, detail=str(e))  # 数据窥探/标签泄漏守卫
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+
+    return _sse_compute(compute)
+
+
 @app.get("/engine/factors/meta", dependencies=[Depends(require_internal)])
 def factors_meta() -> dict:
     """因子库元数据:内置因子的名/中文名/类别/方向/说明/所需数据能力(给 api 列因子库)。引擎是唯一真源。"""
