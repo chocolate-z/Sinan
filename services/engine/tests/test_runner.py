@@ -6,9 +6,9 @@ from tests.test_factors import CODES, _build_frames, _dates, _write
 
 
 def _setup(tmp_path):
-    dates = _dates(30)
-    T = dates[24]
-    eff = dates[25]
+    dates = _dates(70)  # 够 mom60(60)等长窗因子全生效,coverage 才是 1.0
+    T = dates[64]
+    eff = dates[65]
     frames = _build_frames(dates)
     cache = tmp_path / "cache"
     _write(cache, frames)

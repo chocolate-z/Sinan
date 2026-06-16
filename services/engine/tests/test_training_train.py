@@ -101,8 +101,9 @@ def test_train_recovers_momentum_signal(tmp_path):
     assert res.oos_clean is True
     # 动量信号 → 样本外 RankIC 应显著为正。
     assert res.ic_oos > 0.5, f"OOS IC 未恢复动量信号: {res.ic_oos}"
-    # 特征重要度以 f_mom20 为首(其余因子常量无信息 → 权重≈0)。
-    assert res.feature_importance[0]["feature"] == "f_mom20"
+    # 特征重要度以价格动量族为首(mom20/mom60/reversal5 都从趋势价派生,捕捉同一动量信号;
+    # 其余估值/质量类因子在该合成数据上无增量信息)。
+    assert res.feature_importance[0]["feature"] in {"f_mom20", "f_mom60", "f_reversal5"}
     # north 因无数据被全局降级,不入可用特征。
     assert "f_north_chg5" not in res.feature_cols
     assert any("north_chg5" in d for d in res.degraded)

@@ -10,6 +10,7 @@ from datetime import date, timedelta
 import polars as pl
 
 from sinan.data import DataLayer, store
+from sinan.factors.library import DEFAULT_FACTORS
 from sinan.training import build_feature_panel, build_forward_return_labels
 
 CODES = ["600519.SH", "000001.SZ", "600036.SH", "000333.SZ", "601318.SH", "600000.SH"]
@@ -191,13 +192,14 @@ def test_feature_panel_shape_and_degrade(tmp_path):
     _write(cache, _frames(dates, with_northbound=False))
 
     fp = build_feature_panel(DataLayer(cache), CODES, dates)
-    # 列集固定为 factors 全集(含降级的 north_chg5,值为 null)。
-    assert fp.feature_cols == ["f_ep", "f_bp", "f_roe", "f_mom20", "f_north_chg5"]
+    # 列集固定为 factors 全集(含降级的因子,值为 null)。
+    assert fp.feature_cols == [f"f_{f.name}" for f in DEFAULT_FACTORS]
     assert fp.panel.height == len(dates) * len(CODES)
     assert set(fp.panel.columns) == {"date", "stock_code", *fp.feature_cols}
-    # 北向缺失 → 每日降级,且该列全 null(诚实,不补 0)。
-    assert fp.degraded_days.get("north_chg5") == len(dates)
-    assert fp.panel["f_north_chg5"].drop_nulls().len() == 0
+    # 北向缺失 → north_chg5/north_chg20 每日降级,且这两列全 null(诚实,不补 0)。
+    for nb in ("north_chg5", "north_chg20"):
+        assert fp.degraded_days.get(nb) == len(dates)
+        assert fp.panel[f"f_{nb}"].drop_nulls().len() == 0
 
 
 def test_forward_return_label_correct(tmp_path):

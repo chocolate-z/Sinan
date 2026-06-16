@@ -7,6 +7,8 @@ import polars as pl
 from sinan.data import DataLayer, store
 from sinan.factors import FactorContext, score_universe
 from sinan.factors.cross_section import winsorize_mad, zscore
+from sinan.factors.library import DEFAULT_FACTORS
+from sinan.factors.score import compute_factor_matrix
 
 CODES = ["600519.SH", "000001.SZ", "600036.SH", "000333.SZ", "601318.SH", "600000.SH"]
 
@@ -31,8 +33,10 @@ def _build_frames(dates, *, with_northbound=True, future_after=None):
             basic.append({
                 "stock_code": code, "trade_date": d,
                 "pe_ttm": 10.0 + ci * 3 + di * 0.01, "pb": 1.0 + ci * 0.5,
-                "ps_ttm": 5.0, "total_mv": 1e6, "circ_mv": 8e5,
-                "turnover_rate": 1.5, "dv_ttm": 2.0,
+                # 以下随股票/时间变化,让 sp/dy/size/turn20 等扩充因子有真实横截面区分度(原来是常数)。
+                "ps_ttm": 4.0 + ci * 0.5, "total_mv": 1e6 * (ci + 1),
+                "circ_mv": 8e5 * (ci + 1), "turnover_rate": 1.0 + ci * 0.3 + di * 0.01,
+                "dv_ttm": 1.0 + ci * 0.4,
             })
             if with_northbound:
                 north.append({
@@ -74,10 +78,47 @@ def _write(cache, frames, *, max_trade_date=None):
         store.write_dataset(cache, ds, df)
 
 
+def test_expanded_factors_effective_window_invariant_and_no_future(tmp_path):
+    """扩充因子(sp/dy/size/mom60/reversal5/vol20/turn20/north_chg20)三件套:
+    ① 都能算出有效值(不报错、不全降级);② 有界窗口==无界(lookback 设对);③ 无未来函数。"""
+    dates = _dates(90)  # 够 mom60(60)/vol20 的回看窗
+    T = dates[80]
+    frames = _build_frames(dates, future_after=T)
+    full = tmp_path / "full"
+    _write(full, frames)
+    trunc = tmp_path / "trunc"
+    _write(trunc, frames, max_trade_date=T)
+
+    # ① 新因子都进了 effective(有横截面区分度,没因数据缺失/报错被吞)
+    _, effective, degraded = compute_factor_matrix(
+        FactorContext(DataLayer(full), T, CODES), DEFAULT_FACTORS
+    )
+    for name in ["sp", "dy", "size", "mom60", "reversal5", "vol20", "turn20", "north_chg20"]:
+        assert name in effective, f"扩充因子 {name} 没生效(降级了):{degraded}"
+
+    # ② 有界 lookback(生产口径 max+5=65)与无界,因子矩阵逐值相等 —— 证明各因子 lookback 设够。
+    mw, _, _ = compute_factor_matrix(
+        FactorContext(DataLayer(full), T, CODES, lookback=65), DEFAULT_FACTORS
+    )
+    mu, _, _ = compute_factor_matrix(
+        FactorContext(DataLayer(full), T, CODES, lookback=None), DEFAULT_FACTORS
+    )
+    assert mw.sort("stock_code").equals(mu.sort("stock_code")), "有界窗口与无界不一致 → 某因子 lookback 太小"
+
+    # ③ 同一 T,截断 >T 数据后合成分逐值相等(含全部新因子)
+    a = score_universe(FactorContext(DataLayer(full), T, CODES)).scores.select(
+        ["stock_code", "score"]
+    ).sort("stock_code")
+    b = score_universe(FactorContext(DataLayer(trunc), T, CODES)).scores.select(
+        ["stock_code", "score"]
+    ).sort("stock_code")
+    assert a.equals(b), "截断未来数据后打分变化 → 扩充因子里有未来函数"
+
+
 def test_golden_no_future_function(tmp_path):
     """对历史日 T,截断 >T 数据重算打分,结果与全量一致(走 data.asof)。"""
-    dates = _dates(30)
-    T = dates[24]  # 之后还有 5 天「未来」数据
+    dates = _dates(70)
+    T = dates[64]  # 之后还有 5 天「未来」数据;65 日历史够 mom60(60)等长窗因子全生效
     frames = _build_frames(dates, future_after=T)
 
     cache_full = tmp_path / "full"
@@ -93,7 +134,7 @@ def test_golden_no_future_function(tmp_path):
     b = trunc.scores.select(cols).sort("stock_code")
     assert a.equals(b), "asof(T) 打分受到了 >T 未来数据影响 —— 未来函数!"
     assert full.coverage == 1.0
-    assert set(full.effective) == {"ep", "bp", "roe", "mom20", "north_chg5"}
+    assert set(full.effective) == {f.name for f in DEFAULT_FACTORS}  # 够窗口 → 全部内置因子生效
 
 
 def test_financial_uses_announced_not_reported(tmp_path):
@@ -110,16 +151,17 @@ def test_financial_uses_announced_not_reported(tmp_path):
 
 
 def test_degrade_when_northbound_missing(tmp_path):
-    """免费源无北向:north_chg5 降级丢弃,权重重分配,coverage 标注。"""
-    dates = _dates(30)
-    T = dates[24]
+    """免费源无北向:north_chg5/north_chg20 降级丢弃,权重重分配,coverage 标注。"""
+    dates = _dates(70)
+    T = dates[64]
     frames = _build_frames(dates, with_northbound=False)
     cache = tmp_path / "c"
     _write(cache, frames)
 
     res = score_universe(FactorContext(DataLayer(cache), T, CODES))
-    assert "north_chg5" not in res.effective
-    assert abs(res.coverage - 4 / 5) < 1e-9
+    assert "north_chg5" not in res.effective and "north_chg20" not in res.effective
+    n_north = sum(1 for f in DEFAULT_FACTORS if "north" in f.name)  # 两个北向因子都降级
+    assert abs(res.coverage - (len(DEFAULT_FACTORS) - n_north) / len(DEFAULT_FACTORS)) < 1e-9
     assert any("north_chg5" in d for d in res.degraded)
     # 仍能产出打分(基于剩余 4 因子)
     assert res.scores["score"].drop_nulls().len() == len(CODES)
@@ -150,8 +192,8 @@ def test_score_universe_with_custom_factor(tmp_path):
 
 def test_score_universe_builtin_subset_and_weight(tmp_path):
     """v2 因子库:builtin={名:权重} 只用列出的内置因子,开关/调权真正生效;None=全部内置等权(老行为)。"""
-    dates = _dates(30)
-    T = dates[24]
+    dates = _dates(70)
+    T = dates[64]
     cache = tmp_path / "c"
     _write(cache, _build_frames(dates))
 
@@ -178,7 +220,7 @@ def test_score_universe_builtin_subset_and_weight(tmp_path):
 
     # builtin=None → 老行为:全部内置等权。
     full = score_universe(ctx())
-    assert set(full.effective) == {"ep", "bp", "roe", "mom20", "north_chg5"}
+    assert set(full.effective) == {f.name for f in DEFAULT_FACTORS}
 
 
 def test_composite_score_weighting():
