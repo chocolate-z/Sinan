@@ -576,8 +576,8 @@ class TrainReq(BaseModel):
     top_quantile: float = 0.2
     train_threads: str = "auto"
     device: str = "auto"
-    # 特征面板并行度:None→1 串行(默认,最省内存防卡死);N>1 显式开多核提速(按 N 均分 duckdb
-    # 内存预算,总占用恒定一份、不随并行度倍增)。环境变量 SINAN_DUCKDB_MEMORY_MB 可调总预算。
+    # 特征面板并行度:None→auto(默认多核 min(核-1,4));1=串行。多核内存安全靠三重护栏:物化按窗口
+    # 裁剪(worker 侧)+ 预算按核均分 + 按内存给核数封顶(总占用恒一份,不卡死)。SINAN_DUCKDB_MEMORY_MB 调总预算。
     feature_workers: Optional[int] = None
 
 
@@ -616,9 +616,21 @@ def _sse_compute(compute) -> StreamingResponse:
 @app.post("/engine/train", dependencies=[Depends(require_internal)])
 def train(req: TrainReq) -> StreamingResponse:
     """walk-forward 训练(SSE 流式:特征面板进度 + 逐折 IS/OOS IC + done/error)。"""
+    from datetime import datetime, timedelta
+
     from .training import TrainGuardError, run_train
 
-    dl = DataLayer(config.cache_dir())
+    # 训练只用内置因子(回看已知且 ≤20 交易日)→ 安全设物化下界 = train_start-800 天:不再整段灌全历史
+    # (与 run_eod 同口径,黄金测试守「下界不改打分」)。前向标签只需 >=train_start 的未来价,下界不切;
+    # 上界不设(标签要前向价,见 datalayer.mat_until 注释)——特征面板的上界裁剪在 worker 侧另做。
+    mat_since = None
+    try:
+        mat_since = (datetime.strptime(req.train_start, "%Y-%m-%d") - timedelta(days=800)).strftime(
+            "%Y-%m-%d"
+        )
+    except (TypeError, ValueError):
+        mat_since = None
+    dl = DataLayer(config.cache_dir(), mat_since=mat_since)
     pdf = dl.asof("price", "99999999", fields=["stock_code", "trade_date"])
     if pdf.is_empty():
         # 预检失败:在开流前抛,返回非 2xx(api 按普通错误处理)。
@@ -646,8 +658,9 @@ def train(req: TrainReq) -> StreamingResponse:
                 train_threads=req.train_threads,
                 device=req.device,
                 on_progress=emit,
-                # 默认串行(最省内存,防大宇宙训练把内存灌爆致系统卡死);用户显式传 N>1 才开多核。
-                feature_workers=req.feature_workers if req.feature_workers is not None else 1,
+                # 默认多核(None→auto):特征物化已按窗口裁剪(worker 侧 [首日-缓冲,末日])+ 预算按核均分
+                # + 按内存给核数封顶,多核既不卡死(总内存恒一份)又快(每核小窗装得进、不溢写)。
+                feature_workers="auto" if req.feature_workers is None else req.feature_workers,
             )
         except TrainGuardError as e:
             # 422:违反 purge>=label_horizon 硬守卫(红线#1)。
@@ -667,17 +680,28 @@ class FactorQualityReq(BaseModel):
     n_deciles: int = 10
     codes: Optional[list[str]] = None
     custom: Optional[list[dict]] = None  # 自定义 DSL 因子 [{name, expr, group?}]
-    feature_workers: Optional[int] = None  # None→1 串行(默认,省内存防卡死);N>1 显式开多核(按 N 均分内存预算);自定义因子在场自动退串行
+    feature_workers: Optional[int] = None  # None→auto 多核(默认);1=串行。多核安全:窗口裁剪+预算均分+核数封顶;自定义因子在场自动退串行
 
 
 @app.post("/engine/factors/quality", dependencies=[Depends(require_internal)])
 def factors_quality(req: FactorQualityReq) -> StreamingResponse:
     """因子质检(SSE 流式:特征面板进度 + 逐因子 IC/ICIR/覆盖 + done/error)。"""
     from dataclasses import asdict
+    from datetime import datetime, timedelta
 
     from .factors.quality import factor_quality
 
-    dl = DataLayer(config.cache_dir())
+    # 无自定义因子(回看已知)→ 安全设物化下界 = start-800 天提速;有自定义(回看未知)→ 不设(载全历史,
+    # 靠 duckdb 溢写兜底,绝不少取致降级,红线#3)。上界不设(前向标签要未来价)。
+    mat_since = None
+    if not req.custom:
+        try:
+            mat_since = (datetime.strptime(req.start, "%Y-%m-%d") - timedelta(days=800)).strftime(
+                "%Y-%m-%d"
+            )
+        except (TypeError, ValueError):
+            mat_since = None
+    dl = DataLayer(config.cache_dir(), mat_since=mat_since)
     pdf = dl.asof("price", "99999999", fields=["stock_code", "trade_date"])
     if pdf.is_empty():
         raise HTTPException(status_code=400, detail="本地无行情缓存,先建缓存再做因子质检")
@@ -696,8 +720,8 @@ def factors_quality(req: FactorQualityReq) -> StreamingResponse:
             label_horizon=req.label_horizon,
             n_deciles=req.n_deciles,
             on_progress=emit,
-            # 默认串行(最省内存,防大宇宙质检把内存灌爆致系统卡死);用户显式传 N>1 才开多核。
-            feature_workers=req.feature_workers if req.feature_workers is not None else 1,
+            # 默认多核(None→auto):同训练——特征物化按窗口裁剪 + 预算均分 + 核数封顶,不卡死且快。
+            feature_workers="auto" if req.feature_workers is None else req.feature_workers,
         )
         return {
             "start": req.start,

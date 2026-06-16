@@ -161,6 +161,30 @@ def test_feature_panel_parallel_equals_sequential(tmp_path):
     assert par.equals(seq), "并行结果与串行不一致 —— 多核破坏了正确性!"
 
 
+def test_feature_panel_worker_window_cuts_forward(tmp_path):
+    """提速正确性③:多核 worker 只物化 [首日-缓冲, 末日] 特征窗口。缓存里窗口「之后」还有数据(前向),
+    worker 上界把它挡在物化外 —— 但特征只看 <=末日(asof,红线#1),故并行(裁窗)与串行(全缓存)逐值相等。
+    这正是「提速但不改结果」的核心:上界恒安全(特征绝不取未来),与前向标签(要未来价、不设上界)分开。"""
+    from sinan.factors.library import DEFAULT_FACTORS
+    from sinan.training.features import _build_panel_parallel
+
+    dates = _dates(80)
+    feat_dates = dates[20:66]  # 46 日(>= _PAR_MIN_DAYS 40 触发并行);窗口前 [0:20)、后 [66:80) 都有数据
+    cache = tmp_path / "c"
+    _write(cache, _frames(dates))  # 全 80 日缓存
+    uniq = sorted(set(feat_dates))
+
+    # 串行:全缓存、无窗口边界 = 基准真值。
+    seq = build_feature_panel(DataLayer(cache), CODES, feat_dates, workers=1).panel.sort(
+        ["date", "stock_code"]
+    )
+    # 并行:worker 物化 [首日-800, 末日],窗口之后的前向数据被上界挡掉 —— 特征不应受影响。
+    par = _build_panel_parallel(
+        DataLayer(cache), CODES, uniq, list(DEFAULT_FACTORS), workers=2
+    ).panel.sort(["date", "stock_code"])
+    assert par.equals(seq), "worker 特征窗口裁剪改变了特征值 —— 上界误切了回看内/当日数据!"
+
+
 def test_feature_panel_shape_and_degrade(tmp_path):
     dates = _dates(30)
     cache = tmp_path / "c"

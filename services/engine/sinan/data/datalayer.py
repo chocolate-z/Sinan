@@ -52,6 +52,7 @@ class DataLayer:
         con: "duckdb.DuckDBPyConnection | None" = None,
         *,
         mat_since: str | None = None,
+        mat_until: str | None = None,
         years: "Sequence[str] | None" = None,
         memory_limit_mb: int | None = None,
     ) -> None:
@@ -72,6 +73,12 @@ class DataLayer:
         # 「ann_date<=T 的最新一期」需保留全历史,且体量小不致 OOM。仅内置/模型路径(因子回看已知
         # 且≤窗口)由调用方设此界;自定义因子(回看未知)不设,靠下方磁盘溢写兜底,绝不少取致降级(红线#3)。
         self.mat_since = mat_since
+        # 物化上界(YYYY-MM-DD):非财务(日频)数据集只物化 trade_date<=mat_until 的行。质检/训练是
+        # 「历史区间」计算:特征只看 <=end(asof,红线#1)、前向标签只需 <=end+label_horizon —— 区间之后
+        # 的数据(对 2018 质检而言可能是之后好几年)全用不到。设上界把它们挡在物化外,装载量随区间收窄
+        # (对历史窗尤其显著,且每核小窗能装进预算不溢写)。上界恒安全(因子绝不读未来;前向标签上界由已知
+        # label_horizon 决定),与 mat_since(下界,受因子回看约束、自定义因子在场不设)正交。
+        self.mat_until = mat_until
         if owns_con:
             # 开 duckdb 磁盘溢写:大缓存物化超内存预算时落盘而非 OOM。纯安全网,零正确性影响。
             # memory_limit 设较保守值,使「可用内存紧张(开发服+本应用+子进程并发)」时提前溢写,
@@ -121,6 +128,10 @@ class DataLayer:
         if self.mat_since and dataset not in layout.FINANCIAL_PIT:
             conds.append(f"{layout.ASOF_DATE_COL[dataset]} >= ?")
             params.append(self.mat_since)
+        # 物化上界:同样仅非财务(日频)。挡掉区间之后用不到的行(前向标签上界由 label_horizon 保证)。
+        if self.mat_until and dataset not in layout.FINANCIAL_PIT:
+            conds.append(f"{layout.ASOF_DATE_COL[dataset]} <= ?")
+            params.append(self.mat_until)
         where = (" WHERE " + " AND ".join(conds)) if conds else ""
         # 分股文件与旧共享 part.parquet 共存可能让同一主键出现重复行 → 物化时按主键去重(留一条),
         # 杜绝同 (stock_code, 日期) 重复进入横截面/asof。财务类不在此去重:其 PIT 需保留同 end_date
