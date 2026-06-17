@@ -128,6 +128,8 @@ export const api = {
   coverage: () => request<any>(API_ENDPOINTS.data_coverage),
   logs: () => request<any[]>(API_ENDPOINTS.logs_list),
   settings: () => request<Record<string, unknown>>(API_ENDPOINTS.settings_list),
+  putSetting: (key: string, value: unknown) =>
+    request<{ ok?: boolean }>(API_ENDPOINTS.settings_update, { params: { key }, body: { value } }),
 
   // ── M1 交易域 ──────────────────────────────────────────────────────────
   signals: (date: string) => request<any[]>(API_ENDPOINTS.signals_list, { query: { date } }),

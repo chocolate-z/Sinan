@@ -46,7 +46,6 @@ const sectors = ref<Sector[]>([]);
 const indices = ref<IndexBar[]>([]); // 大盘指数条(缓存 index_ohlcv 的 EOD 收盘)
 const sort = ref<'desc' | 'asc'>('desc'); // 涨幅优先 / 跌幅优先
 const live = ref(true); // 当前数据是否实时(false=盘后/源不可达,回落收盘快照)
-const REFRESH_MS = 15000; // 实时自动刷新间隔
 let pollTimer: ReturnType<typeof setInterval> | undefined;
 
 // 下钻抽屉:板块 → 成分股 → 个股日K
@@ -141,13 +140,24 @@ const candleData = computed(() =>
   bars.value.map((b) => ({ o: b.open, h: b.high, l: b.low, c: b.close, v: b.volume ?? 0 })),
 );
 
-onMounted(() => {
+onMounted(async () => {
   if (!app.onboardingDone) return;
   loadSnapshot();
-  // 实时自动刷新(开抽屉下钻时暂停,避免打断查看)。
-  pollTimer = setInterval(() => {
-    if (app.onboardingDone && !openSector.value) loadSnapshot(true);
-  }, REFRESH_MS);
+  // 轮询间隔由「设置 · 自动刷新频率」(refresh_interval 分钟)驱动:0 / 手动 → 不自动刷,只手动刷新。
+  // 取不到设置就回落默认 5 分钟(与打包默认一致)。进页时读一次;改设置后下次进页生效。
+  let mins = 5;
+  try {
+    const v = Number((await api.settings())?.refresh_interval);
+    if (Number.isFinite(v)) mins = v;
+  } catch {
+    /* 取设置失败 → 用默认 5 分钟 */
+  }
+  if (mins > 0) {
+    // 开抽屉下钻时暂停,避免打断查看。
+    pollTimer = setInterval(() => {
+      if (app.onboardingDone && !openSector.value) loadSnapshot(true);
+    }, mins * 60_000);
+  }
 });
 onUnmounted(() => {
   if (pollTimer) clearInterval(pollTimer);

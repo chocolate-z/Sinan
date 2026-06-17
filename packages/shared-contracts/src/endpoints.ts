@@ -36,6 +36,7 @@ export const API_ENDPOINTS = {
   jobs_events: { method: 'GET', path: '/events/jobs/:id' },
   data_coverage: { method: 'GET', path: '/data/coverage' },
   settings_list: { method: 'GET', path: '/settings' },
+  settings_update: { method: 'PUT', path: '/settings/:key' },
   settings_put: { method: 'PUT', path: '/settings/:key' },
   logs_list: { method: 'GET', path: '/logs' },
   logs_stream: { method: 'GET', path: '/logs/stream' },
