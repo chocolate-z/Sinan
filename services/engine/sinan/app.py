@@ -346,6 +346,37 @@ def market_live_ep(req: MarketLiveReq) -> dict:
     return res
 
 
+# ── 基金穿透:把基金/ETF 拆到底层股票暴露 + 行业分布(按需拉持仓 → ann_date PIT 聚合)──────
+class FundLookthroughReq(BaseModel):
+    provider: str
+    token: Optional[str] = None
+    holdings: list[dict]  # [{fund_code, weight}]
+    asof: Optional[str] = None
+    refresh: bool = True  # 默认按需拉/刷新这几只基金的持仓再穿透;false=只用已有缓存
+
+
+@app.post("/engine/fund/lookthrough", dependencies=[Depends(require_internal)])
+def fund_lookthrough_ep(req: FundLookthroughReq) -> dict:
+    """基金穿透:对请求的基金(+权重)按 ann_date PIT 取最近披露持仓 → 聚合到股票/行业暴露。
+    refresh=True 时先按需拉这几只基金的持仓落盘(best-effort,无权限/不通则用已有缓存,诚实降级)。"""
+    from datetime import datetime
+
+    from .data import DataLayer
+    from .factors.fund import look_through
+
+    fund_codes = [h["fund_code"] for h in req.holdings if h.get("fund_code")]
+    if req.refresh and fund_codes:
+        try:
+            creds = RequestCredentialSource({req.provider: req.token} if req.token else {})
+            CacheBuilder(config.cache_dir(), build_registry(creds)).build_fund_portfolio(fund_codes)
+        except Exception:  # noqa: BLE001 — 拉取失败就用已有缓存穿透(诚实降级)
+            pass
+    dl = DataLayer(config.cache_dir())
+    asof = req.asof or datetime.now().strftime("%Y-%m-%d")
+    meta = _industry_meta(req.provider, req.token)
+    return look_through(dl, asof, req.holdings, meta)
+
+
 # ── 通达信(TDX)公式:校验 + 全市场检测扫描 ───────────────────────────────────
 class TdxValidateReq(BaseModel):
     src: str
