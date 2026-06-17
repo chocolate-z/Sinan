@@ -783,4 +783,14 @@ labels.py   build_forward_return_labels(hfq[T+h]/hfq[T]-1,前向,尾 h 日 null)
 - 前端指标页「自动挖因子」卡:train + oos 两个 RangePicker + 取前 K → 结果表(候选/类别/训练 IC·ICIR/样本外 IC·ICIR/**存为因子**,复用 createCustomFactor)+ 顶部红字警示。store `mine`/`saveMined`,表单/结果留 store。
 - 测:engine 3(候选全合法仅回看 DSL / 守卫拒过近 oos / 端到端 train+oos 双指标 + top-K 降序);engine **216**、api 74、契约 TS10/Py6、前端 86 全绿。**真起栈 + seed 真缓存**:curl `/indicators/mine` 跑通(25→top-5→样本外+警示)、422 守卫触发、preview 实测卡片+表单+门控。⚠ 合成数据 IC 全 0 是数据退化(确定式趋势无横截面 IC),非 bug;真行情才有区分。⚠ 挖因子跑两轮质检、候选是 DSL(回看未知 → 不窗口裁剪 → 串行),**慢**,UI 提示缩股票池/区间。
 
-**③ 基金穿透 = 待开(下一项,设计见 §11.27)。🔴 动手前必须先确认用户数据源/积分能拉基金持仓**(Tushare `fund_portfolio` 带 ann_date,要积分;或 akshare 东财)—— 这是 BYO 数据,拿不到就诚实降级。两大红线坑(PIT 按披露日 ann_date、季报只 top10 覆盖部分净值)+ 工作量 L,见 §11.27。当前 provider **没有**任何 fund 方法,要新增。
+**③ 基金穿透 = DONE(Phases 1/2/3 全做完,见 §11.30)。**
+
+### 11.30 基金穿透(三阶段全完成,未发版)
+
+用户「按你说的来」→ 开建基金穿透(把基金/ETF 拆到底层股票/行业暴露)。**探测先确认用户 Tushare token 有 `fund_portfolio` 权限**(probe code 0/8000 行,只读 token 存在性、没碰明文,红线#4),故走最好的路(季报持仓 + ann_date 干净 PIT)。三阶段提交:`d70fb46`(P1 数据)+`4a76934`(P2 聚合)+`e1cf643`(P3 UI/api),已推。
+
+- **Phase 1 数据地基**:契约 Capability 加 `FUND_PORTFOLIO`(spec/TS/Py 三绑定 + consistency 哨兵 12→13)。provider:base 默认抛 CapabilityNotSupported,tushare `fund_portfolio`(symbol→stock_code、ann/end_date→ISO)+ `_PROBE`/`_DECLARED`。数据集 `fund_portfolio`(layout 注册,主键含 ann_date 留住修订;PIT 列=ann_date)。🔴 `DataLayer.fund_holdings_asof`:专用 PIT,每只基金取 ann_date<=T 的最近一期完整快照(按 fund_code 分组、end_date/ann_date desc;**区别于按个股的财务 PIT**)。`cache build.build_fund_portfolio`(逐基金 best-effort)。
+- **Phase 2 聚合**:`factors/fund.py look_through`——基金×权重 → 股票级暴露(Σ 基金权重×净值占比,**跨基金同股票自动合并**)+ 行业 rollup;逐基金 + 整体「已披露覆盖率」如实给(季报只前十大≈30-70%,**绝不补满未披露**,红线#3)。`/engine/fund/lookthrough`(按需拉请求基金持仓落盘 → fund_holdings_asof 聚合;拉不到用已有缓存诚实降级);行业映射复用 `_industry_meta`。
+- **Phase 3 界面**:契约 `fund_lookthrough` 端点;api `ProvidersController.fundLookthrough`(激活源+token 转发,引擎不可达诚实空);前端独立「基金穿透」页(`/fund` + 侧栏交易组):填基金代码+权重 → 覆盖率横幅 + 个股暴露表 + 行业分布 + 逐基金披露明细;缺行业诚实空 + degraded 横幅。
+- **测试 6(engine)**:fund_holdings_asof PIT(未来公告不可见/按基金各取最近披露/同报告期取最新修订)+ look_through(暴露口径/缺行业诚实空/无披露降级)。engine **222**、api 74、契约 TS10/Py6、前端 86 全绿。**真起栈 + seed 真持仓 curl 跑通**(覆盖率=Σ权重×基金覆盖、600519 跨两基金正确聚合)+ preview 实测页面渲染。
+- ⚠ 装机端要真用得有 `fund_portfolio` 权限的数据源 + 拉一次基金持仓缓存(本验证用 seed throwaway;真用户走引导/穿透页按需拉)。⚠ 行业分布需个股行业元数据(Tushare 且已落 stock_basic),否则诚实空。**后续可选**:接进持仓页(持有基金自动穿透)、ETF 用日度 PCF 全持仓(覆盖更全)、穿透后叠加因子暴露分析。
