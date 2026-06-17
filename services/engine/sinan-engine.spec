@@ -32,6 +32,7 @@ for _pkg in (
     "numpy",
     "scipy",
     "sklearn",
+    "lightgbm",  # M3 v2 树模型(训练用);有原生 lib_lightgbm.dll,PyInstaller 静态分析抓不全 → collect_all 收
     "joblib",
     "threadpoolctl",
     "uvicorn",
@@ -61,6 +62,10 @@ _hidden += collect_submodules("sinan")
 _hidden += collect_submodules("sinan_contracts")
 _hidden += collect_submodules("uvicorn")
 _hidden += collect_submodules("sklearn")
+try:
+    _hidden += collect_submodules("lightgbm")
+except Exception:  # lightgbm 可选 extra,未装则跳过(装机训练表单走降级)
+    pass
 
 a = Analysis(
     ["sinan/__main__.py"],

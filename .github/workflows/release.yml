@@ -40,7 +40,7 @@ jobs:
       - name: 安装 engine 运行依赖 + PyInstaller
         run: |
           python -m pip install --upgrade pip
-          pip install -e packages/shared-contracts/python -e services/engine
+          pip install -e packages/shared-contracts/python -e "services/engine[lightgbm]"
           pip install pyinstaller
 
       - name: 冻结 sidecars(engine PyInstaller + api esbuild bundle + node/keyring)
