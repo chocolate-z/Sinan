@@ -63,6 +63,21 @@ async function autoWeight() {
   }
 }
 
+// 自动挖因子:训练集选 top-K → 样本外如实报 IC。表单/结果留 store(切菜单不丢)。
+const mineForm = ind.mineForm;
+const mineResult = computed(() => ind.mineResult);
+const mining = computed(() => ind.mining);
+const mineError = computed(() => ind.mineError);
+const mine = () => ind.mine();
+const savedMined = ref<Record<string, string>>({}); // 候选名 → 'ok' | 错误文案(存因子反馈)
+async function saveMined(c: { name: string; expr: string; group?: string }) {
+  const r = await ind.saveMined({ name: c.name, expr: c.expr, group: c.group });
+  savedMined.value = { ...savedMined.value, [c.name]: r.ok ? 'ok' : (r.note ?? '失败') };
+}
+function n3(v: number | null | undefined): string {
+  return v == null || Number.isNaN(v) ? '—' : (v >= 0 ? '' : '−') + Math.abs(v).toFixed(3);
+}
+
 onMounted(() => {
   ind.loadFactors();
   ind.loadCustom();
@@ -429,6 +444,134 @@ function focusEditor() {
       </div>
     </div>
 
+    <!-- 自动挖因子:训练集选 top-K → 样本外如实报 IC(数据窥探守卫) -->
+    <div class="card">
+      <div class="card-head">
+        <div>
+          <h3 class="card-title">自动挖因子</h3>
+          <span class="card-sub"
+            >候选公式在训练窗按 ICIR 选 top-K,再到不相交的样本外窗如实报 IC · 只信样本外列</span
+          >
+        </div>
+      </div>
+      <div class="card-pad">
+        <div class="form-row">
+          <div class="field field-range">
+            <label class="field-label">训练窗(选因子)</label>
+            <RangePicker
+              :model-value="[mineForm.train_start, mineForm.train_end]"
+              placeholder-start="训练起"
+              placeholder-end="训练止"
+              @update:model-value="
+                (v) => {
+                  mineForm.train_start = v[0];
+                  mineForm.train_end = v[1];
+                }
+              "
+            />
+          </div>
+          <div class="field field-range">
+            <label class="field-label">样本外窗(报业绩)</label>
+            <RangePicker
+              :model-value="[mineForm.oos_start, mineForm.oos_end]"
+              placeholder-start="样本外起"
+              placeholder-end="样本外止"
+              @update:model-value="
+                (v) => {
+                  mineForm.oos_start = v[0];
+                  mineForm.oos_end = v[1];
+                }
+              "
+            />
+          </div>
+          <div class="field narrow">
+            <label class="field-label">取前 K</label>
+            <input v-model.number="mineForm.top_k" class="input mono" type="number" min="1" />
+          </div>
+          <button
+            class="btn btn-primary run-btn"
+            :disabled="
+              mining ||
+              !mineForm.train_start ||
+              !mineForm.train_end ||
+              !mineForm.oos_start ||
+              !mineForm.oos_end
+            "
+            @click="mine"
+          >
+            {{ mining ? '挖因子中…' : '开始挖' }}
+          </button>
+        </div>
+        <p class="mine-hint cap">
+          样本外窗须在训练窗之后、且隔开 purge 个交易日(防标签泄漏)。挖因子要跑两轮质检,较慢 ——
+          建议先缩小股票池/区间。结果里训练 IC 高、样本外塌 = 过拟合噪声,别当真因子。
+        </p>
+        <p v-if="mineError" class="msg-err"><Icon name="alert" :size="14" /> {{ mineError }}</p>
+        <RunningBar
+          :active="mining"
+          :since="ind.mineStartedAt"
+          :progress="ind.mineProgress"
+          label="挖因子中 · 候选评估"
+        />
+
+        <template v-if="mineResult">
+          <div class="mine-warn">
+            <span class="status-warn"><Icon name="alert" :size="14" /></span>
+            <span class="mine-warn-txt">{{ mineResult.warning }}</span>
+          </div>
+          <table v-if="mineResult.results?.length" class="dt mine-tbl">
+            <thead>
+              <tr>
+                <th style="width: 160px">候选因子</th>
+                <th>类别</th>
+                <th class="num">训练 IC</th>
+                <th class="num">训练 ICIR</th>
+                <th class="num">样本外 IC</th>
+                <th class="num">样本外 ICIR</th>
+                <th class="mine-act-th">操作</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="r in mineResult.results" :key="r.name">
+                <td>
+                  <div class="mine-name">
+                    <span class="mn">{{ r.name }}</span>
+                    <span class="mx mono">{{ r.expr }}</span>
+                  </div>
+                </td>
+                <td>
+                  <span class="chip">{{ groupLabel(r.group) }}</span>
+                </td>
+                <td class="num dim">{{ n3(r.train_ic) }}</td>
+                <td class="num dim">{{ n3(r.train_icir) }}</td>
+                <td class="num">{{ n3(r.oos_ic) }}</td>
+                <td class="num strong">{{ n3(r.oos_icir) }}</td>
+                <td class="mine-act">
+                  <button
+                    v-if="savedMined[r.name] !== 'ok'"
+                    class="btn btn-ghost btn-sm"
+                    @click="saveMined(r)"
+                  >
+                    存为因子
+                  </button>
+                  <span v-else class="status-ok saved-ok">已存 ✓</span>
+                  <span
+                    v-if="savedMined[r.name] && savedMined[r.name] !== 'ok'"
+                    class="status-warn save-err"
+                    >{{ savedMined[r.name] }}</span
+                  >
+                </td>
+              </tr>
+            </tbody>
+          </table>
+          <div v-else class="empty mini-empty">
+            <div class="empty-title">没挖到候选</div>
+            <div class="empty-desc">换个区间或缩小股票池再试。</div>
+          </div>
+        </template>
+      </div>
+    </div>
+
     <!-- 自定义因子 DSL 编辑器(防未来函数:仅回看算子)-->
     <div class="card">
       <div class="card-head">
@@ -752,6 +895,62 @@ function focusEditor() {
   line-height: 1.5;
   border-radius: var(--r-sm);
   background: var(--bg-elevated);
+}
+
+/* 自动挖因子 */
+.mine-hint {
+  margin: 10px 0 0;
+  color: var(--text-3);
+  line-height: 1.6;
+}
+.mine-warn {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 14px 0 6px;
+  padding: 9px 12px;
+  border-radius: var(--r-sm);
+  background: var(--status-warn-bg, var(--bg-elevated));
+  border: 0.5px solid var(--status-warn);
+}
+.mine-warn-txt {
+  font-size: 12px;
+  line-height: 1.55;
+  color: var(--text-2);
+}
+.mine-tbl {
+  margin-top: 6px;
+}
+.mine-name {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.mine-name .mn {
+  font-weight: 500;
+  color: var(--text-1);
+  font-size: 12.5px;
+}
+.mine-name .mx {
+  font-size: 10.5px;
+  color: var(--text-3);
+}
+.mine-tbl .strong {
+  color: var(--text-1);
+  font-weight: 600;
+}
+.mine-tbl .dim {
+  color: var(--text-3);
+}
+.mine-act {
+  white-space: nowrap;
+}
+.saved-ok {
+  font-size: 12px;
+}
+.save-err {
+  font-size: 10.5px;
+  margin-left: 6px;
 }
 .factor-desc {
   font-size: 12.5px;

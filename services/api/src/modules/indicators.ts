@@ -13,6 +13,7 @@ import {
   Post,
   Put,
   Query,
+  UnprocessableEntityException,
 } from '@nestjs/common';
 import { Repository } from '../db/repository.js';
 import { ENGINE_CLIENT, EngineError, type EngineClient } from '../engine/engine.client.js';
@@ -114,6 +115,90 @@ export class IndicatorsController {
   async validate(@Body() body: { expr?: string }): Promise<any> {
     if (!body?.expr) throw new BadRequestException('expr 必填');
     return this.engine.indicatorsValidate(body.expr);
+  }
+
+  /** 自动挖因子:候选公式训练集选 top-K → 样本外如实报 IC。422=窗口违反诚实样本外守卫。 */
+  @Post('indicators/mine')
+  async mine(
+    @Body()
+    body: {
+      train_start?: string;
+      train_end?: string;
+      oos_start?: string;
+      oos_end?: string;
+      label_horizon?: number;
+      purge?: number;
+      top_k?: number;
+      codes?: string[];
+      progress_id?: string;
+    },
+  ): Promise<any> {
+    const { train_start, train_end, oos_start, oos_end, progress_id: progressId } = body ?? {};
+    if (!train_start || !train_end || !oos_start || !oos_end) {
+      throw new BadRequestException('train_start / train_end / oos_start / oos_end 必填');
+    }
+    const t0 = Date.now();
+    this.repo.logInsert({
+      level: 'info',
+      source: 'indicators',
+      message: `自动挖因子开始 · 训练 ${train_start}~${train_end} · 样本外 ${oos_start}~${oos_end}`,
+    });
+    let result: any;
+    try {
+      result = await this.engine.mineFactors(
+        {
+          train_start,
+          train_end,
+          oos_start,
+          oos_end,
+          label_horizon: body?.label_horizon,
+          purge: body?.purge,
+          top_k: body?.top_k,
+          codes: body?.codes,
+        },
+        (ev) => {
+          if (ev?.stage === 'select') {
+            this.repo.logInsert({
+              level: 'info',
+              source: 'indicators',
+              message: `挖因子·训练集评 ${ev.n_candidates} 个候选`,
+            });
+          } else if (ev?.stage === 'oos') {
+            this.repo.logInsert({
+              level: 'info',
+              source: 'indicators',
+              message: `挖因子·样本外检验 top-${ev.n_top}`,
+            });
+          }
+          if (progressId) this.bus.emit(progressId, ev);
+        },
+      );
+    } catch (e) {
+      const detail =
+        e instanceof EngineError
+          ? typeof e.detail === 'string'
+            ? e.detail
+            : JSON.stringify(e.detail)
+          : String(e);
+      this.repo.logInsert({
+        level: 'error',
+        source: 'indicators',
+        message: `自动挖因子失败 · ${detail}`,
+      });
+      if (e instanceof EngineError) {
+        if (e.status === 422) throw new UnprocessableEntityException(detail); // 窗口违反诚实样本外
+        if (e.status === 400) throw new BadRequestException(detail);
+      }
+      throw e;
+    } finally {
+      if (progressId) this.bus.complete(progressId);
+    }
+    this.repo.logInsert({
+      level: 'info',
+      source: 'indicators',
+      message: `自动挖因子完成 · 测 ${result.candidates_tested ?? '?'} 候选 · top ${result.top_k ?? '?'} · ${((Date.now() - t0) / 1000).toFixed(1)}s`,
+    });
+    return result;
   }
 
   @Post('custom-factors')

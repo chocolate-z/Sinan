@@ -197,6 +197,17 @@ export const api = {
   }) => request<any>(API_ENDPOINTS.indicators_quality, { query: q }),
   validateIndicator: (expr: string) =>
     request<any>(API_ENDPOINTS.indicators_validate, { body: { expr } }),
+  mineFactors: (body: {
+    train_start: string;
+    train_end: string;
+    oos_start: string;
+    oos_end: string;
+    label_horizon?: number;
+    purge?: number;
+    top_k?: number;
+    codes?: string[];
+    progress_id?: string; // 进度通道 id(api 据此把候选评估进度广播回前端);非取数参数
+  }) => request<any>(API_ENDPOINTS.indicators_mine, { body }),
   createCustomFactor: (body: { name: string; expr: string; group?: string; weight?: number }) =>
     request<any>(API_ENDPOINTS.custom_factors_create, { body }),
   customFactors: () => request<any[]>(API_ENDPOINTS.custom_factors_list),

@@ -4,6 +4,7 @@ import {
   type CacheBuildRequest,
   type EngineClient,
   type FactorQualityRequest,
+  type MineRequest,
   type PaperRunRequest,
   type PricesRequest,
   type PricesResult,
@@ -23,6 +24,7 @@ export class FakeEngineClient implements EngineClient {
     private readonly backtestResult: any = null,
     private readonly trainResult: any = null,
     private readonly qualityResult: any = null,
+    private readonly mineResult: any = null,
   ) {}
 
   async stocksSearch(
@@ -210,6 +212,38 @@ export class FakeEngineClient implements EngineClient {
           },
         ],
         degraded: ['north_chg5:100/100 天降级(数据缺失)'],
+      }
+    );
+  }
+
+  async mineFactors(req: MineRequest, onEvent?: (ev: any) => void): Promise<any> {
+    onEvent?.({ stage: 'select', n_candidates: 30 });
+    onEvent?.({ stage: 'oos', n_top: req.top_k ?? 10 });
+    if (this.mineResult && this.mineResult.__error) {
+      throw new EngineError(this.mineResult.__error.status, this.mineResult.__error.detail);
+    }
+    return (
+      this.mineResult ?? {
+        candidates_tested: 30,
+        top_k: 1,
+        train_window: [req.train_start, req.train_end],
+        oos_window: [req.oos_start, req.oos_end],
+        label_horizon: req.label_horizon ?? 5,
+        purge: req.purge ?? req.label_horizon ?? 5,
+        results: [
+          {
+            name: 'cand_mom20',
+            expr: 'close / delay(close, 20) - 1',
+            group: 'momentum',
+            train_ic: 0.07,
+            train_icir: 0.6,
+            train_coverage: 0.95,
+            oos_ic: 0.03,
+            oos_icir: 0.25,
+            oos_coverage: 0.95,
+          },
+        ],
+        warning: '在 30 个候选里按训练集 ICIR 选 top-1;只信样本外列。',
       }
     );
   }

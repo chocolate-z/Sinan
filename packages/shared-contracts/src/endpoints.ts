@@ -64,6 +64,7 @@ export const API_ENDPOINTS = {
   models_delete: { method: 'DELETE', path: '/models/:id' },
   indicators_quality: { method: 'GET', path: '/indicators/quality' },
   indicators_validate: { method: 'POST', path: '/indicators/validate' },
+  indicators_mine: { method: 'POST', path: '/indicators/mine' },
   factors_list: { method: 'GET', path: '/factors' },
   factors_update: { method: 'PUT', path: '/factors/:name' },
   custom_factors_create: { method: 'POST', path: '/custom-factors' },

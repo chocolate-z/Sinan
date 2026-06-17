@@ -117,6 +117,17 @@ export interface FactorQualityRequest {
   custom?: Array<{ name: string; expr: string; group?: string; weight?: number }>; // 自定义 DSL 因子(M4 v3;weight 合成加权,质检忽略)
 }
 
+export interface MineRequest {
+  train_start: string;
+  train_end: string;
+  oos_start: string;
+  oos_end: string;
+  label_horizon?: number;
+  purge?: number;
+  top_k?: number;
+  codes?: string[];
+}
+
 /** engine 返回非 2xx 时抛出,携带状态码与 detail,供 api 决定转发何种 HTTP 错误。 */
 export class EngineError extends Error {
   constructor(
@@ -173,6 +184,8 @@ export interface EngineClient {
   train(req: TrainRequest, onEvent?: (ev: any) => void): Promise<any>;
   /** 因子质检(真实 IC/ICIR/覆盖度 + IC 时序 + 十分位分层)。SSE 流式:onEvent 收逐因子进度;无缓存/区间过短抛 EngineError(400)。 */
   factorQuality(req: FactorQualityRequest, onEvent?: (ev: any) => void): Promise<any>;
+  /** 自动挖因子:候选公式训练集选 top-K → 样本外如实报 IC(SSE 流式)。 */
+  mineFactors(req: MineRequest, onEvent?: (ev: any) => void): Promise<any>;
   /** 自定义因子 DSL 校验(白名单 + 回看算子,结构上防未来函数)。返回 ok/errors/fields/functions。 */
   indicatorsValidate(expr: string): Promise<any>;
   /** 因子库元数据(内置因子名/中文名/类别/方向/说明/所需数据)。给 api 列因子库,引擎是唯一真源。 */
@@ -489,6 +502,11 @@ export class HttpEngineClient implements EngineClient {
   async factorQuality(req: FactorQualityRequest, onEvent?: (ev: any) => void): Promise<any> {
     // SSE 流式:特征面板 + 逐因子 IC 进度 → onEvent;无超时。
     return this.slowPostStream('/engine/factors/quality', req, onEvent);
+  }
+
+  async mineFactors(req: MineRequest, onEvent?: (ev: any) => void): Promise<any> {
+    // SSE 流式:候选评估 + 样本外检验进度 → onEvent;无超时(挖因子跑两轮质检,慢)。
+    return this.slowPostStream('/engine/factors/mine', req, onEvent);
   }
 
   async indicatorsValidate(expr: string): Promise<any> {

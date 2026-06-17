@@ -29,6 +29,19 @@ interface IndicatorsState {
   validation: any | null;
   customList: any[];
   builtinList: any[]; // 内置因子(GET /factors:元数据 + 启用/权重),与自定义并到因子库表
+  // 自动挖因子(公式搜索:训练集选 → 样本外报)
+  mineForm: {
+    train_start: string;
+    train_end: string;
+    oos_start: string;
+    oos_end: string;
+    top_k: number;
+  };
+  mineResult: any | null;
+  mining: boolean;
+  mineError: string | null;
+  mineProgress: RunProgress | null;
+  mineStartedAt: number;
 }
 
 function detailStr(e: unknown): string {
@@ -54,6 +67,12 @@ export const useIndicatorsStore = defineStore('indicators', {
     validation: null,
     customList: [],
     builtinList: [],
+    mineForm: { train_start: '', train_end: '', oos_start: '', oos_end: '', top_k: 10 },
+    mineResult: null,
+    mining: false,
+    mineError: null,
+    mineProgress: null,
+    mineStartedAt: 0,
   }),
   actions: {
     async loadCustom() {
@@ -102,6 +121,44 @@ export const useIndicatorsStore = defineStore('indicators', {
         await this.loadCustom();
       }
       return { ok: true, applied: plan.targets.length };
+    },
+    // 自动挖因子:候选公式训练集选 top-K → 样本外如实报 IC。进度走同 quality 的 SSE 广播通道。
+    async mine() {
+      const f = this.mineForm;
+      if (!f.train_start || !f.train_end || !f.oos_start || !f.oos_end) return;
+      this.mining = true;
+      this.mineStartedAt = Date.now();
+      this.mineProgress = null;
+      this.mineError = null;
+      const progressId = crypto.randomUUID();
+      let unsub: (() => void) | null = null;
+      try {
+        unsub = subscribeJob(progressId, (ev) => {
+          this.mineProgress = reduceProgress(this.mineProgress, ev, Date.now());
+        });
+        this.mineResult = await api.mineFactors({ ...f, progress_id: progressId });
+      } catch (e) {
+        this.mineError = detailStr(e);
+        this.mineResult = null;
+      } finally {
+        if (unsub) unsub();
+        this.mineProgress = null;
+        this.mining = false;
+      }
+    },
+    // 把挖出来的候选存成自定义因子(复用现成 createCustomFactor → 进因子库表,可启用/调权/质检)。
+    async saveMined(c: {
+      name: string;
+      expr: string;
+      group?: string;
+    }): Promise<{ ok: boolean; note?: string }> {
+      try {
+        await api.createCustomFactor({ name: c.name, expr: c.expr, group: c.group });
+        await this.loadCustom();
+        return { ok: true };
+      } catch (e) {
+        return { ok: false, note: detailStr(e) };
+      }
     },
     async validateExpr() {
       if (!this.expr.trim()) return;
