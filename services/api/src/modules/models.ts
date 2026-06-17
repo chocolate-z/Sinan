@@ -57,6 +57,12 @@ export class ModelsController {
         source: 'train',
         message: `训练·特征面板 ${ev.done}/${ev.total} 日(${ev.date})`,
       });
+    } else if (ev?.stage === 'labels') {
+      this.repo.logInsert({
+        level: 'info',
+        source: 'train',
+        message: `训练·${ev.message ?? '计算前向标签中…'}`,
+      });
     } else if (ev?.stage === 'folds') {
       this.repo.logInsert({
         level: 'info',

@@ -36,6 +36,12 @@ describe('reduceProgress', () => {
     expect(f2).toEqual({ label: '逐因子 IC', done: 2, total: 5, phaseSince: 60000 });
   });
 
+  it('labels:不确定进度阶段(total:0),让 RunningBar 退回滚动条 + 阶段名,不停在特征面板 100%', () => {
+    const feat: RunProgress = { label: '特征面板', done: 100, total: 100, phaseSince: 1 };
+    const lab = reduceProgress(feat, { stage: 'labels', message: '计算前向标签中…' }, 9000);
+    expect(lab).toEqual({ label: '计算前向标签', done: 0, total: 0, phaseSince: 9000 });
+  });
+
   it('total<=0 的 features / 未知事件 / null:不产生假进度', () => {
     expect(reduceProgress(null, { stage: 'features', done: 0, total: 0 }, 1)).toBeNull();
     const prev: RunProgress = { label: '特征面板', done: 5, total: 100, phaseSince: 1 };

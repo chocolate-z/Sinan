@@ -40,6 +40,12 @@ export class IndicatorsController {
         source: 'indicators',
         message: `质检·特征面板 ${ev.done}/${ev.total} 日(${ev.date})`,
       });
+    } else if (ev?.stage === 'labels') {
+      this.repo.logInsert({
+        level: 'info',
+        source: 'indicators',
+        message: `质检·${ev.message ?? '计算前向标签中…'}`,
+      });
     } else if (ev?.stage === 'scoring') {
       this.repo.logInsert({
         level: 'info',

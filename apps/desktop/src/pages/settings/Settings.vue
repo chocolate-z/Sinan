@@ -315,8 +315,8 @@ onMounted(refresh);
         </div>
         <div class="grow">
           <div class="row-main">
-            <div class="row-label">盘后数据落库</div>
-            <div class="row-desc">每个交易日收盘后自动下载日线与基本面</div>
+            <div class="row-label">盘后自动跑一轮</div>
+            <div class="row-desc">每个交易日收盘后自动出信号 + 模拟撮合记账(不含下载数据)</div>
           </div>
           <span class="badge badge-ok"
             ><span class="dot" />{{ dailyRunTime ? `${dailyRunTime} 自动` : '已启用' }}</span

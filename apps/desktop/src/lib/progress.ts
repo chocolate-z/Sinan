@@ -10,6 +10,7 @@ export interface RunProgress {
 }
 
 const PHASE_FEATURES = '特征面板';
+const PHASE_LABELS = '计算前向标签';
 const PHASE_FOLDS = 'Walk-forward 拟合';
 const PHASE_FACTORS = '逐因子 IC';
 
@@ -23,6 +24,11 @@ export function reduceProgress(prev: RunProgress | null, ev: any, now: number): 
   if (ev?.stage === 'features' && ev.total > 0) {
     const phaseSince = prev?.label === PHASE_FEATURES ? prev.phaseSince : now;
     return { label: PHASE_FEATURES, done: ev.done ?? 0, total: ev.total, phaseSince };
+  }
+  // 算前向标签:不分页的整段计算(无 done/total)→ total:0 标记「不确定进度」,
+  // RunningBar 显阶段名而非停在特征面板 100% 像卡死。
+  if (ev?.stage === 'labels') {
+    return { label: PHASE_LABELS, done: 0, total: 0, phaseSince: now };
   }
   if (ev?.stage === 'folds' && ev.n_folds > 0) {
     return { label: PHASE_FOLDS, done: 0, total: ev.n_folds, phaseSince: now };

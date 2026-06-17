@@ -84,7 +84,9 @@ const etaText = computed(() => {
       {{ progress!.label }} {{ pct }}%<template v-if="etaText"> · 约剩 {{ etaText }}</template> ·
       已运行 {{ elapsedText }}
     </span>
-    <span v-else class="rb-label mono">{{ label }} · 已运行 {{ elapsedText }}</span>
+    <span v-else class="rb-label mono"
+      >{{ progress?.label ?? label }} · 已运行 {{ elapsedText }}</span
+    >
   </div>
 </template>
 

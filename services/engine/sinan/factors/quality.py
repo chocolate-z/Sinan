@@ -69,7 +69,7 @@ def factor_quality(
     fp = build_feature_panel(
         data, codes, dates, all_factors, on_progress=on_progress, workers=feature_workers
     )
-    labels = build_forward_return_labels(data, codes, label_horizon)
+    labels = build_forward_return_labels(data, codes, label_horizon, on_progress=on_progress)
     samples = fp.panel.join(labels, on=["date", "stock_code"], how="left")
     uniq = sorted(set(dates))
     _emit({"stage": "scoring", "n_factors": len(all_factors), "message": "特征面板就绪,开始逐因子算 IC"})

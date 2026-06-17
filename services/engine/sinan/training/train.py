@@ -173,7 +173,7 @@ def run_train(
     fp = build_feature_panel(
         data, codes, train_dates, on_progress=on_progress, workers=feature_workers
     )
-    labels = build_forward_return_labels(data, codes, label_horizon)
+    labels = build_forward_return_labels(data, codes, label_horizon, on_progress=on_progress)
     samples = fp.panel.join(labels, on=["date", "stock_code"], how="left")
 
     # 全局丢弃「整列无有效值」的特征(如免费源缺北向),诚实记录降级。

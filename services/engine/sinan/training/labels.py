@@ -11,7 +11,7 @@
 
 from __future__ import annotations
 
-from typing import Sequence
+from typing import Callable, Optional, Sequence
 
 import polars as pl
 
@@ -25,13 +25,22 @@ def build_forward_return_labels(
     data: DataLayer,
     codes: Sequence[str],
     horizon: int,
+    on_progress: Optional[Callable[[dict], None]] = None,
 ) -> pl.DataFrame:
     """返回长表 [date, stock_code, label]。label 为 (date, code) 的未来 horizon 日后复权收益。
 
     horizon 必须 >= 1。最后 horizon 个交易日(每股各自)无未来价 → label = null。
+    on_progress:可选心跳。算标签要整读全 A 全历史价格(比逐日特征面板更慢且不分页),发一条
+    {stage:'labels'} 让前端在「特征面板 100%」之后显「计算前向标签中…」,别让用户以为卡死。
     """
     if horizon < 1:
         raise ValueError(f"label horizon 必须 >= 1,收到 {horizon}")
+
+    if on_progress:
+        try:
+            on_progress({"stage": "labels", "message": "计算前向标签中(全市场全历史,尾部 horizon 日无未来标签)…"})
+        except Exception:  # noqa: BLE001 — 心跳绝不影响计算
+            pass
 
     px = data.asof(
         "price", _FAR_FUTURE, fields=["stock_code", "trade_date", "close"], codes=codes
