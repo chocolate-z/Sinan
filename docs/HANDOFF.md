@@ -804,3 +804,26 @@ labels.py   build_forward_return_labels(hfq[T+h]/hfq[T]-1,前向,尾 h 日 null)
 - **没做(查实后会变死控件,别盲做)**:① **行情排序加「成交额」**—— 行情快照的 sector/股票数据里**没带成交额字段**,加排序选项是死的,要先让 engine snapshot 带上 amount 才行;② **总览空态「查看上次结果」次按钮** —— 「上次结果」指向不明(回测?信号?),语义没定清前是个含糊按钮。两者都不是「纯前端小改」,要么补后端数据要么先定义清楚,否则违反红线#3(不上没用的假控件)。
 
 前端 vitest **90**(+4)、契约 TS10/Py6、build/lint 全绿。
+
+### 11.32 v2 发版就绪评估 + 代码侧发版准备(未发版)
+
+用户问「还差什么就能发 v2」。跑了一轮 4 维度并行审计(功能完整性/打包流水线/遗留占位红线/验证缺口)。**结论:v2 功能开发基本做完(无缺页、无死控件),剩下几乎全是发布工程 + 真机/真数据验证。** 据审计把能在代码侧做掉的发版准备做了(`715d7fc`+`0a6305c`,已推),剩下需用户机器/账号的列在下面。
+
+**已做(代码侧发版准备):**
+
+- 🔴 **LightGBM 冻进 engine sidecar**(`715d7fc`):之前训练表单有「LightGBM·树」选项,但 release.yml 装 engine 不带 lightgbm、spec 不收集 → 装机端选了就 raw ImportError(死功能,审计标 blocker)。改:release.yml `pip install -e "services/engine[lightgbm]"` + `sinan-engine.spec` collect_all/collect_submodules 加 lightgbm(原生 lib_lightgbm.dll,静态分析抓不全)。只训练用,推理纯 numpy。
+- 🔴 **版本号 0.1.6→0.2.0**(`715d7fc`):四处同步(package.json/tauri.conf.json/Cargo.toml/Cargo.lock)。否则撞已发 v0.1.6-beta、updater 不推老用户。
+- **设置页「盘后数据落库」诚实文案**(`0a6305c`):原称「自动下载日线与基本面」,实际只跑出信号+模拟撮合 → 改诚实(红线#3)。
+- **算前向标签阶段补进度心跳**(`0a6305c`):labels.py 加 on_progress({stage:labels}),train/quality 透传,前端 reduceProgress→total:0 退回滚动条 + 「计算前向标签」(不再停在特征面板 100% 像卡死)。
+
+**剩下的发版 blocker(需用户机器/账号,我做不了):**
+
+1. **开 PR feat/v0.1.6-polish → main 过 CI**:ci.yml 只在 main/PR 触发,这批 v2(§11.24~§11.32)从没过境外 CI;本机无 gh/token。链接:`github.com/chocolate-z/Sinan/pull/new/feat/v0.1.6-polish`。CI 全绿后 merge → 在 main 打 `v0.2.0` tag 触发 release.yml。⚠ 关注 CI 装 `[lightgbm]` 后 engine job 能否在境外 runner 装上跑树测试。
+2. **干净机装机 smoke**:自 v0.1.0 就欠、一次没做。真·无 Python/Node 机器双击装,走「引导→建缓存→质检→训练(含 LightGBM,真跑一次确认 dll 收全)→回测→挖因子→基金穿透」一条龙;关窗无孤儿、token 落钥匙串持久;排障看 `%APPDATA%\Sinan\runtime\{shell,engine,api}.log`。
+
+**发版前应做(质量/红线,真数据验,非硬阻断):**
+
+- 真 token/真数据各验一次:自动挖因子(合成数据 IC 全 0,没验过真区分度)、基金穿透(真季报 ann_date PIT + 覆盖率不脑补)、模型 vs 等权对比点亮、因子库串打分/ICIR 定权真改变选股输出、多基准线 + 行情指数条(需重建一次含 index_ohlcv 的缓存)。
+- ⚠ 用户真实 dev DB 损坏(`%APPDATA%\Sinan\sinan.db` malformed)——干净机 smoke 时确认全新库正常 + 升级安装不继承坏库(确认非代码级写库不原子)。
+
+**可推迟(不挡 v2):** 删 Locked.vue 死代码、行情成交额排序(需补 engine amount 字段)、代码签名(SmartScreen)、调度可配控件、注释接地气化(~164 文件)。/news=M5 不在 v2 范围。
