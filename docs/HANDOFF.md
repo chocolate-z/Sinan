@@ -794,3 +794,13 @@ labels.py   build_forward_return_labels(hfq[T+h]/hfq[T]-1,前向,尾 h 日 null)
 - **Phase 3 界面**:契约 `fund_lookthrough` 端点;api `ProvidersController.fundLookthrough`(激活源+token 转发,引擎不可达诚实空);前端独立「基金穿透」页(`/fund` + 侧栏交易组):填基金代码+权重 → 覆盖率横幅 + 个股暴露表 + 行业分布 + 逐基金披露明细;缺行业诚实空 + degraded 横幅。
 - **测试 6(engine)**:fund_holdings_asof PIT(未来公告不可见/按基金各取最近披露/同报告期取最新修订)+ look_through(暴露口径/缺行业诚实空/无披露降级)。engine **222**、api 74、契约 TS10/Py6、前端 86 全绿。**真起栈 + seed 真持仓 curl 跑通**(覆盖率=Σ权重×基金覆盖、600519 跨两基金正确聚合)+ preview 实测页面渲染。
 - ⚠ 装机端要真用得有 `fund_portfolio` 权限的数据源 + 拉一次基金持仓缓存(本验证用 seed throwaway;真用户走引导/穿透页按需拉)。⚠ 行业分布需个股行业元数据(Tushare 且已落 stock_basic),否则诚实空。**后续可选**:接进持仓页(持有基金自动穿透)、ETF 用日度 PCF 全持仓(覆盖更全)、穿透后叠加因子暴露分析。
+
+### 11.31 v2.4 快赢:回测导出 + 设置自动刷新可改(未发版)
+
+清 §11.25 backlog 里的小快赢。**做了两个干净的,另两个查实后没做(会变死控件,如实记下原因)。**
+
+- **回测结果导出 = DONE(`37f895d`)**:回测页结果区加导出工具条(净值 CSV / 成交 CSV / 全量 JSON,Blob 下载,纯前端、导出回测原样不改数值)。CSV 序列化抽 `lib/export.toCsv` 纯函数(逗号/引号/换行转义、null→空、对象→JSON)+ 4 vitest(在 `test/export.test.ts` —— ⚠ 前端测试目录是 `apps/desktop/test/`,不是 src 旁边,vitest include=`test/**/*.test.ts`)。无结果/数据按钮禁用。
+- **设置页自动刷新可改 = DONE(`37504f6`)**:🔴 查出 `refresh_interval`(默认 5 分钟)之前只在设置页只读显示,行情页却硬编 15s 轮询 —— **显示与行为不一致 = 死设置**。接通:契约 `settings_update`(PUT /settings/:key 三绑定)+ `client.putSetting`;设置页改 Segmented(每分钟/3/5/手动)点选写回(乐观更新+失败回滚,未设回落 5 分钟高亮);**行情页轮询改读 refresh_interval**(0/手动→只手动刷;取不到回落 5 分钟;改设置下次进页生效)。后端 PUT settings/:key 早就绪无需改。真起栈实测 Segmented 点选 UI→api→DB 往返。
+- **没做(查实后会变死控件,别盲做)**:① **行情排序加「成交额」**—— 行情快照的 sector/股票数据里**没带成交额字段**,加排序选项是死的,要先让 engine snapshot 带上 amount 才行;② **总览空态「查看上次结果」次按钮** —— 「上次结果」指向不明(回测?信号?),语义没定清前是个含糊按钮。两者都不是「纯前端小改」,要么补后端数据要么先定义清楚,否则违反红线#3(不上没用的假控件)。
+
+前端 vitest **90**(+4)、契约 TS10/Py6、build/lint 全绿。
