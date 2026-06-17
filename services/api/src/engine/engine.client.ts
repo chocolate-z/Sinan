@@ -128,6 +128,14 @@ export interface MineRequest {
   codes?: string[];
 }
 
+export interface FundLookthroughRequest {
+  provider: string;
+  token?: string | null;
+  holdings: Array<{ fund_code: string; weight: number }>;
+  asof?: string;
+  refresh?: boolean;
+}
+
 /** engine 返回非 2xx 时抛出,携带状态码与 detail,供 api 决定转发何种 HTTP 错误。 */
 export class EngineError extends Error {
   constructor(
@@ -186,6 +194,8 @@ export interface EngineClient {
   factorQuality(req: FactorQualityRequest, onEvent?: (ev: any) => void): Promise<any>;
   /** 自动挖因子:候选公式训练集选 top-K → 样本外如实报 IC(SSE 流式)。 */
   mineFactors(req: MineRequest, onEvent?: (ev: any) => void): Promise<any>;
+  /** 基金穿透:基金(+权重)→ 底层股票/行业暴露 + 诚实覆盖率(按需拉持仓 → ann_date PIT)。 */
+  fundLookthrough(req: FundLookthroughRequest): Promise<any>;
   /** 自定义因子 DSL 校验(白名单 + 回看算子,结构上防未来函数)。返回 ok/errors/fields/functions。 */
   indicatorsValidate(expr: string): Promise<any>;
   /** 因子库元数据(内置因子名/中文名/类别/方向/说明/所需数据)。给 api 列因子库,引擎是唯一真源。 */
@@ -507,6 +517,10 @@ export class HttpEngineClient implements EngineClient {
   async mineFactors(req: MineRequest, onEvent?: (ev: any) => void): Promise<any> {
     // SSE 流式:候选评估 + 样本外检验进度 → onEvent;无超时(挖因子跑两轮质检,慢)。
     return this.slowPostStream('/engine/factors/mine', req, onEvent);
+  }
+
+  async fundLookthrough(req: FundLookthroughRequest): Promise<any> {
+    return this.slowPost('/engine/fund/lookthrough', req); // 无超时:可能按需拉基金持仓
   }
 
   async indicatorsValidate(expr: string): Promise<any> {

@@ -124,4 +124,42 @@ export class ProvidersController {
       return { industry, asof: null, constituents: [] };
     }
   }
+
+  /** POST /fund/lookthrough — 基金穿透:基金(+权重)→ 底层股票/行业暴露 + 诚实覆盖率。
+   *  用激活源 + token 按需拉持仓;引擎不可达 → 诚实空。 */
+  @Post('fund/lookthrough')
+  async fundLookthrough(
+    @Body()
+    body: {
+      holdings?: Array<{ fund_code: string; weight: number }>;
+      asof?: string;
+      refresh?: boolean;
+    },
+  ): Promise<any> {
+    const holdings = (body?.holdings ?? []).filter((h) => h?.fund_code);
+    if (!holdings.length) {
+      throw new BadRequestException('holdings 必填(至少一只基金:{fund_code, weight})');
+    }
+    const provider = (this.repo.settingGet('active_provider') as string) || 'tushare';
+    const token = this.creds.getToken(provider) ?? undefined;
+    try {
+      return await this.engine.fundLookthrough({
+        provider,
+        token,
+        holdings,
+        asof: body?.asof,
+        refresh: body?.refresh,
+      });
+    } catch {
+      return {
+        asof: body?.asof ?? null,
+        funds: [],
+        stocks: [],
+        sectors: [],
+        total_coverage: 0,
+        note: '基金穿透失败(引擎不可达或无持仓数据)',
+        degraded: ['engine 不可达'],
+      };
+    }
+  }
 }

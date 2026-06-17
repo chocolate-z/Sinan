@@ -4,6 +4,7 @@ import {
   type CacheBuildRequest,
   type EngineClient,
   type FactorQualityRequest,
+  type FundLookthroughRequest,
   type MineRequest,
   type PaperRunRequest,
   type PricesRequest,
@@ -246,6 +247,25 @@ export class FakeEngineClient implements EngineClient {
         warning: '在 30 个候选里按训练集 ICIR 选 top-1;只信样本外列。',
       }
     );
+  }
+
+  async fundLookthrough(req: FundLookthroughRequest): Promise<any> {
+    return {
+      asof: req.asof ?? '2024-12-31',
+      funds: req.holdings.map((h) => ({
+        fund_code: h.fund_code,
+        weight: h.weight,
+        end_date: '2024-09-30',
+        ann_date: '2024-10-20',
+        disclosed_coverage: 0.5,
+        n_holdings: 2,
+      })),
+      stocks: [{ stock_code: '600519.SH', name: '贵州茅台', industry: '白酒', weight: 0.18 }],
+      sectors: [{ industry: '白酒', weight: 0.18 }],
+      total_coverage: 0.46,
+      note: '穿透基于季报披露的前十大重仓,整体已披露覆盖约 46% 净值,其余未披露未穿透。',
+      degraded: [],
+    };
   }
 
   async train(req: TrainRequest, onEvent?: (ev: any) => void): Promise<any> {

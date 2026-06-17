@@ -208,6 +208,11 @@ export const api = {
     codes?: string[];
     progress_id?: string; // 进度通道 id(api 据此把候选评估进度广播回前端);非取数参数
   }) => request<any>(API_ENDPOINTS.indicators_mine, { body }),
+  fundLookthrough: (body: {
+    holdings: Array<{ fund_code: string; weight: number }>;
+    asof?: string;
+    refresh?: boolean;
+  }) => request<any>(API_ENDPOINTS.fund_lookthrough, { body }),
   createCustomFactor: (body: { name: string; expr: string; group?: string; weight?: number }) =>
     request<any>(API_ENDPOINTS.custom_factors_create, { body }),
   customFactors: () => request<any[]>(API_ENDPOINTS.custom_factors_list),

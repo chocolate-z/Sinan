@@ -49,6 +49,11 @@ const routes: RouteRecordRaw[] = [
     meta: { title: '持仓' },
   },
   {
+    path: '/fund',
+    component: () => import('../pages/fund/FundLookthrough.vue'),
+    meta: { title: '基金穿透', needsData: true },
+  },
+  {
     path: '/backtest',
     component: () => import('../pages/backtest/Backtest.vue'),
     meta: { title: '回测', needsData: true },
