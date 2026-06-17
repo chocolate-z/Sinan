@@ -204,6 +204,28 @@ class DataLayer:
             [start, end],
         ).pl()
 
+    def fund_holdings_asof(self, asof_date: str, fund_codes: Sequence[str]) -> pl.DataFrame:
+        """基金穿透 PIT:对每只基金取「披露日 ann_date<=asof 的最近一期完整持仓快照」。
+
+        和按个股的财务 PIT 不一样 —— 这里按 fund_code 分组(每只基金挑最新披露的报告期),返回那期的
+        全部持仓行。dense_rank 按 (end_date desc, ann_date desc):取最新报告期、同报告期取最新修订;
+        未来才公告(ann_date>asof)的快照被 WHERE 直接挡掉,绝不偷看(红线#1)。codes 按 fund_code,
+        与 _source 的 stock_code 过滤不同,故整读(基金持仓集合小)再在 SQL 里按 fund_code 筛。
+        """
+        codes = [c for c in fund_codes if c]
+        if not codes:
+            return pl.DataFrame()
+        src = self._source("fund_portfolio", None)
+        if src is None:
+            return pl.DataFrame()
+        ph = ", ".join(["?"] * len(codes))
+        sql = (
+            f"SELECT * FROM {src} WHERE ann_date <= ? AND fund_code IN ({ph}) "
+            f"QUALIFY dense_rank() OVER (PARTITION BY fund_code ORDER BY end_date DESC, ann_date DESC) = 1 "
+            f"ORDER BY fund_code, stock_code"
+        )
+        return self._con.execute(sql, [asof_date, *codes]).pl()
+
     def latest_dates(self, dataset: str, n: int = 2, codes: Sequence[str] | None = None) -> list[str]:
         """该数据集最近 n 个不同交易日(降序)。行情快照用(取最新日+昨日算当日涨跌)。"""
         src = self._source(dataset, codes)

@@ -16,6 +16,7 @@ export const CAPABILITIES = [
   'SW_INDUSTRY',
   'EARNINGS_FORECAST',
   'TRADE_CAL',
+  'FUND_PORTFOLIO',
 ] as const;
 
 export type Capability = (typeof CAPABILITIES)[number];
@@ -34,6 +35,7 @@ export const CAPABILITY_BIT: Record<Capability, number> = {
   SW_INDUSTRY: 9,
   EARNINGS_FORECAST: 10,
   TRADE_CAL: 11,
+  FUND_PORTFOLIO: 12,
 };
 
 /** 能力位 → 位掩码值(1 << bit)。 */

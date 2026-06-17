@@ -175,6 +175,11 @@ class IDataProvider(ABC):
         """指数日线 OHLCV(回测基准用)。返回 stock_code/trade_date/open/high/low/close/volume/amount。"""
         raise CapabilityNotSupported(str(self.id), Capability.INDEX_OHLCV)
 
+    def fund_portfolio(self, fund_code: str) -> pl.DataFrame:
+        """公募基金持仓(基金穿透用)。返回 fund_code/ann_date/end_date/stock_code/mkv/amount/stk_mkv_ratio。
+        ann_date=披露日(PIT 关键),end_date=报告期,stk_mkv_ratio=占基金净值比(%)。无权限/不支持 → 降级。"""
+        raise CapabilityNotSupported(str(self.id), Capability.FUND_PORTFOLIO)
+
     # ── 实时 ──────────────────────────────────────────────────────────────
     def realtime_quotes(self, codes: Sequence[str]) -> dict[str, dict]:
         raise CapabilityNotSupported(str(self.id), Capability.REALTIME_QUOTE)

@@ -44,6 +44,7 @@ _PROBE = [
     (Capability.SW_INDUSTRY, "index_classify", {}),
     (Capability.EARNINGS_FORECAST, "forecast", {"ts_code": "000001.SZ"}),
     (Capability.TRADE_CAL, "trade_cal", {}),
+    (Capability.FUND_PORTFOLIO, "fund_portfolio", {"ts_code": "159919.SZ"}),
 ]
 
 _DECLARED = (
@@ -58,6 +59,7 @@ _DECLARED = (
     | Capability.SW_INDUSTRY
     | Capability.EARNINGS_FORECAST
     | Capability.TRADE_CAL
+    | Capability.FUND_PORTFOLIO
 )
 
 
@@ -240,6 +242,33 @@ class TushareProvider(IDataProvider):
             pl.col("trade_date").map_elements(_fmt_out, return_dtype=pl.Utf8),
             pl.col("ratio").alias("north_hold_ratio"),
         ).select("stock_code", "trade_date", "north_hold_ratio")
+
+    def fund_portfolio(self, fund_code: str) -> pl.DataFrame:
+        try:
+            df = self._call(
+                "fund_portfolio",
+                {"ts_code": fund_code},
+                "ts_code,ann_date,end_date,symbol,mkv,amount,stk_mkv_ratio",
+            )
+        except _PermissionDenied:
+            raise CapabilityNotSupported(str(self.id), Capability.FUND_PORTFOLIO)
+        empty = pl.DataFrame(
+            schema={
+                "fund_code": pl.Utf8, "ann_date": pl.Utf8, "end_date": pl.Utf8,
+                "stock_code": pl.Utf8, "mkv": pl.Float64, "amount": pl.Float64,
+                "stk_mkv_ratio": pl.Float64,
+            }
+        )
+        if df.is_empty():
+            return empty
+        return df.with_columns(
+            pl.lit(fund_code).alias("fund_code"),  # 基金代码保留原样(.OF/.SZ),别套股票规整
+            pl.col("symbol").map_elements(normalize_code, return_dtype=pl.Utf8).alias("stock_code"),
+            pl.col("ann_date").map_elements(_fmt_out, return_dtype=pl.Utf8),
+            pl.col("end_date").map_elements(_fmt_out, return_dtype=pl.Utf8),
+        ).select(
+            "fund_code", "ann_date", "end_date", "stock_code", "mkv", "amount", "stk_mkv_ratio"
+        )
 
     # ── 连通 + 能力探测 ───────────────────────────────────────────────────
     def test_connection(self) -> ProviderHealth:

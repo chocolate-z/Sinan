@@ -223,3 +223,25 @@ class CacheBuilder:
             except Exception:  # noqa: BLE001 — 写盘异常忽略,主流程已完成
                 continue
         return built
+
+    def build_fund_portfolio(self, fund_codes: list[str]) -> list[str]:
+        """拉指定基金的持仓到 fund_portfolio(逐基金 best-effort,带 ann_date 供 PIT)。返回成功落盘的基金。
+
+        基金穿透用:用户持有的基金按需拉,集合小。无 FUND_PORTFOLIO 权限的源 → 降级跳过(诚实)。"""
+        built: list[str] = []
+        for code in fund_codes:
+            try:
+                res = self.registry.fetch(
+                    Capability.FUND_PORTFOLIO,
+                    lambda p, c=code: p.fund_portfolio(c),
+                )
+            except Exception:  # noqa: BLE001 — 单只基金取数异常不拖垮整批
+                continue
+            if isinstance(res, DegradedResult) or res is None or res.is_empty():
+                continue
+            try:
+                store.write_dataset(self.cache_root, "fund_portfolio", res)
+                built.append(code)
+            except Exception:  # noqa: BLE001 — 写盘异常忽略
+                continue
+        return built
