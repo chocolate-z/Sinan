@@ -767,4 +767,20 @@ labels.py   build_forward_return_labels(hfq[T+h]/hfq[T]-1,前向,尾 h 日 null)
 - **做了什么**:`DEFAULT_FACTORS` 加 8 个经典可解释因子,全用**已缓存字段**(OHLCV/`ps_ttm`/`dv_ttm`/`circ_mv`/`turnover_rate`/`north_hold_ratio`),不接任何新数据,自动进质检/打分/ICIR定权/模型 + 因子库 UI(`/factors` 读注册表,api `seedFactorConfig` 自动补缺省 → 前端表自动多出来、类别 tab 自动派生):价值 SP/DY、规模 size(ln 流通市值,direction=−1)、动量 mom60、反转 reversal5(−1)、波动 vol20(−1)、流动性 turn20(−1)、资金流 north_chg20。
 - **lookback 是这刀的技术核心**:特征面板窗口 = 所有因子 `max(lookback)+5`,且**所有因子共用这个窗**。`mom60` 把窗从 25 抬到 65(取数稍多但仍有界)。rolling 型因子(vol20/turn20)必须 `tail(20)` 显式取最近 N、不能靠窗口大小,否则「有界==无界」黄金测试会炸。新测 `test_expanded_factors_…` 三件套(全生效 / 有界窗口==无界 / 截断未来==全量)钉死正确性。
 - **改了一批硬编旧 5 因子的老测试** → 全改成按 `DEFAULT_FACTORS` 动态断言(`{f.name for f in DEFAULT_FACTORS}` / `max(f.lookback)+5`),下次再扩库不会炸。短窗测试(`_dates(30)`)凡涉及 coverage==1.0 / 全因子生效的,都抬到 `_dates(70)` 让 mom60 也生效。engine **213** 全绿,curl `/factors` + preview 实测 13 因子 + 8 类别 tab 都对。
-- **🟡 自动挖因子(公式搜索,用户要的后续,没做)**:DSL(`indicators/operators.py`)已是现成的公式化 alpha 引擎(ts_mean/ts_std/ts_delta/ema/rsi/rank/zscore/where… × 字段),足以生成候选表达式。挖法 = 生成候选 → 各自跑 `factor_quality` 算 IC/ICIR → 排序。🔴 **红线大坑**:多重检验/数据窥探 —— 搜几千个公式挑最高 IC,纯噪声也能挑出高 IC,当「有效因子」=造假(红线#3)。**必须**:搜索只在训练窗、报告只在搜索从没碰过的 OOS 窗、加数据窥探警示(可考虑 deflated Sharpe / Bonferroni 口径)。工作量 L,结果天然脆。建议产出限定数量候选 + 强制 OOS holdout 展示,别做成「一键挖一堆高 IC」的假象。
+- **自动挖因子(公式搜索)= DONE(见 §11.29)。**
+
+### 11.29 自动挖因子(公式搜索,训练集选 + 样本外报)+ 推送 checkpoint(未发版)
+
+用户「按推荐顺序做」:① 先推 ② 自动挖因子 ③ 基金穿透。① ② 已完成,③ 待数据确认。
+
+**① 推送 checkpoint:** `feat/v0.1.6-polish` 已 `git push -u origin`(此前纯本地,24+ commits)。⚠ **`ci.yml` 只在 push/PR 到 `main` 触发,推 feature 分支不跑 CI** —— 要过 CI 得开 PR 到 main(push 输出给了链接 `github.com/chocolate-z/Sinan/pull/new/feat/v0.1.6-polish`)。本机无 `gh`、无 API token,开 PR 得用户点。所有改动本地全层已绿,CI 是境外 runner 冗余校验。
+
+**② 自动挖因子 = DONE(`9f12dc6` 引擎 + `1422966` ui/api):** 诚实做法(红线#3 数据窥探)。
+
+- `factors/mining.py`:`generate_candidates()` 出 **25** 个可解释候选公式(估值/规模/动量/反转/波动/流动性/技术/资金流,全 DSL 白名单 + 仅回看算子);`mine_factors()` **复用 factor_quality**:候选只在 **train 窗**算 ICIR 选 top-K,top-K 只在**与 train 不相交、隔开 purge 的 oos 窗**重算 IC 如实下发。
+- 🔴 硬守卫 `MiningGuardError`(→422):`oos_start` 距 `train_end` 不足 purge 个交易日就拒(防训练标签前瞻窗泄漏进样本外 / 选择时偷看)。返回带「测了 N 候选 · 只信 OOS 列 · 训练高样本外塌=过拟合」警示。
+- `/engine/factors/mine`(SSE)+ 契约 `indicators_mine` 三绑定 + api `IndicatorsController.mine`(progress 广播 + 日志 + 422/400 转发)+ engine.client/假客户端 `mineFactors`。
+- 前端指标页「自动挖因子」卡:train + oos 两个 RangePicker + 取前 K → 结果表(候选/类别/训练 IC·ICIR/样本外 IC·ICIR/**存为因子**,复用 createCustomFactor)+ 顶部红字警示。store `mine`/`saveMined`,表单/结果留 store。
+- 测:engine 3(候选全合法仅回看 DSL / 守卫拒过近 oos / 端到端 train+oos 双指标 + top-K 降序);engine **216**、api 74、契约 TS10/Py6、前端 86 全绿。**真起栈 + seed 真缓存**:curl `/indicators/mine` 跑通(25→top-5→样本外+警示)、422 守卫触发、preview 实测卡片+表单+门控。⚠ 合成数据 IC 全 0 是数据退化(确定式趋势无横截面 IC),非 bug;真行情才有区分。⚠ 挖因子跑两轮质检、候选是 DSL(回看未知 → 不窗口裁剪 → 串行),**慢**,UI 提示缩股票池/区间。
+
+**③ 基金穿透 = 待开(下一项,设计见 §11.27)。🔴 动手前必须先确认用户数据源/积分能拉基金持仓**(Tushare `fund_portfolio` 带 ann_date,要积分;或 akshare 东财)—— 这是 BYO 数据,拿不到就诚实降级。两大红线坑(PIT 按披露日 ann_date、季报只 top10 覆盖部分净值)+ 工作量 L,见 §11.27。当前 provider **没有**任何 fund 方法,要新增。
