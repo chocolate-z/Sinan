@@ -68,9 +68,10 @@ jobs:
             🇨🇳 **国内下载**:GitHub 安装包 CDN 在国内常被拒连。若点击下方资源下不动,请在其下载链接**前面拼上镜像前缀**
             `https://gh-proxy.com/`(失效则换 `https://ghfast.top/` 或 `https://ghproxy.net/`)。例:
             `https://gh-proxy.com/https://github.com/chocolate-z/Sinan/releases/download/<tag>/Sinan_<ver>_x64-setup.exe`
-          # 自动发布(非草稿):构建完直接公开 Release,公开页面可见 + 在线更新立即生效
-          # (updater 的 latest 端点只解析已发布的非 prerelease)。已反复验证构建,适合个人项目。
-          releaseDraft: false
+          # 草稿发布:构建完只起草 Release(不公开、updater 看不到)→ 人工下载装机 smoke 验过再手动发布。
+          # v2(0.2.0)体量大、新增代码多、LightGBM 冻结首次进真打包,先草稿验证,避免把没干净机验过的包
+          # 自动推给已装机器。验稳后可改回 false 恢复「构建即公开」。
+          releaseDraft: true
           prerelease: false
 
       # updater 国内化:tauri-action 生成的 latest.json 里下载地址指向被墙的 GitHub 资产 CDN。
