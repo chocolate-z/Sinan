@@ -19,6 +19,7 @@ CAPABILITIES: tuple[str, ...] = (
     "SW_INDUSTRY",
     "EARNINGS_FORECAST",
     "TRADE_CAL",
+    "FUND_PORTFOLIO",
 )
 
 CAPABILITY_BIT: dict[str, int] = {name: i for i, name in enumerate(CAPABILITIES)}
@@ -39,6 +40,7 @@ class Capability(IntFlag):
     SW_INDUSTRY = 1 << 9
     EARNINGS_FORECAST = 1 << 10
     TRADE_CAL = 1 << 11
+    FUND_PORTFOLIO = 1 << 12
 
 
 def caps_to_record(caps: Capability) -> dict[str, bool]:

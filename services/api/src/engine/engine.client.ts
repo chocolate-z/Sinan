@@ -34,6 +34,7 @@ export interface PaperRunRequest {
   fill?: boolean;
   model?: Record<string, unknown> | null; // 激活的 ML 模型系数;在场则模型打分(M3)
   custom?: Array<{ name: string; expr: string; group?: string; weight?: number }>; // 启用的自定义因子(无模型时进等权,M4 v3;weight 合成加权)
+  builtin?: Record<string, number> | null; // 启用的内置因子及权重 {名:权重}(v2 因子库);null/省略=全部内置等权
 }
 
 export interface Quote {
@@ -81,6 +82,7 @@ export interface BacktestRequest {
   initial_cash?: number;
   model?: Record<string, unknown> | null; // 激活/指定模型系数;在场则模型线性打分(口径与实盘一致)
   custom?: Array<{ name: string; expr: string; group?: string; weight?: number }>; // 启用的自定义因子(无模型时进等权;weight 合成加权)
+  builtin?: Record<string, number> | null; // 启用的内置因子及权重 {名:权重}(v2 因子库,口径与实盘一致)
 }
 
 export interface TrainRequest {
@@ -95,6 +97,11 @@ export interface TrainRequest {
   model_type?: string;
   alpha?: number;
   l1_ratio?: number;
+  // LightGBM 超参(model_type=lightgbm 时生效;elasticnet 忽略)
+  n_estimators?: number;
+  num_leaves?: number;
+  learning_rate?: number;
+  min_child_samples?: number;
   top_quantile?: number;
   train_threads?: string;
   device?: string;
@@ -108,6 +115,25 @@ export interface FactorQualityRequest {
   n_deciles?: number;
   codes?: string[];
   custom?: Array<{ name: string; expr: string; group?: string; weight?: number }>; // 自定义 DSL 因子(M4 v3;weight 合成加权,质检忽略)
+}
+
+export interface MineRequest {
+  train_start: string;
+  train_end: string;
+  oos_start: string;
+  oos_end: string;
+  label_horizon?: number;
+  purge?: number;
+  top_k?: number;
+  codes?: string[];
+}
+
+export interface FundLookthroughRequest {
+  provider: string;
+  token?: string | null;
+  holdings: Array<{ fund_code: string; weight: number }>;
+  asof?: string;
+  refresh?: boolean;
 }
 
 /** engine 返回非 2xx 时抛出,携带状态码与 detail,供 api 决定转发何种 HTTP 错误。 */
@@ -166,8 +192,14 @@ export interface EngineClient {
   train(req: TrainRequest, onEvent?: (ev: any) => void): Promise<any>;
   /** 因子质检(真实 IC/ICIR/覆盖度 + IC 时序 + 十分位分层)。SSE 流式:onEvent 收逐因子进度;无缓存/区间过短抛 EngineError(400)。 */
   factorQuality(req: FactorQualityRequest, onEvent?: (ev: any) => void): Promise<any>;
+  /** 自动挖因子:候选公式训练集选 top-K → 样本外如实报 IC(SSE 流式)。 */
+  mineFactors(req: MineRequest, onEvent?: (ev: any) => void): Promise<any>;
+  /** 基金穿透:基金(+权重)→ 底层股票/行业暴露 + 诚实覆盖率(按需拉持仓 → ann_date PIT)。 */
+  fundLookthrough(req: FundLookthroughRequest): Promise<any>;
   /** 自定义因子 DSL 校验(白名单 + 回看算子,结构上防未来函数)。返回 ok/errors/fields/functions。 */
   indicatorsValidate(expr: string): Promise<any>;
+  /** 因子库元数据(内置因子名/中文名/类别/方向/说明/所需数据)。给 api 列因子库,引擎是唯一真源。 */
+  factorsMeta(): Promise<{ factors: any[] }>;
 }
 
 export const ENGINE_CLIENT = Symbol('ENGINE_CLIENT');
@@ -482,6 +514,15 @@ export class HttpEngineClient implements EngineClient {
     return this.slowPostStream('/engine/factors/quality', req, onEvent);
   }
 
+  async mineFactors(req: MineRequest, onEvent?: (ev: any) => void): Promise<any> {
+    // SSE 流式:候选评估 + 样本外检验进度 → onEvent;无超时(挖因子跑两轮质检,慢)。
+    return this.slowPostStream('/engine/factors/mine', req, onEvent);
+  }
+
+  async fundLookthrough(req: FundLookthroughRequest): Promise<any> {
+    return this.slowPost('/engine/fund/lookthrough', req); // 无超时:可能按需拉基金持仓
+  }
+
   async indicatorsValidate(expr: string): Promise<any> {
     const res = await fetch(`${config.engineBaseUrl()}/engine/indicators/validate`, {
       method: 'POST',
@@ -490,5 +531,13 @@ export class HttpEngineClient implements EngineClient {
     });
     if (!res.ok) throw new EngineError(res.status, await res.text());
     return res.json();
+  }
+
+  async factorsMeta(): Promise<{ factors: any[] }> {
+    const res = await fetch(`${config.engineBaseUrl()}/engine/factors/meta`, {
+      headers: this.headers(),
+    });
+    if (!res.ok) throw new EngineError(res.status, await res.text());
+    return res.json() as Promise<{ factors: any[] }>;
   }
 }

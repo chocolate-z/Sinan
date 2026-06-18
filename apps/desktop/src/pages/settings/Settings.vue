@@ -40,10 +40,28 @@ const caps = computed(() => {
 });
 
 const refreshInterval = computed(() => {
+  // 未设过 → 回落打包默认 5 分钟(与行情页轮询的回落一致),Segmented 高亮「每 5 分钟」。
   const v = settings.value?.refresh_interval as number | undefined;
-  return v == null ? null : v;
+  return v == null ? 5 : v;
 });
 const dailyRunTime = computed(() => (settings.value?.daily_run_time as string | undefined) ?? null);
+
+// 自动刷新频率(分钟;0=手动不自动刷)。行情页据此设轮询间隔 —— 改了真生效,不是死设置。
+const REFRESH_OPTS = [
+  { v: 1, label: '每分钟' },
+  { v: 3, label: '每 3 分钟' },
+  { v: 5, label: '每 5 分钟' },
+  { v: 0, label: '手动' },
+];
+async function setRefresh(v: number) {
+  if (!settings.value || refreshInterval.value === v) return;
+  settings.value = { ...settings.value, refresh_interval: v }; // 乐观更新
+  try {
+    await api.putSetting('refresh_interval', v);
+  } catch {
+    await refresh(); // 失败回滚到服务端真值
+  }
+}
 
 async function refresh() {
   await app.refreshProviders();
@@ -282,18 +300,23 @@ onMounted(refresh);
         <div class="grow">
           <div class="row-main">
             <div class="row-label">自动刷新频率</div>
-            <div class="row-desc">盘中行情自动拉取间隔</div>
+            <div class="row-desc">行情页盘中自动拉取间隔(改了行情页轮询即生效)</div>
           </div>
-          <span class="badge badge-idle"
-            ><span class="dot" />{{
-              refreshInterval == null ? '—' : `每 ${refreshInterval} 分钟`
-            }}</span
-          >
+          <div class="segmented">
+            <button
+              v-for="o in REFRESH_OPTS"
+              :key="o.v"
+              :class="{ on: refreshInterval === o.v }"
+              @click="setRefresh(o.v)"
+            >
+              {{ o.label }}
+            </button>
+          </div>
         </div>
         <div class="grow">
           <div class="row-main">
-            <div class="row-label">盘后数据落库</div>
-            <div class="row-desc">每个交易日收盘后自动下载日线与基本面</div>
+            <div class="row-label">盘后自动跑一轮</div>
+            <div class="row-desc">每个交易日收盘后自动出信号 + 模拟撮合记账(不含下载数据)</div>
           </div>
           <span class="badge badge-ok"
             ><span class="dot" />{{ dailyRunTime ? `${dailyRunTime} 自动` : '已启用' }}</span

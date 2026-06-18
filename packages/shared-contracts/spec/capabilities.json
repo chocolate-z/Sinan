@@ -12,6 +12,7 @@
     { "name": "INDEX_WEIGHT", "bit": 8, "desc": "指数成分权重" },
     { "name": "SW_INDUSTRY", "bit": 9, "desc": "申万行业" },
     { "name": "EARNINGS_FORECAST", "bit": 10, "desc": "盈利预测" },
-    { "name": "TRADE_CAL", "bit": 11, "desc": "交易日历" }
+    { "name": "TRADE_CAL", "bit": 11, "desc": "交易日历" },
+    { "name": "FUND_PORTFOLIO", "bit": 12, "desc": "公募基金持仓(基金穿透)" }
   ]
 }

@@ -337,6 +337,55 @@ test('回测 scoring=equal_weight:即便有激活模型也强制纯等权基线(
   }
 });
 
+test('回测下发启用的内置因子(builtin),无模型时口径与实盘一致(v2 因子库)', async () => {
+  const { app, fastify, engine } = await build(
+    new FakeEngineClient(null, [], null, {}, {}, RESULT),
+  );
+  try {
+    // seed 全量因子配置(mom20/ep),禁用 mom20
+    await fastify.inject({ method: 'GET', url: '/api/v1/factors' });
+    await fastify.inject({
+      method: 'PUT',
+      url: '/api/v1/factors/mom20',
+      payload: { enabled: false },
+    });
+    const r = await fastify.inject({
+      method: 'POST',
+      url: '/api/v1/backtests',
+      payload: {
+        backtest_start: '2024-02-01',
+        backtest_end: '2024-03-01',
+        train_end: '2024-01-10',
+      },
+    });
+    assert.equal(r.statusCode, 201);
+    assert.deepEqual(engine.lastBacktestReq?.builtin, { ep: 1 }); // 只启用 ep,禁用的 mom20 不下发
+  } finally {
+    await app.close();
+  }
+});
+
+test('回测有激活模型时不下发 builtin(模型路径,内置因子配置不参与)', async () => {
+  const { app, fastify, engine } = await buildWithTrain();
+  try {
+    await fastify.inject({ method: 'GET', url: '/api/v1/factors' });
+    await trainAndActivate(fastify);
+    await fastify.inject({
+      method: 'POST',
+      url: '/api/v1/backtests',
+      payload: {
+        backtest_start: '2024-08-01',
+        backtest_end: '2024-09-01',
+        train_end: '2024-05-01',
+      },
+    });
+    assert.deepEqual(engine.lastBacktestReq?.model, TRAIN.model); // 走模型路径
+    assert.equal(engine.lastBacktestReq?.builtin ?? null, null); // builtin 不下发
+  } finally {
+    await app.close();
+  }
+});
+
 test('回测 scoring=model 但无激活模型 → 400', async () => {
   const { app, fastify } = await buildWithTrain();
   try {

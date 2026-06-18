@@ -12,6 +12,7 @@ import {
   type CompareMetric,
 } from '../../lib/backtest';
 import { fmt, fmtInt } from '../../lib/format';
+import { toCsv } from '../../lib/export';
 import PageHero from '../../ui/PageHero.vue';
 import EquityChart from '../../ui/charts/EquityChart.vue';
 import CompareChart from '../../ui/charts/CompareChart.vue';
@@ -182,6 +183,36 @@ const isHonest = computed(() => (result.value ? !!result.value.cost_included : t
 const badges = computed(() => honestyBadges(result.value?.purge ?? form.purge, isHonest.value));
 // 因子降级清单(engine 如实回传:缺数据/表达式无效的因子被丢弃)。前端必须显示,否则口径标签虚标(红线#3)。
 const degraded = computed<string[]>(() => result.value?.degraded ?? []);
+
+// 导出:净值序列/成交/全量结果。浏览器 Blob 下载,纯前端,不改任何数值(导出的就是回测原样)。
+function downloadFile(name: string, text: string, mime: string) {
+  const blob = new Blob([text], { type: `${mime};charset=utf-8` });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = name;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+const exportBase = computed(
+  () => `回测_${result.value?.scoring ?? ''}_${form.backtest_start}_${form.backtest_end}`,
+);
+function exportNavCsv() {
+  if (navPoints.value.length)
+    downloadFile(`${exportBase.value}_净值.csv`, toCsv(navPoints.value), 'text/csv');
+}
+function exportTradesCsv() {
+  if (trades.value.length)
+    downloadFile(`${exportBase.value}_成交.csv`, toCsv(trades.value), 'text/csv');
+}
+function exportJson() {
+  if (result.value)
+    downloadFile(
+      `${exportBase.value}.json`,
+      JSON.stringify(result.value, null, 2),
+      'application/json',
+    );
+}
 
 // 选中某天 → 展开当日持仓快照(可回溯;选中态也留存于 store)。
 const selectDay = (r: any) => bt.selectDay(r);
@@ -413,6 +444,17 @@ function fixed(v: number | null | undefined): string {
 
       <!-- 右列:KPI 网格 + 净值卡(竖排) -->
       <div v-if="result" class="bt-right">
+        <!-- 导出:净值序列 / 成交 / 全量 JSON(导出回测原样,不改数值)-->
+        <div class="export-bar">
+          <span class="export-lbl cap">导出</span>
+          <button class="btn btn-ghost btn-sm" :disabled="!navPoints.length" @click="exportNavCsv">
+            净值 CSV
+          </button>
+          <button class="btn btn-ghost btn-sm" :disabled="!trades.length" @click="exportTradesCsv">
+            成交 CSV
+          </button>
+          <button class="btn btn-ghost btn-sm" @click="exportJson">全量 JSON</button>
+        </div>
         <!-- 绩效指标(6 卡:年化/超额走盈亏色;MaxDD/夏普/IR/跟踪误差 中性)-->
         <div class="kpis">
           <div class="card card-pad kpi">
@@ -911,6 +953,16 @@ function fixed(v: number | null | undefined): string {
   flex-direction: column;
   gap: 20px;
   min-width: 0;
+}
+.export-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: -8px;
+}
+.export-lbl {
+  color: var(--text-3);
+  margin-right: 2px;
 }
 
 /* ── 参数表单(全宽时 3 列横排;窄左列时单列竖排,按钮占满)────────────────────── */

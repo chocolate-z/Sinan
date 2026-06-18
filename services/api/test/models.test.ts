@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createApp } from '../src/bootstrap.js';
 import { MemorySecretStore } from '../src/secrets/secret-store.js';
+import { JobBus } from '../src/modules/jobs.js';
 import { FakeEngineClient } from './fakes.js';
 
 const TRAIN = {
@@ -116,6 +117,32 @@ test('POST /models/:id/activate 置为 running', async () => {
   }
 });
 
+test('DELETE /models/:id 删版本;删生产模型清掉策略 active 引用;不存在 → 404', async () => {
+  const { app, fastify } = await build(TRAIN);
+  try {
+    const created = (
+      await fastify.inject({
+        method: 'POST',
+        url: '/api/v1/models/train',
+        payload: { train_start: '2023-01-01', train_end: '2024-06-30' },
+      })
+    ).json();
+    // 先激活成生产模型,再删 —— 应顺手清掉策略 active 引用,不留悬挂
+    await fastify.inject({ method: 'POST', url: `/api/v1/models/${created.id}/activate` });
+    const del = await fastify.inject({ method: 'DELETE', url: `/api/v1/models/${created.id}` });
+    assert.equal(del.statusCode, 200);
+    assert.equal(del.json().ok, true);
+    // 版本库清空
+    const list = (await fastify.inject({ method: 'GET', url: '/api/v1/models' })).json();
+    assert.equal(list.length, 0);
+    // 再删一次 → 404
+    const again = await fastify.inject({ method: 'DELETE', url: `/api/v1/models/${created.id}` });
+    assert.equal(again.statusCode, 404);
+  } finally {
+    await app.close();
+  }
+});
+
 test('POST /models/train 必填校验 400', async () => {
   const { app, fastify } = await build(TRAIN);
   try {
@@ -147,6 +174,30 @@ test('GET /models/:id 不存在 → 404', async () => {
   try {
     const r = await fastify.inject({ method: 'GET', url: '/api/v1/models/nope' });
     assert.equal(r.statusCode, 404);
+  } finally {
+    await app.close();
+  }
+});
+
+test('训练把 engine 流式进度按 progress_id 广播到 JobBus(确定式进度条 + ETA 数据源)', async () => {
+  const { app, fastify } = await build(TRAIN);
+  try {
+    const bus = app.get(JobBus);
+    const pid = 'prog-train-1';
+    const got: any[] = [];
+    const sub = bus.observable(pid).subscribe((ev) => got.push(ev));
+    const r = await fastify.inject({
+      method: 'POST',
+      url: '/api/v1/models/train',
+      payload: { train_start: '2023-01-01', train_end: '2024-06-30', progress_id: pid },
+    });
+    sub.unsubscribe();
+    assert.equal(r.statusCode, 201);
+    // 特征面板 done/total 是进度条 + ETA 的真实数据源
+    assert.ok(
+      got.some((e) => e.stage === 'features' && e.total > 0),
+      '应按 progress_id 广播特征面板进度事件',
+    );
   } finally {
     await app.close();
   }

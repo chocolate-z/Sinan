@@ -61,12 +61,18 @@ def run_eod(
     fill: bool = True,
     model: dict | None = None,
     custom: list[dict] | None = None,
+    builtin: dict[str, float] | None = None,
 ) -> EodResult:
     p = {**DEFAULTS, **(params or {})}
     # 有界取数:逐日只取每股最近窗口而非重扫全历史(回测 O(N²)→O(N),PIT 安全、逐值不变)。
     ctx = FactorContext(data, today, codes, lookback=run_eod_lookback(model, custom))
-    # 激活的 ML 模型在场 → 用模型线性打分(同一 asof 特征,红线#1);否则等权因子合成(含启用的自定义因子)。
-    sr = model_score_universe(ctx, model) if model else score_universe(ctx, custom=custom)
+    # 激活的 ML 模型在场 → 用模型线性打分(同一 asof 特征,红线#1);否则等权因子合成。
+    # builtin = 启用的内置因子及权重(api 据用户在因子库的开关/调权下发);None=全部内置等权(老行为)。
+    sr = (
+        model_score_universe(ctx, model)
+        if model
+        else score_universe(ctx, custom=custom, builtin=builtin)
+    )
     scores = sr.scores
     score_rows = {r["stock_code"]: r for r in scores.iter_rows(named=True)}
 

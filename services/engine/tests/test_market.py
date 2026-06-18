@@ -115,6 +115,54 @@ def test_market_live_no_quotes_is_honest(tmp_path):
     assert res["breadth"] is None and res["sectors"] == [] and res["live"] is True
 
 
+def _write_index(tmp, code, rows):
+    """index_ohlcv: [(trade_date, close), ...]"""
+    n = len(rows)
+    store.write_dataset(
+        tmp,
+        "index_ohlcv",
+        pl.DataFrame(
+            {
+                "stock_code": [code] * n,
+                "trade_date": [r[0] for r in rows],
+                "open": [r[1] for r in rows],
+                "high": [r[1] for r in rows],
+                "low": [r[1] for r in rows],
+                "close": [r[1] for r in rows],
+                "volume": [1.0] * n,
+                "amount": [1.0] * n,
+            }
+        ),
+    )
+
+
+def test_market_indices_chg_from_cache(tmp_path):
+    """大盘指数条:每只指数取缓存最近 2 行算涨跌(最新 vs 昨收);只 1 行 → chg=None(诚实)。"""
+    from sinan.factors.market import market_indices
+
+    _write_index(tmp_path, "000300.SH", [("2024-01-02", 4000.0), ("2024-01-03", 4040.0)])  # +1%
+    _write_index(tmp_path, "000905.SH", [("2024-01-02", 6000.0), ("2024-01-03", 5940.0)])  # -1%
+    _write_index(tmp_path, "000001.SH", [("2024-01-03", 3000.0)])  # 只 1 行 → 无昨收
+
+    res = market_indices(DataLayer(tmp_path))
+    by = {x["code"]: x for x in res["indices"]}
+    assert res["asof"] == "2024-01-03"
+    assert by["000300.SH"]["name"] == "沪深300"
+    assert by["000300.SH"]["close"] == 4040.0 and abs(by["000300.SH"]["chg"] - 1.0) < 1e-6
+    assert abs(by["000905.SH"]["chg"] + 1.0) < 1e-6  # -1%
+    assert by["000001.SH"]["close"] == 3000.0 and by["000001.SH"]["chg"] is None  # 无昨收 → 诚实 None
+    # 缓存里没有的默认指数(深证/创业板)不硬塞,诚实不出现
+    assert "399001.SZ" not in by and "399006.SZ" not in by
+
+
+def test_market_indices_empty_cache_is_honest(tmp_path):
+    """无 index_ohlcv 缓存(免费源没拉指数)→ indices 空、asof=None,绝不造数(红线#3)。"""
+    from sinan.factors.market import market_indices
+
+    res = market_indices(DataLayer(tmp_path))
+    assert res["indices"] == [] and res["asof"] is None
+
+
 def test_datalayer_year_pruning(tmp_path):
     """行情快照提速地基:DataLayer(years=) 只物化指定 year 分区,跨年只看裁剪内的年份。
     全市场多年缓存里只读最近两年可成倍提速(避免 glob 上万分股文件),asof 在裁剪内仍正确。"""

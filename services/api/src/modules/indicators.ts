@@ -13,9 +13,11 @@ import {
   Post,
   Put,
   Query,
+  UnprocessableEntityException,
 } from '@nestjs/common';
 import { Repository } from '../db/repository.js';
 import { ENGINE_CLIENT, EngineError, type EngineClient } from '../engine/engine.client.js';
+import { JobBus } from './jobs.js';
 
 /** 合成权重:有限非负数(0=从合成剔除;方向由因子 direction 处理,故不收负权重避免双重反向歧义)。 */
 function validWeight(w: unknown): w is number {
@@ -27,6 +29,7 @@ export class IndicatorsController {
   constructor(
     private readonly repo: Repository,
     @Inject(ENGINE_CLIENT) private readonly engine: EngineClient,
+    private readonly bus: JobBus,
   ) {}
 
   /** 把质检 SSE 进度事件落统一日志:特征面板进度 + 逐因子 IC/ICIR/覆盖度。 */
@@ -36,6 +39,12 @@ export class IndicatorsController {
         level: 'info',
         source: 'indicators',
         message: `质检·特征面板 ${ev.done}/${ev.total} 日(${ev.date})`,
+      });
+    } else if (ev?.stage === 'labels') {
+      this.repo.logInsert({
+        level: 'info',
+        source: 'indicators',
+        message: `质检·${ev.message ?? '计算前向标签中…'}`,
       });
     } else if (ev?.stage === 'scoring') {
       this.repo.logInsert({
@@ -59,6 +68,7 @@ export class IndicatorsController {
     @Query('end') end?: string,
     @Query('label_horizon') labelHorizon?: string,
     @Query('n_deciles') nDeciles?: string,
+    @Query('progress_id') progressId?: string,
   ): Promise<any> {
     if (!start || !end) throw new BadRequestException('start / end 必填');
     const t0 = Date.now();
@@ -77,7 +87,10 @@ export class IndicatorsController {
           n_deciles: nDeciles ? Number(nDeciles) : undefined,
           custom: this.repo.customFactorsForQuality(), // 启用的自定义因子与内置并列计算
         },
-        (ev) => this.logQualityProgress(ev), // SSE 流式:特征面板 + 逐因子 IC 实时写日志
+        (ev) => {
+          this.logQualityProgress(ev); // SSE 流式:特征面板 + 逐因子 IC 实时写日志
+          if (progressId) this.bus.emit(progressId, ev); // 同时按 progress_id 广播回前端(进度条 + ETA)
+        },
       );
     } catch (e) {
       const detail =
@@ -93,6 +106,8 @@ export class IndicatorsController {
       });
       if (e instanceof EngineError && e.status === 400) throw new BadRequestException(detail);
       throw e;
+    } finally {
+      if (progressId) this.bus.complete(progressId); // 结束进度流(成功/失败都收尾)
     }
     this.repo.logInsert({
       level: 'info',
@@ -106,6 +121,90 @@ export class IndicatorsController {
   async validate(@Body() body: { expr?: string }): Promise<any> {
     if (!body?.expr) throw new BadRequestException('expr 必填');
     return this.engine.indicatorsValidate(body.expr);
+  }
+
+  /** 自动挖因子:候选公式训练集选 top-K → 样本外如实报 IC。422=窗口违反诚实样本外守卫。 */
+  @Post('indicators/mine')
+  async mine(
+    @Body()
+    body: {
+      train_start?: string;
+      train_end?: string;
+      oos_start?: string;
+      oos_end?: string;
+      label_horizon?: number;
+      purge?: number;
+      top_k?: number;
+      codes?: string[];
+      progress_id?: string;
+    },
+  ): Promise<any> {
+    const { train_start, train_end, oos_start, oos_end, progress_id: progressId } = body ?? {};
+    if (!train_start || !train_end || !oos_start || !oos_end) {
+      throw new BadRequestException('train_start / train_end / oos_start / oos_end 必填');
+    }
+    const t0 = Date.now();
+    this.repo.logInsert({
+      level: 'info',
+      source: 'indicators',
+      message: `自动挖因子开始 · 训练 ${train_start}~${train_end} · 样本外 ${oos_start}~${oos_end}`,
+    });
+    let result: any;
+    try {
+      result = await this.engine.mineFactors(
+        {
+          train_start,
+          train_end,
+          oos_start,
+          oos_end,
+          label_horizon: body?.label_horizon,
+          purge: body?.purge,
+          top_k: body?.top_k,
+          codes: body?.codes,
+        },
+        (ev) => {
+          if (ev?.stage === 'select') {
+            this.repo.logInsert({
+              level: 'info',
+              source: 'indicators',
+              message: `挖因子·训练集评 ${ev.n_candidates} 个候选`,
+            });
+          } else if (ev?.stage === 'oos') {
+            this.repo.logInsert({
+              level: 'info',
+              source: 'indicators',
+              message: `挖因子·样本外检验 top-${ev.n_top}`,
+            });
+          }
+          if (progressId) this.bus.emit(progressId, ev);
+        },
+      );
+    } catch (e) {
+      const detail =
+        e instanceof EngineError
+          ? typeof e.detail === 'string'
+            ? e.detail
+            : JSON.stringify(e.detail)
+          : String(e);
+      this.repo.logInsert({
+        level: 'error',
+        source: 'indicators',
+        message: `自动挖因子失败 · ${detail}`,
+      });
+      if (e instanceof EngineError) {
+        if (e.status === 422) throw new UnprocessableEntityException(detail); // 窗口违反诚实样本外
+        if (e.status === 400) throw new BadRequestException(detail);
+      }
+      throw e;
+    } finally {
+      if (progressId) this.bus.complete(progressId);
+    }
+    this.repo.logInsert({
+      level: 'info',
+      source: 'indicators',
+      message: `自动挖因子完成 · 测 ${result.candidates_tested ?? '?'} 候选 · top ${result.top_k ?? '?'} · ${((Date.now() - t0) / 1000).toFixed(1)}s`,
+    });
+    return result;
   }
 
   @Post('custom-factors')
@@ -154,6 +253,39 @@ export class IndicatorsController {
   @Delete('custom-factors/:id')
   deleteCustom(@Param('id') id: string): any {
     if (!this.repo.customFactorDelete(id)) throw new NotFoundException('自定义因子不存在');
+    return { ok: true };
+  }
+
+  // ── v2 因子库:内置因子列表(元数据来自 engine + 启用/权重来自本地配置)──────────────────────
+  // 自定义因子走各自的 /custom-factors,前端把两边并到一张因子库表里。
+  @Get('factors')
+  async factors(): Promise<any> {
+    const meta = await this.engine.factorsMeta(); // engine 是因子定义的唯一真源
+    this.repo.seedFactorConfig(meta.factors.map((f: any) => f.name)); // 新内置因子首次列出补缺省
+    const cfg = this.repo.factorConfigAll();
+    return {
+      factors: meta.factors.map((f: any) => ({
+        ...f,
+        kind: 'builtin',
+        enabled: cfg[f.name]?.enabled ?? true,
+        weight: cfg[f.name]?.weight ?? 1.0,
+      })),
+    };
+  }
+
+  // 改内置因子的启用态 / 权重(打分时下发 engine 生效)。
+  @Put('factors/:name')
+  updateFactor(
+    @Param('name') name: string,
+    @Body() body: { enabled?: boolean; weight?: number },
+  ): any {
+    if (body?.weight !== undefined && !validWeight(body.weight)) {
+      throw new BadRequestException('weight 必须为非负有限数(0=不参与合成)');
+    }
+    if (body?.enabled !== undefined && typeof body.enabled !== 'boolean') {
+      throw new BadRequestException('enabled 必须为布尔');
+    }
+    this.repo.factorConfigUpdate(name, { enabled: body?.enabled, weight: body?.weight });
     return { ok: true };
   }
 }

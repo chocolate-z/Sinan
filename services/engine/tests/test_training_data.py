@@ -10,6 +10,7 @@ from datetime import date, timedelta
 import polars as pl
 
 from sinan.data import DataLayer, store
+from sinan.factors.library import DEFAULT_FACTORS
 from sinan.training import build_feature_panel, build_forward_return_labels
 
 CODES = ["600519.SH", "000001.SZ", "600036.SH", "000333.SZ", "601318.SH", "600000.SH"]
@@ -128,6 +129,17 @@ def test_mat_since_bounded_score_equals_unbounded(tmp_path):
     assert full.equals(bounded), "物化下界改变了打分 —— 防 OOM 的窗口裁剪破坏了正确性!"
 
 
+def test_per_worker_mb_divides_budget():
+    """内存安全核心:多核时每 worker 的物化预算 = 总预算 / worker 数(下限 512),
+    使 N worker 总占用恒定一份(防「每 worker 各占满 → N×内存 → 系统卡死」)。"""
+    from sinan.training.features import _MIN_WORKER_MB, _per_worker_mb
+
+    assert _per_worker_mb(4096, 4) == 1024  # 4 核均分 4GB
+    assert _per_worker_mb(4096, 1) == 4096  # 串行 = 整份
+    assert _per_worker_mb(1000, 8) == _MIN_WORKER_MB  # 均分过小 → 钳到下限
+    assert _per_worker_mb(2048, 0) == 2048  # workers=0 防除零(视作 1)
+
+
 def test_feature_panel_parallel_equals_sequential(tmp_path):
     """提速正确性②:多核并行(进程池按日期分块)与串行特征面板逐值相等。
 
@@ -150,19 +162,44 @@ def test_feature_panel_parallel_equals_sequential(tmp_path):
     assert par.equals(seq), "并行结果与串行不一致 —— 多核破坏了正确性!"
 
 
+def test_feature_panel_worker_window_cuts_forward(tmp_path):
+    """提速正确性③:多核 worker 只物化 [首日-缓冲, 末日] 特征窗口。缓存里窗口「之后」还有数据(前向),
+    worker 上界把它挡在物化外 —— 但特征只看 <=末日(asof,红线#1),故并行(裁窗)与串行(全缓存)逐值相等。
+    这正是「提速但不改结果」的核心:上界恒安全(特征绝不取未来),与前向标签(要未来价、不设上界)分开。"""
+    from sinan.factors.library import DEFAULT_FACTORS
+    from sinan.training.features import _build_panel_parallel
+
+    dates = _dates(80)
+    feat_dates = dates[20:66]  # 46 日(>= _PAR_MIN_DAYS 40 触发并行);窗口前 [0:20)、后 [66:80) 都有数据
+    cache = tmp_path / "c"
+    _write(cache, _frames(dates))  # 全 80 日缓存
+    uniq = sorted(set(feat_dates))
+
+    # 串行:全缓存、无窗口边界 = 基准真值。
+    seq = build_feature_panel(DataLayer(cache), CODES, feat_dates, workers=1).panel.sort(
+        ["date", "stock_code"]
+    )
+    # 并行:worker 物化 [首日-800, 末日],窗口之后的前向数据被上界挡掉 —— 特征不应受影响。
+    par = _build_panel_parallel(
+        DataLayer(cache), CODES, uniq, list(DEFAULT_FACTORS), workers=2
+    ).panel.sort(["date", "stock_code"])
+    assert par.equals(seq), "worker 特征窗口裁剪改变了特征值 —— 上界误切了回看内/当日数据!"
+
+
 def test_feature_panel_shape_and_degrade(tmp_path):
     dates = _dates(30)
     cache = tmp_path / "c"
     _write(cache, _frames(dates, with_northbound=False))
 
     fp = build_feature_panel(DataLayer(cache), CODES, dates)
-    # 列集固定为 factors 全集(含降级的 north_chg5,值为 null)。
-    assert fp.feature_cols == ["f_ep", "f_bp", "f_roe", "f_mom20", "f_north_chg5"]
+    # 列集固定为 factors 全集(含降级的因子,值为 null)。
+    assert fp.feature_cols == [f"f_{f.name}" for f in DEFAULT_FACTORS]
     assert fp.panel.height == len(dates) * len(CODES)
     assert set(fp.panel.columns) == {"date", "stock_code", *fp.feature_cols}
-    # 北向缺失 → 每日降级,且该列全 null(诚实,不补 0)。
-    assert fp.degraded_days.get("north_chg5") == len(dates)
-    assert fp.panel["f_north_chg5"].drop_nulls().len() == 0
+    # 北向缺失 → north_chg5/north_chg20 每日降级,且这两列全 null(诚实,不补 0)。
+    for nb in ("north_chg5", "north_chg20"):
+        assert fp.degraded_days.get(nb) == len(dates)
+        assert fp.panel[f"f_{nb}"].drop_nulls().len() == 0
 
 
 def test_forward_return_label_correct(tmp_path):

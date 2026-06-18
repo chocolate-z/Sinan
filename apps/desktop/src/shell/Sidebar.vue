@@ -27,6 +27,7 @@ const items: Item[] = [
   { to: '/backtest', label: '回测', group: '研究', icon: 'backtest', needsData: true },
   { to: '/signals', label: '信号', group: '交易', icon: 'signals', needsData: true },
   { to: '/portfolio', label: '持仓', group: '交易', icon: 'portfolio' },
+  { to: '/fund', label: '基金穿透', group: '交易', icon: 'portfolio', needsData: true },
   { to: '/logs', label: '日志', group: '系统', icon: 'logs' },
   { to: '/settings', label: '设置', group: '系统', icon: 'settings' },
   { to: '/help', label: '帮助', group: '系统', icon: 'help' },

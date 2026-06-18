@@ -128,6 +128,8 @@ export const api = {
   coverage: () => request<any>(API_ENDPOINTS.data_coverage),
   logs: () => request<any[]>(API_ENDPOINTS.logs_list),
   settings: () => request<Record<string, unknown>>(API_ENDPOINTS.settings_list),
+  putSetting: (key: string, value: unknown) =>
+    request<{ ok?: boolean }>(API_ENDPOINTS.settings_update, { params: { key }, body: { value } }),
 
   // ── M1 交易域 ──────────────────────────────────────────────────────────
   signals: (date: string) => request<any[]>(API_ENDPOINTS.signals_list, { query: { date } }),
@@ -179,6 +181,13 @@ export const api = {
   model: (id: string) => request<ModelVersion>(API_ENDPOINTS.models_get, { params: { id } }),
   activateModel: (id: string) =>
     request<{ ok?: boolean }>(API_ENDPOINTS.models_activate, { params: { id } }),
+  deleteModel: (id: string) =>
+    request<{ ok?: boolean }>(API_ENDPOINTS.models_delete, { params: { id } }),
+
+  // ── v2 因子库:内置因子(元数据来自 engine + 本地启用/权重配置)──────────────
+  factors: () => request<{ factors: any[] }>(API_ENDPOINTS.factors_list),
+  updateFactor: (name: string, body: { enabled?: boolean; weight?: number }) =>
+    request<{ ok?: boolean }>(API_ENDPOINTS.factors_update, { params: { name }, body }),
 
   // ── 指标 / 因子质检域(M4)──────────────────────────────────────────────────
   indicatorsQuality: (q: {
@@ -186,9 +195,26 @@ export const api = {
     end: string;
     label_horizon?: number;
     n_deciles?: number;
+    progress_id?: string; // 进度通道 id(api 据此把 engine 流式进度广播回前端);非取数参数
   }) => request<any>(API_ENDPOINTS.indicators_quality, { query: q }),
   validateIndicator: (expr: string) =>
     request<any>(API_ENDPOINTS.indicators_validate, { body: { expr } }),
+  mineFactors: (body: {
+    train_start: string;
+    train_end: string;
+    oos_start: string;
+    oos_end: string;
+    label_horizon?: number;
+    purge?: number;
+    top_k?: number;
+    codes?: string[];
+    progress_id?: string; // 进度通道 id(api 据此把候选评估进度广播回前端);非取数参数
+  }) => request<any>(API_ENDPOINTS.indicators_mine, { body }),
+  fundLookthrough: (body: {
+    holdings: Array<{ fund_code: string; weight: number }>;
+    asof?: string;
+    refresh?: boolean;
+  }) => request<any>(API_ENDPOINTS.fund_lookthrough, { body }),
   createCustomFactor: (body: { name: string; expr: string; group?: string; weight?: number }) =>
     request<any>(API_ENDPOINTS.custom_factors_create, { body }),
   customFactors: () => request<any[]>(API_ENDPOINTS.custom_factors_list),

@@ -115,6 +115,7 @@ def run_backtest(
     periods: int = 252,
     model: dict | None = None,
     custom: list[dict] | None = None,
+    builtin: dict[str, float] | None = None,
 ) -> BacktestResult:
     tds = sorted(set(trading_dates))
 
@@ -179,6 +180,7 @@ def run_backtest(
             fill=True,
             model=model,
             custom=custom,
+            builtin=builtin,
         )
         nav_curve.append(
             {

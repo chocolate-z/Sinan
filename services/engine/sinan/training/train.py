@@ -1,20 +1,23 @@
-"""walk-forward 训练 + 样本内外评估(M3 v1:ElasticNet 线性模型)。
+"""walk-forward 训练 + 样本内外评估(M3:ElasticNet 线性 / LightGBM 树,v2 加 lightgbm)。
 
 红线落点:
 - #1 无未来函数:特征经 features.py(asof,只见 <=T);标签 labels.py 前向收益;**purge 必须 >=
   label_horizon**(否则训练样本的标签前瞻窗会落进测试集特征 → 泄漏)。本模块入口显式硬守卫。
 - #2/#3 不虚假/不夸大:训练只在 Fold.train,评估只在 Fold.test(OOS);IC/ICIR 样本内外**并列**返回;
   低 IC 如实返回原值不裁剪。OOS「夏普/年化」用顶分位分层口径(非完整事件驱动回测,诚实标注)。
-- #6:engine 只算不落库。模型产物 = 线性系数 JSON(无二进制 pickle、无文件、无外联),由 api 落库。
+- #6:engine 只算不落库。模型产物 = 纯 JSON(ElasticNet=系数;LightGBM=拍平的树结构),
+  无二进制 pickle、无文件、无外联,由 api 落库;推理纯 polars/numpy,不依赖运行时 lightgbm。
 
-ElasticNet 在已标准化(per-截面 winsor+zscore)的因子上拟合;模型 = {feature_cols, coef, intercept}。
-推理时在某 asof 截面 compute_factor_matrix → f_* → pred = intercept + Σ coef·f。
+ElasticNet 在已标准化(per-截面 winsor+zscore)的因子上拟合,模型 = {feature_cols, coef, intercept},
+推理 pred = intercept + Σ coef·f。LightGBM 在同一标准化因子上拟合 GBDT,模型 = {feature_cols, trees},
+推理走 factors/tree.py 纯 numpy 遍历累加叶子值(横截面排序选股,init 常数不影响排名)。
+lightgbm 仅训练时需要(可选 extra services/engine[lightgbm]),延迟 import 保持默认轻装。
 """
 
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field
-from typing import Callable, Optional, Sequence
+from typing import Any, Callable, Optional, Sequence
 
 import numpy as np
 import polars as pl
@@ -67,7 +70,7 @@ class TrainResult:
         return asdict(self)
 
 
-def _per_date_ic(df: pl.DataFrame, model: ElasticNet, usable: list[str]) -> list[float]:
+def _per_date_ic(df: pl.DataFrame, model: Any, usable: list[str]) -> list[float]:
     """逐日 RankIC(预测分 vs 实际前向收益),只在传入截面内算。"""
     ics: list[float] = []
     for d in sorted(set(df["date"].to_list())):
@@ -80,7 +83,7 @@ def _per_date_ic(df: pl.DataFrame, model: ElasticNet, usable: list[str]) -> list
 
 
 def _top_quantile_returns(
-    df: pl.DataFrame, model: ElasticNet, usable: list[str], q: float
+    df: pl.DataFrame, model: Any, usable: list[str], q: float
 ) -> list[tuple[str, float]]:
     """每个测试日:按预测分取前 q 分位等权,组合的未来 horizon 收益 = 选中股 label 均值。"""
     out: list[tuple[str, float]] = []
@@ -96,7 +99,22 @@ def _top_quantile_returns(
     return out
 
 
-def _fit(X: np.ndarray, y: np.ndarray, alpha: float, l1_ratio: float) -> ElasticNet:
+def _fit(model_type: str, X: np.ndarray, y: np.ndarray, *, alpha: float, l1_ratio: float, lgbm: dict) -> Any:
+    """按 model_type 拟合并返回带 .predict 的估计器(ElasticNet / LGBMRegressor 都满足)。"""
+    if model_type == "lightgbm":
+        from lightgbm import LGBMRegressor  # 延迟 import:可选 extra,只训 lgbm 时才需要
+
+        return LGBMRegressor(
+            n_estimators=lgbm["n_estimators"],
+            num_leaves=lgbm["num_leaves"],
+            learning_rate=lgbm["learning_rate"],
+            min_child_samples=lgbm["min_child_samples"],
+            random_state=42,  # 可复现:同数据同参 → 同模型
+            deterministic=True,
+            force_col_wise=True,
+            n_jobs=1,
+            verbose=-1,
+        ).fit(X, y)
     return ElasticNet(alpha=alpha, l1_ratio=l1_ratio, max_iter=5000, tol=1e-4).fit(X, y)
 
 
@@ -115,14 +133,25 @@ def run_train(
     model_type: str = "elasticnet",
     alpha: float = 0.001,
     l1_ratio: float = 0.5,
+    # LightGBM 超参(model_type=lightgbm 时生效;elasticnet 忽略)
+    n_estimators: int = 200,
+    num_leaves: int = 31,
+    learning_rate: float = 0.05,
+    min_child_samples: int = 20,
     top_quantile: float = 0.2,
     train_threads: str | int = "auto",
     device: str = "auto",
     on_progress: Optional[Callable[[dict], None]] = None,
     feature_workers: int | str | None = 1,
 ) -> TrainResult:
-    if model_type != "elasticnet":
-        raise ValueError(f"M3 v1 仅支持 model_type=elasticnet,收到 {model_type}")
+    if model_type not in ("elasticnet", "lightgbm"):
+        raise ValueError(f"未知 model_type={model_type}(支持 elasticnet / lightgbm)")
+    lgbm_cfg = {
+        "n_estimators": int(n_estimators),
+        "num_leaves": int(num_leaves),
+        "learning_rate": float(learning_rate),
+        "min_child_samples": int(min_child_samples),
+    }
     if label_horizon < 1:
         raise ValueError("label_horizon 必须 >= 1")
     if purge is None:
@@ -144,7 +173,7 @@ def run_train(
     fp = build_feature_panel(
         data, codes, train_dates, on_progress=on_progress, workers=feature_workers
     )
-    labels = build_forward_return_labels(data, codes, label_horizon)
+    labels = build_forward_return_labels(data, codes, label_horizon, on_progress=on_progress)
     samples = fp.panel.join(labels, on=["date", "stock_code"], how="left")
 
     # 全局丢弃「整列无有效值」的特征(如免费源缺北向),诚实记录降级。
@@ -191,7 +220,10 @@ def run_train(
         )
         if tr.height < 10 or te.height < 2:
             continue
-        model = _fit(tr.select(usable).to_numpy(), tr["label"].to_numpy(), alpha, l1_ratio)
+        model = _fit(
+            model_type, tr.select(usable).to_numpy(), tr["label"].to_numpy(),
+            alpha=alpha, l1_ratio=l1_ratio, lgbm=lgbm_cfg,
+        )
         is_ics = _per_date_ic(tr, model, usable)
         oos_ics = _per_date_ic(te, model, usable)
         ic_is_series.extend(is_ics)
@@ -234,19 +266,53 @@ def run_train(
         sharpe_oos = 0.0
         annual_oos = 0.0
 
-    # 最终模型:全训练段重训(去掉无标签的尾部),系数 = 特征重要度 + 推理参数。
+    # 最终模型:全训练段重训(去掉无标签的尾部)。ElasticNet → 系数 JSON;LightGBM → 拍平树 JSON。
     allsamp = samples.filter(pl.col("date").is_in(set(train_dates))).drop_nulls(
         subset=[*usable, "label"]
     )
-    final = _fit(allsamp.select(usable).to_numpy(), allsamp["label"].to_numpy(), alpha, l1_ratio)
-    coef = [float(c) for c in final.coef_]
-    intercept = float(final.intercept_)
-    denom = sum(abs(c) for c in coef) or 1.0
-    feature_importance = sorted(
-        [{"feature": usable[i], "weight": round(abs(coef[i]) / denom, 4)} for i in range(len(usable))],
-        key=lambda x: x["weight"],
-        reverse=True,
+    final = _fit(
+        model_type, allsamp.select(usable).to_numpy(), allsamp["label"].to_numpy(),
+        alpha=alpha, l1_ratio=l1_ratio, lgbm=lgbm_cfg,
     )
+    if model_type == "lightgbm":
+        from ..factors.tree import flatten_trees
+
+        booster = final.booster_
+        trees = flatten_trees(booster.dump_model())
+        # 重要度用「分裂增益」归一(树模型没有线性系数;增益=该因子对降损的真实贡献)。
+        gains = booster.feature_importance(importance_type="gain").astype(float)
+        gtot = float(gains.sum()) or 1.0
+        feature_importance = sorted(
+            [{"feature": usable[i], "weight": round(float(gains[i]) / gtot, 4)} for i in range(len(usable))],
+            key=lambda x: x["weight"],
+            reverse=True,
+        )
+        model_obj: dict = {
+            "type": "lightgbm",
+            "feature_cols": usable,
+            "trees": trees,
+            "n_trees": len(trees),
+            "label_horizon": label_horizon,
+            "params": lgbm_cfg,
+        }
+    else:
+        coef = [float(c) for c in final.coef_]
+        intercept = float(final.intercept_)
+        denom = sum(abs(c) for c in coef) or 1.0
+        feature_importance = sorted(
+            [{"feature": usable[i], "weight": round(abs(coef[i]) / denom, 4)} for i in range(len(usable))],
+            key=lambda x: x["weight"],
+            reverse=True,
+        )
+        model_obj = {
+            "type": model_type,
+            "feature_cols": usable,
+            "coef": coef,
+            "intercept": intercept,
+            "alpha": alpha,
+            "l1_ratio": l1_ratio,
+            "label_horizon": label_horizon,
+        }
 
     degraded = [
         f"{name}:{n}/{fp.n_dates} 天降级(数据缺失)" for name, n in sorted(fp.degraded_days.items())
@@ -277,15 +343,7 @@ def run_train(
         ),
         feature_importance=feature_importance,
         fold_metrics=fold_metrics,
-        model={
-            "type": model_type,
-            "feature_cols": usable,
-            "coef": coef,
-            "intercept": intercept,
-            "alpha": alpha,
-            "l1_ratio": l1_ratio,
-            "label_horizon": label_horizon,
-        },
+        model=model_obj,
         degraded=degraded,
         oos_clean=len(fold_metrics) > 0,
         device=cfg.device,

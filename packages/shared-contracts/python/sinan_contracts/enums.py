@@ -108,6 +108,7 @@ class OnboardingStep(_StrEnum):
 
 class ModelType(_StrEnum):
     ELASTICNET = "elasticnet"
+    LIGHTGBM = "lightgbm"
 
 
 class ModelStatus(_StrEnum):

@@ -23,7 +23,7 @@
   "TradeReason": ["signal", "stop_loss", "take_profit", "rank_out", "market_filter", "manual"],
   "LogLevel": ["debug", "info", "warn", "error"],
   "OnboardingStep": ["welcome", "select_source", "credential", "test", "build_cache", "done"],
-  "ModelType": ["elasticnet"],
+  "ModelType": ["elasticnet", "lightgbm"],
   "ModelStatus": ["draft", "running", "archived"],
   "BacktestScoring": ["auto", "equal_weight", "model", "custom"]
 }

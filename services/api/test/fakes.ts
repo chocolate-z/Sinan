@@ -4,6 +4,8 @@ import {
   type CacheBuildRequest,
   type EngineClient,
   type FactorQualityRequest,
+  type FundLookthroughRequest,
+  type MineRequest,
   type PaperRunRequest,
   type PricesRequest,
   type PricesResult,
@@ -23,6 +25,7 @@ export class FakeEngineClient implements EngineClient {
     private readonly backtestResult: any = null,
     private readonly trainResult: any = null,
     private readonly qualityResult: any = null,
+    private readonly mineResult: any = null,
   ) {}
 
   async stocksSearch(
@@ -157,7 +160,37 @@ export class FakeEngineClient implements EngineClient {
     };
   }
 
-  async factorQuality(req: FactorQualityRequest): Promise<any> {
+  async factorsMeta(): Promise<{ factors: any[] }> {
+    return {
+      factors: [
+        {
+          name: 'mom20',
+          label: '20日动量',
+          category: '动量',
+          group: 'momentum',
+          direction: 1,
+          desc: '过去 20 日累计涨幅',
+          required_cap: 'DAILY_OHLCV',
+        },
+        {
+          name: 'ep',
+          label: '盈利收益率 EP',
+          category: '价值',
+          group: 'value',
+          direction: 1,
+          desc: '1/PE',
+          required_cap: 'DAILY_BASIC',
+        },
+      ],
+    };
+  }
+
+  async factorQuality(req: FactorQualityRequest, onEvent?: (ev: any) => void): Promise<any> {
+    // 回放几条 SSE 流式进度(供「确定式进度条 + ETA」路径测试):特征面板 → 逐因子。
+    onEvent?.({ stage: 'features', done: 1, total: 2, date: req.start });
+    onEvent?.({ stage: 'features', done: 2, total: 2, date: req.end });
+    onEvent?.({ stage: 'scoring', n_factors: 1 });
+    onEvent?.({ stage: 'factor', name: 'mom20' });
     if (this.qualityResult && this.qualityResult.__error) {
       throw new EngineError(this.qualityResult.__error.status, this.qualityResult.__error.detail);
     }
@@ -184,7 +217,62 @@ export class FakeEngineClient implements EngineClient {
     );
   }
 
-  async train(req: TrainRequest): Promise<any> {
+  async mineFactors(req: MineRequest, onEvent?: (ev: any) => void): Promise<any> {
+    onEvent?.({ stage: 'select', n_candidates: 30 });
+    onEvent?.({ stage: 'oos', n_top: req.top_k ?? 10 });
+    if (this.mineResult && this.mineResult.__error) {
+      throw new EngineError(this.mineResult.__error.status, this.mineResult.__error.detail);
+    }
+    return (
+      this.mineResult ?? {
+        candidates_tested: 30,
+        top_k: 1,
+        train_window: [req.train_start, req.train_end],
+        oos_window: [req.oos_start, req.oos_end],
+        label_horizon: req.label_horizon ?? 5,
+        purge: req.purge ?? req.label_horizon ?? 5,
+        results: [
+          {
+            name: 'cand_mom20',
+            expr: 'close / delay(close, 20) - 1',
+            group: 'momentum',
+            train_ic: 0.07,
+            train_icir: 0.6,
+            train_coverage: 0.95,
+            oos_ic: 0.03,
+            oos_icir: 0.25,
+            oos_coverage: 0.95,
+          },
+        ],
+        warning: '在 30 个候选里按训练集 ICIR 选 top-1;只信样本外列。',
+      }
+    );
+  }
+
+  async fundLookthrough(req: FundLookthroughRequest): Promise<any> {
+    return {
+      asof: req.asof ?? '2024-12-31',
+      funds: req.holdings.map((h) => ({
+        fund_code: h.fund_code,
+        weight: h.weight,
+        end_date: '2024-09-30',
+        ann_date: '2024-10-20',
+        disclosed_coverage: 0.5,
+        n_holdings: 2,
+      })),
+      stocks: [{ stock_code: '600519.SH', name: '贵州茅台', industry: '白酒', weight: 0.18 }],
+      sectors: [{ industry: '白酒', weight: 0.18 }],
+      total_coverage: 0.46,
+      note: '穿透基于季报披露的前十大重仓,整体已披露覆盖约 46% 净值,其余未披露未穿透。',
+      degraded: [],
+    };
+  }
+
+  async train(req: TrainRequest, onEvent?: (ev: any) => void): Promise<any> {
+    // 回放几条 SSE 流式进度(供「确定式进度条 + ETA」路径测试):特征面板 → 折。
+    onEvent?.({ stage: 'features', done: 1, total: 2, date: req.train_start });
+    onEvent?.({ stage: 'features', done: 2, total: 2, date: req.train_end });
+    onEvent?.({ stage: 'folds', n_folds: 3 });
     // 测试守卫转发:trainResult 形如 {__error:{status,detail}} → 抛 EngineError。
     if (this.trainResult && this.trainResult.__error) {
       throw new EngineError(this.trainResult.__error.status, this.trainResult.__error.detail);

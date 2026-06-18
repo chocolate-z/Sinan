@@ -15,15 +15,24 @@ dependencies = [
   "polars>=1.0",
   "pyarrow>=24.0.0",
   "pydantic>=2.5",
-  "scikit-learn>=1.4", # M3 训练:ElasticNet(线性模型,产物为系数 JSON,无二进制/无外联)
+  # ⚠ 科学栈上界锁定(2026-06 实测):最新组合 numpy 2.4.6 / scipy 1.17.1 / scikit-learn 1.9.0 在
+  # Windows + py3.13 上 sklearn 编译扩展 DLL 加载失败(_sorting,ABI 错配,非缺 DLL)→ 一旦被 CI
+  # 冻结进 PyInstaller,装机端训练/质检会直接崩。锁到已验证可用的 2025 稳定档(全引擎 204 测通过):
+  # scikit-learn 1.6.1 / numpy 2.2.6 / scipy 1.15.3。解锁前须在 Windows+py3.13 真验导入。
+  "numpy>=2.0,<2.3",
+  "scipy>=1.13,<1.16",
+  "scikit-learn>=1.4,<1.7", # M3 训练:ElasticNet(线性模型,产物为系数 JSON,无二进制/无外联)
   # sinan-contracts 在同一 venv 内 editable 安装,不从 PyPI 拉取。
 ]
 
 [project.optional-dependencies]
-test = ["pytest>=8.0"]
+test = ["pytest>=8.0", "lightgbm>=4,<5"] # 测试需 lightgbm 训树模型 + 验纯 numpy 遍历推理
 # 用户自带数据源(BYO)— 可选,运行期由用户环境提供;Provider 以 httpx 直连官方 HTTP API,
 # 不强依赖以下 SDK,故列为 extras 仅供需要时安装。
 byo = ["tushare", "akshare"]
+# LightGBM(M3 v2 树模型)只在「训练」时需要;推理走 factors/tree.py 纯 numpy 遍历,不依赖它。
+# 列为可选 extra 保持默认轻装(打包默认含训练能力则需在构建时一并装入)。
+lightgbm = ["lightgbm>=4,<5"]
 
 [tool.hatch.build.targets.wheel]
 packages = ["sinan"]

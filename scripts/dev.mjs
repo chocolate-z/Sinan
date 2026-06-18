@@ -5,8 +5,9 @@
  *   2) cargo build 编译 Tauri 桌面壳(增量;Rust 没改则秒过)
  *   3) 起 vite(前端 devUrl,固定 :9521)
  *   4) vite 就绪后起桌面壳 —— 其 supervisor 自动拉起 engine/api 两个 sidecar、弹原生窗口
- * Ctrl+C 一并停止。前端改动 vite HMR 热更新;改 Rust 需重跑本命令。
- * dev 用内存钥匙串(SINAN_SECRET_STORE=memory):免装原生 keyring,但 token 重启不持久。
+ * Ctrl+C 一并停止。前端改动 vite HMR 热更新;改 Rust/后端需重跑本命令(api 跑编译后的 dist)。
+ * 凭据:dev 也用 OS 钥匙串(@napi-rs/keyring,已实测可用)→ token 跨重启持久,免每次重输。
+ *   如需临时不持久(纯净复现),自行 `SINAN_SECRET_STORE=memory pnpm dev`(透传,见下)。
  */
 import { spawn, spawnSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
@@ -69,7 +70,8 @@ const env = {
   SINAN_PYTHON: PY,
   SINAN_NODE: 'node',
   SINAN_API_ENTRY: API_ENTRY,
-  SINAN_SECRET_STORE: 'memory',
+  // 不强制 memory store → 默认走 OS 钥匙串(token 持久)。用户若在 shell 设了 SINAN_SECRET_STORE,
+  // 因上面 ...process.env 在前会被透传保留(可手动 =memory 退回不持久)。
 };
 let shell;
 let stopped = false;

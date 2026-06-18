@@ -64,5 +64,5 @@ def test_build_path():
 
 def test_ts_and_python_bindings_agree():
     """间接保证 TS 与 Python 双端一致:二者都以 spec 为准,各自上面的测试通过即等价。"""
-    # 这里再显式断言能力数量,作为冗余哨兵。
-    assert len(CAPABILITIES) == 12
+    # 这里再显式断言能力数量,作为冗余哨兵(加 FUND_PORTFOLIO 后 13)。
+    assert len(CAPABILITIES) == 13

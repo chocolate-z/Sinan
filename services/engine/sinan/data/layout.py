@@ -19,6 +19,9 @@ DATASET_KEYS: dict[str, tuple[str, ...]] = {
     "fina_indicator": ("stock_code", "end_date"),
     "index_weight": ("index_code", "trade_date", "stock_code"),
     "sw_industry": ("stock_code", "in_date"),
+    # 基金持仓(穿透):按 (基金, 报告期, 成分股, 披露日) 唯一 —— ann_date 进主键让同报告期的修订版都留住,
+    # 不被去重抹掉(PIT 取「披露日<=T 的最近一期」需要看到各披露日)。
+    "fund_portfolio": ("fund_code", "end_date", "stock_code", "ann_date"),
 }
 
 # 财务类:asof 取 ann_date<=T 的最新一期(根除「一季报4月底才公告」的泄漏)。
@@ -35,6 +38,7 @@ ASOF_DATE_COL: dict[str, str] = {
     "fundamental": "ann_date",
     "fina_indicator": "ann_date",
     "sw_industry": "in_date",
+    "fund_portfolio": "ann_date",  # PIT 按披露日(非报告期 end_date)切,根除「持仓已变但还没公告」泄漏
 }
 
 

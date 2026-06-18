@@ -73,7 +73,7 @@ export const ONBOARDING_STEPS = [
 ] as const;
 export type OnboardingStep = (typeof ONBOARDING_STEPS)[number];
 
-export const MODEL_TYPES = ['elasticnet'] as const;
+export const MODEL_TYPES = ['elasticnet', 'lightgbm'] as const;
 export type ModelType = (typeof MODEL_TYPES)[number];
 
 export const MODEL_STATUSES = ['draft', 'running', 'archived'] as const;

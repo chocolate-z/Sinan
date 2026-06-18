@@ -41,7 +41,7 @@ export class PaperService {
     const snap = this.repo.modelAccountSnapshot(strategyId);
     const fill = input.fill !== false;
     // 模型出信号:有激活模型则下发其系数给 engine 做线性打分,否则退回等权因子合成(诚实降级);
-    // 无模型时把启用的自定义因子一并下发,使其参与等权选股(M4 v3)。
+    // 无模型时把启用的自定义因子 + 启用的内置因子(及权重)一并下发,使因子库的开关/调权真正生效(v2)。
     const activeModel = this.repo.activeModel();
     const result = await this.engine.paperRun({
       strategy_id: strategyId,
@@ -55,6 +55,7 @@ export class PaperService {
       fill,
       model: activeModel,
       custom: activeModel ? undefined : this.repo.customFactorsForQuality(),
+      builtin: activeModel ? undefined : this.repo.builtinFactorsForScoring(),
     });
     this.repo.persistPaperResult(strategyId, result, { persistTrades: fill });
     return { strategy_id: strategyId, ...result };
