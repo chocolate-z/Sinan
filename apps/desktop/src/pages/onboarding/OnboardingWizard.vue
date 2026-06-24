@@ -186,6 +186,36 @@ async function finish() {
   router.push('/dashboard');
 }
 
+// 完成后直接去「信号」页跑第一轮 —— 这是「从0到第一次选出股票」的关键最后一跳。
+async function finishTo(path: string) {
+  await api.onboardingComplete();
+  await app.bootstrap();
+  router.push(path);
+}
+
+// 给迷路/没有 token 的小白一条逃生路:一键改用免费源,回到填凭据步(免费源无需 token)。
+function chooseFreeSource() {
+  provider.value = 'akshare';
+  go('credential');
+}
+
+// 把原始异常串翻译成人话 + 下一步,别把英文堆栈糊到小白脸上。
+function humanizeError(raw: string | null): string {
+  if (!raw) return '';
+  const s = raw.toLowerCase();
+  if (
+    s.includes('fetch failed') ||
+    s.includes('econnref') ||
+    s.includes('timeout') ||
+    s.includes('etimedout') ||
+    s.includes('network')
+  )
+    return '连不上数据源,请检查网络或稍后重试。';
+  if (s.includes('401') || s.includes('unauthor') || s.includes('token') || s.includes('权限'))
+    return 'token 可能无效或权限不足,请确认后重填;只想先体验可改用免费源。';
+  return raw;
+}
+
 function capEntries(caps: Record<string, boolean>) {
   return Object.entries(caps);
 }
@@ -272,6 +302,10 @@ const buildPct = computed(() => Math.round(build.progress * 100));
               <span class="src-mark"><span class="src-dot" /></span>
             </label>
           </div>
+          <p class="src-tip cap">
+            拿不准选哪个?<b>第一次用、手头没有 token,就选 AkShare 免费源</b> —— 5
+            分钟就能跑通整套流程;以后随时能在「设置」里换成 Tushare 拉全市场。
+          </p>
         </section>
 
         <!-- 填凭据 -->
@@ -307,6 +341,24 @@ const buildPct = computed(() => Math.round(build.progress * 100));
                 <span>token 仅加密存本机系统钥匙串,司南<b>绝不</b>上传、<b>绝不</b>落明文。</span>
               </p>
             </template>
+            <details class="token-help">
+              <summary>没有 token / 不知道去哪弄?点这里</summary>
+              <p>
+                Tushare 是第三方金融数据服务。在浏览器打开
+                <span class="mono th-url">tushare.pro</span>
+                免费注册并登录,在「个人主页 → 接口 TOKEN」里复制那串字符,粘到上面即可。
+              </p>
+              <p>
+                ⚠ 新注册账号默认只有价量等基础数据;<b>财务 / 指数 / 北向</b>等高级数据需约 2000
+                积分(完善资料、签到可慢慢攒)。缺这些不是软件出错,对应因子会自动诚实降级。
+              </p>
+              <p class="th-tip">
+                只想先体验、不想注册?
+                <button type="button" class="th-link" @click="chooseFreeSource">
+                  改用 AkShare 免费源(无需 token)→
+                </button>
+              </p>
+            </details>
           </template>
           <div v-else class="note">
             <Icon name="check" :size="13" />
@@ -326,7 +378,10 @@ const buildPct = computed(() => Math.round(build.progress * 100));
           <div v-else-if="testResult.error" class="test-state">
             <span class="test-icon err"><Icon name="alert" :size="20" /></span>
             <span class="badge badge-err"><span class="dot" /> 连接失败</span>
-            <p class="test-msg">{{ testResult.error }}</p>
+            <p class="test-msg">{{ humanizeError(testResult.error) }}</p>
+            <button class="btn btn-secondary btn-sm" @click="chooseFreeSource">
+              改用 AkShare 免费源(无需 token)
+            </button>
           </div>
           <!-- 有结果 -->
           <template v-else-if="testResult.data">
@@ -343,6 +398,10 @@ const buildPct = computed(() => Math.round(build.progress * 100));
               </span>
               <p v-if="testResult.data.message" class="test-msg">{{ testResult.data.message }}</p>
             </div>
+            <p v-if="testResult.data.caps" class="caps-hint cap">
+              ✓ = 你的数据源支持该能力,✗ =
+              不提供。缺的能力对应的因子/基准会自动诚实降级,<b>不影响先把流程跑通</b>。
+            </p>
             <div v-if="testResult.data.caps" class="caps">
               <span
                 v-for="[name, ok] in capEntries(testResult.data.caps)"
@@ -412,9 +471,10 @@ const buildPct = computed(() => Math.round(build.progress * 100));
         <!-- 完成 -->
         <section v-else-if="step === 'done'" class="step-pane done">
           <span class="done-mark"><Icon name="check" :size="26" /></span>
-          <h2 class="pane-title">缓存建立完成</h2>
+          <h2 class="pane-title">数据准备好了 🎉</h2>
           <p class="pane-lead">
-            本地缓存已建立。你现在可以浏览总览,后续里程碑将解锁因子打分、信号与模拟盘。
+            下一步去「信号」页点一次「盘后跑一轮」,司南就会按因子给这批股票打分、选出今天值得关注的几只
+            —— 只做研究提示,绝不替你下单。
           </p>
         </section>
       </div>
@@ -435,6 +495,7 @@ const buildPct = computed(() => Math.round(build.progress * 100));
         <button v-else-if="step === 'test'" class="btn btn-ghost" @click="go('credential')">
           上一步
         </button>
+        <button v-else-if="step === 'done'" class="btn btn-ghost" @click="finish">先看总览</button>
         <span v-else />
 
         <div class="footer-right">
@@ -467,8 +528,8 @@ const buildPct = computed(() => Math.round(build.progress * 100));
           >
             建缓存 <Icon name="chevR" :size="14" />
           </button>
-          <button v-else-if="step === 'done'" class="btn btn-primary" @click="finish">
-            进入司南 <Icon name="chevR" :size="14" />
+          <button v-else-if="step === 'done'" class="btn btn-primary" @click="finishTo('/signals')">
+            去选股 · 跑第一轮信号 <Icon name="chevR" :size="14" />
           </button>
         </div>
       </footer>
@@ -738,6 +799,63 @@ const buildPct = computed(() => Math.round(build.progress * 100));
   color: var(--status-ok);
 }
 .note b {
+  color: var(--text-1);
+  font-weight: 500;
+}
+
+/* ── 选源决策提示 / token 获取帮助 / 能力解释(小白引导)──────── */
+.src-tip {
+  margin: var(--sp-4) 0 0;
+  color: var(--text-3);
+  line-height: 1.6;
+}
+.src-tip b {
+  color: var(--text-1);
+  font-weight: 500;
+}
+.token-help {
+  margin-top: var(--sp-3);
+  font-size: var(--fs-cap);
+  color: var(--text-2);
+}
+.token-help > summary {
+  cursor: pointer;
+  color: var(--accent);
+  font-size: var(--fs-sub);
+  list-style: none;
+}
+.token-help > summary::-webkit-details-marker {
+  display: none;
+}
+.token-help p {
+  margin: var(--sp-2) 0 0;
+  line-height: 1.7;
+}
+.token-help b {
+  color: var(--text-1);
+  font-weight: 500;
+}
+.th-url {
+  color: var(--text-1);
+  background: var(--bg-input);
+  padding: 1px 6px;
+  border-radius: var(--r-xs);
+}
+.th-link {
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--accent);
+  cursor: pointer;
+  font: inherit;
+}
+.caps-hint {
+  margin: var(--sp-3) 0 0;
+  color: var(--text-3);
+  line-height: 1.6;
+  text-align: center;
+}
+.caps-hint b {
   color: var(--text-1);
   font-weight: 500;
 }

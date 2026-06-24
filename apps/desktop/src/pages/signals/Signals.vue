@@ -214,7 +214,11 @@ function scorePct(score: number): string {
       <div v-else class="empty">
         <div class="empty-icon"><Icon name="signals" :size="20" /></div>
         <div class="empty-title">暂无生效信号</div>
-        <div class="empty-desc">选信号日并「盘后跑一轮」,产出当日买卖信号与被风控拦截组。</div>
+        <div class="empty-desc">
+          直接点上方「盘后跑一轮」就行 ——
+          <b>无需先训练模型</b
+          >,司南会用内置因子给股票打分选股;想进阶再去「模型」页训练自己的模型。产出当日买卖信号与被风控拦截组。
+        </div>
       </div>
     </div>
 
@@ -224,9 +228,9 @@ function scorePct(score: number): string {
         <div class="block-note">
           <span class="block-ico status-warn"><Icon name="shield" :size="15" /></span>
           <span class="block-txt"
-            >以下标的初选入围,但被风控闸拦截,不进入交易候选 —— 纪律高于模型。风控规则可在<b
-              >设置 · 风控</b
-            >中调整。</span
+            >以下标的初选入围,但被风控闸拦截,不进入交易候选 ——
+            纪律高于模型。当前为打包默认风控基线(如大盘择时空仓、最多持仓 5
+            只、单票集中度上限),<b>本版本暂不支持在界面里调整</b>,完整规则见<b>帮助</b>页。</span
           >
         </div>
         <table class="dt">

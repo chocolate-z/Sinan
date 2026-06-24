@@ -15,22 +15,97 @@ interface Item {
   group: string;
   icon: string;
   needsData?: boolean;
+  // 鼠标悬停一句大白话,告诉小白这个入口到底是干嘛的(标签太黑话了)。
+  hint: string;
 }
 
 const items: Item[] = [
-  { to: '/dashboard', label: '总览', group: '监控', icon: 'dashboard' },
-  { to: '/market', label: '行情', group: '监控', icon: 'market', needsData: true },
+  {
+    to: '/dashboard',
+    label: '总览',
+    group: '监控',
+    icon: 'dashboard',
+    hint: '一眼看两个模拟账本的当日盈亏与今日选股',
+  },
+  {
+    to: '/market',
+    label: '行情',
+    group: '监控',
+    icon: 'market',
+    needsData: true,
+    hint: '看大盘指数、全市场涨跌广度和个股 K 线',
+  },
   // 资讯/news 为 v1 后续(M5);v1 不暴露(路由已重定向到总览),避免通用 Locked 桩。
-  { to: '/indicators', label: '指标', group: '研究', icon: 'indicator', needsData: true },
-  { to: '/formulas', label: '公式', group: '研究', icon: 'indicator', needsData: true },
-  { to: '/models', label: '模型', group: '研究', icon: 'model', needsData: true },
-  { to: '/backtest', label: '回测', group: '研究', icon: 'backtest', needsData: true },
-  { to: '/signals', label: '信号', group: '交易', icon: 'signals', needsData: true },
-  { to: '/portfolio', label: '持仓', group: '交易', icon: 'portfolio' },
-  { to: '/fund', label: '基金穿透', group: '交易', icon: 'portfolio', needsData: true },
-  { to: '/logs', label: '日志', group: '系统', icon: 'logs' },
-  { to: '/settings', label: '设置', group: '系统', icon: 'settings' },
-  { to: '/help', label: '帮助', group: '系统', icon: 'help' },
+  {
+    to: '/indicators',
+    label: '指标',
+    group: '研究',
+    icon: 'indicator',
+    needsData: true,
+    hint: '因子有没有用——给股票打分的规则体检',
+  },
+  {
+    to: '/formulas',
+    label: '公式',
+    group: '研究',
+    icon: 'indicator',
+    needsData: true,
+    hint: '把通达信/同花顺选股公式在全市场跑一遍',
+  },
+  {
+    to: '/models',
+    label: '模型',
+    group: '研究',
+    icon: 'model',
+    needsData: true,
+    hint: '训练你自己的选股模型(进阶,新手可跳过)',
+  },
+  {
+    to: '/backtest',
+    label: '回测',
+    group: '研究',
+    icon: 'backtest',
+    needsData: true,
+    hint: '用历史数据检验策略,含交易成本、防偷看未来',
+  },
+  {
+    to: '/signals',
+    label: '信号',
+    group: '交易',
+    icon: 'signals',
+    needsData: true,
+    hint: '今天值得关注买/卖哪些股票(核心功能)',
+  },
+  {
+    to: '/portfolio',
+    label: '持仓',
+    group: '交易',
+    icon: 'portfolio',
+    hint: '记录你自己的真实持仓 + 看模型模拟盘',
+  },
+  {
+    to: '/fund',
+    label: '基金穿透',
+    group: '交易',
+    icon: 'portfolio',
+    needsData: true,
+    hint: '看你买的基金实际重仓了哪些股票',
+  },
+  {
+    to: '/logs',
+    label: '日志',
+    group: '系统',
+    icon: 'logs',
+    hint: '软件后台运行记录,出问题时来这看',
+  },
+  {
+    to: '/settings',
+    label: '设置',
+    group: '系统',
+    icon: 'settings',
+    hint: '数据源、外观主题、隐私',
+  },
+  { to: '/help', label: '帮助', group: '系统', icon: 'help', hint: '使用说明、名词解释与常见问题' },
 ];
 
 const groups = computed(() => {
@@ -68,14 +143,20 @@ function openDatasource() {
         <div class="cap nav-group-label">{{ group }}</div>
         <div class="nav-list">
           <template v-for="it in list" :key="it.to">
-            <RouterLink v-if="!locked(it)" :to="it.to" class="nav-item" active-class="active">
+            <RouterLink
+              v-if="!locked(it)"
+              :to="it.to"
+              class="nav-item"
+              active-class="active"
+              :title="it.hint"
+            >
               <span class="nav-chip"><Icon :name="it.icon" :size="15" /></span>
               {{ it.label }}
             </RouterLink>
             <span
               v-else
               class="nav-item disabled"
-              title="请先在『设置 → 数据源』配置并建立本地缓存"
+              :title="`${it.hint} · 需先在『设置 → 数据源』配置并建立本地缓存解锁`"
             >
               <span class="nav-chip"><Icon :name="it.icon" :size="15" /></span>
               {{ it.label }}

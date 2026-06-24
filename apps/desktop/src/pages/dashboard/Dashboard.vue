@@ -172,6 +172,7 @@ function pct(v: number | null | undefined, dec = 2): string {
             <span class="cap">个人账户 · 当日收益</span>
             <span class="ch-tag"><i style="background: var(--pnl-up)" />PnL</span>
           </div>
+          <div class="stat-sub cap">你手动录入的真实持仓,仅用于盯盘记账(司南不替你下单)</div>
           <div class="stat-main">
             <div class="stat-figs">
               <div class="stat-val mono" :class="app.pnlClass(personalDay ?? 0)">
@@ -222,6 +223,7 @@ function pct(v: number | null | undefined, dec = 2): string {
             <span class="cap">模型模拟盘 · 当日收益</span>
             <span class="ch-tag"><i style="background: var(--pnl-up)" />PnL</span>
           </div>
+          <div class="stat-sub cap">因子模型每日选出的虚拟组合,纸面模拟、不真实下单</div>
           <div class="stat-main">
             <div class="stat-figs">
               <div class="stat-val mono" :class="app.pnlClass(modelDay ?? modelDayPct ?? 0)">
@@ -417,6 +419,11 @@ function pct(v: number | null | undefined, dec = 2): string {
   display: flex;
   align-items: center;
   justify-content: space-between;
+}
+.stat-sub {
+  margin-top: -8px;
+  color: var(--text-3);
+  line-height: 1.4;
 }
 .ch-tag {
   display: inline-flex;

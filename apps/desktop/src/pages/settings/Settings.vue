@@ -46,6 +46,19 @@ const refreshInterval = computed(() => {
 });
 const dailyRunTime = computed(() => (settings.value?.daily_run_time as string | undefined) ?? null);
 
+// 盘后自动跑一轮:做成真开关(不再写死「已启用」骗人)。后端在 auto_signal 变更时会热重排调度。
+// 默认值是开(config 默认 auto_signal:true),只有 DB 里显式存了 false 才算关。
+const autoSignalOn = computed(() => settings.value?.auto_signal !== false);
+async function setAutoSignal(on: boolean) {
+  if (!settings.value || autoSignalOn.value === on) return;
+  settings.value = { ...settings.value, auto_signal: on }; // 乐观更新
+  try {
+    await api.putSetting('auto_signal', on);
+  } catch {
+    await refresh(); // 失败回滚到服务端真值
+  }
+}
+
 // 自动刷新频率(分钟;0=手动不自动刷)。行情页据此设轮询间隔 —— 改了真生效,不是死设置。
 const REFRESH_OPTS = [
   { v: 1, label: '每分钟' },
@@ -128,6 +141,23 @@ async function setActive(id: string) {
 
 function providerStatusKind(p: any): 'ok' | 'err' | 'idle' {
   return p.status === 'ok' ? 'ok' : p.status === 'error' ? 'err' : 'idle';
+}
+
+// 把原始异常串翻译成小白能懂的人话 + 下一步,而不是把英文堆栈糊到脸上。
+function humanizeError(raw: string | null): string {
+  if (!raw) return '';
+  const s = raw.toLowerCase();
+  if (
+    s.includes('fetch failed') ||
+    s.includes('econnref') ||
+    s.includes('timeout') ||
+    s.includes('etimedout') ||
+    s.includes('network')
+  )
+    return '连不上数据源,请检查网络或稍后重试。';
+  if (s.includes('401') || s.includes('unauthor') || s.includes('token') || s.includes('权限'))
+    return 'token 可能无效或权限不足,点「更换」重新填写;部分数据需更高积分。';
+  return `测试失败:${raw}`;
 }
 
 onMounted(refresh);
@@ -225,7 +255,7 @@ onMounted(refresh);
           <div class="probe">
             <div class="cap probe-title">能力探测</div>
             <div v-if="testState.error" class="probe-err">
-              <Icon name="alert" :size="13" /> {{ testState.error }}
+              <Icon name="alert" :size="13" /> {{ humanizeError(testState.error) }}
             </div>
             <div v-else-if="caps" class="probe-grid">
               <div v-for="[k, ok] in Object.entries(caps.caps ?? {})" :key="k" class="probe-item">
@@ -316,11 +346,17 @@ onMounted(refresh);
         <div class="grow">
           <div class="row-main">
             <div class="row-label">盘后自动跑一轮</div>
-            <div class="row-desc">每个交易日收盘后自动出信号 + 模拟撮合记账(不含下载数据)</div>
+            <div class="row-desc">
+              每个交易日收盘后(默认 {{ dailyRunTime ?? '15:30' }})自动出信号 +
+              模拟撮合记账(不含下载数据)。需保持软件运行才会触发。
+            </div>
           </div>
-          <span class="badge badge-ok"
-            ><span class="dot" />{{ dailyRunTime ? `${dailyRunTime} 自动` : '已启用' }}</span
-          >
+          <div class="segmented">
+            <button :class="{ on: autoSignalOn }" @click="setAutoSignal(true)">
+              开 · {{ dailyRunTime ?? '15:30' }}
+            </button>
+            <button :class="{ on: !autoSignalOn }" @click="setAutoSignal(false)">关</button>
+          </div>
         </div>
       </div>
     </section>
