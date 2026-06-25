@@ -84,3 +84,51 @@ def test_performance_aggregate():
     assert "information_ratio" in rep and "tracking_error" in rep
     assert rep["trades"] == 3
     assert math.isclose(rep["win_rate"], 2 / 3)
+    # 不传新参数 → 不附 deflated_sharpe / style_attribution(向后兼容)
+    assert "deflated_sharpe" not in rep and "style_attribution" not in rep
+    # 有基准 → 必附白话判词(此例超额为正、IR 区间不定,只断言存在且为字符串)
+    assert isinstance(rep.get("verdict"), str) and rep["verdict"]
+
+
+def test_honest_verdict():
+    assert "跑输" in M.honest_verdict(-0.0245, -0.08)      # 截图口径:超额负/IR负
+    assert "跑输" in M.honest_verdict(0.03, 0.0)           # IR=0 也算无超额
+    assert "未达目标" in M.honest_verdict(0.02, 0.3)        # 正超额但 IR<0.5
+    assert "风格 beta" in M.honest_verdict(0.03, 0.7)       # 达标区间:警示是 beta
+    assert "异常偏高" in M.honest_verdict(0.05, 1.5)        # IR>1 警惕
+
+
+def test_deflated_sharpe_multiple_testing():
+    # 每期夏普 ~0.1 的边(单看不错),N 次试验后应被折低
+    rets = [0.001 + 0.01 * (1 if i % 2 == 0 else -1) for i in range(60)]
+    p1 = M.deflated_sharpe(rets, n_trials=1, var_trials_sr=0.01)     # 单次=PSR(对0检验)
+    p50 = M.deflated_sharpe(rets, n_trials=50, var_trials_sr=0.01)   # 50次试验=挑最好
+    assert p1 > 0.7                      # 单看显著
+    assert p50 < 0.5                     # 扣多重检验后被打回(<0.95 不算稳健)
+    assert p50 < p1                      # 试验越多门槛越高
+    # 守卫:样本不足 / 无离散度 → 0
+    assert M.deflated_sharpe([0.01, 0.01], 5, 0.01) == 0.0
+    assert M.deflated_sharpe(rets, 5, 0.0) == 0.0
+
+
+def test_style_attribution_recovers_exposures():
+    A = [0.01 if i % 2 == 0 else -0.01 for i in range(40)]
+    B = [0.01 if (i // 2) % 2 == 0 else -0.01 for i in range(40)]   # 与 A 非共线
+    # 纯线性组合(无独有 alpha):超额 = 1.5A − 0.5B + 截距 0.0005
+    ex = [0.0005 + 1.5 * A[i] - 0.5 * B[i] for i in range(40)]
+    rep = M.style_attribution(ex, {"价值": A, "规模": B})
+    assert math.isclose(rep["exposures"]["价值"], 1.5, rel_tol=1e-6)
+    assert math.isclose(rep["exposures"]["规模"], -0.5, rel_tol=1e-6)
+    assert math.isclose(rep["alpha_annual"], 0.0005 * 252, rel_tol=1e-6)
+    assert rep["r2"] > 0.99
+
+
+def test_style_attribution_pure_beta_verdict():
+    A = [0.01 if i % 2 == 0 else -0.01 for i in range(30)]
+    ex = [2.0 * a for a in A]                       # 超额完全由风格解释,无 alpha
+    rep = M.style_attribution(ex, {"价值": A})
+    assert math.isclose(rep["exposures"]["价值"], 2.0, rel_tol=1e-6)
+    assert abs(rep["alpha_annual"]) < 1e-6
+    assert "无独有 alpha" in rep["verdict"]
+    # 守卫
+    assert M.style_attribution(ex, {})["verdict"] == "无风格序列"
